@@ -3,3326 +3,1299 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Photo Tools — White Text Remover → Location</title>
-
+<title>Video White Text Remover + GeoTag</title>
 <style>
-*{box-sizing:border-box}
+*{box-sizing:border-box}body{margin:0;background:#0b1117;color:#e9eef3;font:14px Arial,sans-serif}
+header{padding:16px 20px;background:#111a23;border-bottom:1px solid #263340}
+header h1{margin:0;font-size:20px}header p{margin:6px 0 0;color:#9eabb7}
+.wrap{max-width:1400px;margin:auto;padding:16px}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:16px}
+.card{background:#121b24;border:1px solid #273440;border-radius:12px;padding:14px}
+h2,h3{margin:0 0 12px}.section{border-top:1px solid #263440;margin-top:14px;padding-top:14px}
+label{display:block;font-weight:600;margin:8px 0 5px;color:#cdd6de}
+input[type=file],input[type=text],input[type=date],input[type=time],input[type=number],textarea,select{width:100%;padding:9px;border-radius:8px;border:1px solid #344553;background:#0d151d;color:#eef3f7}
+textarea{min-height:72px;resize:vertical}
+button{border:0;border-radius:8px;padding:10px 12px;background:#1976e8;color:#fff;font-weight:700;cursor:pointer;margin:4px 3px 0 0}
+button.secondary{background:#293643}button.danger{background:#b63b3b}button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.sliderTop{display:flex;justify-content:space-between;font-size:12px;color:#cbd4dc}.sliderTop b{color:#6fb1ff}
+input[type=range]{width:100%}
+.status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
+.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+#viewCanvas{max-width:100%;max-height:72vh;display:block}
+#selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
+#trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
+#trimRange{width:100%}
+.galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
+.timelineHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}.timelineHead b{font-size:13px}.timelineHead span{font-size:11px;color:#8fa0ad}
+#timelineWrap{position:relative;background:#090f15;border:1px solid #263744;border-radius:10px;padding:8px 34px 9px;overflow:hidden}
+#timelineCanvas{width:100%;height:132px;display:block;border-radius:6px;background:#05090d;touch-action:none;cursor:ew-resize}
+.timelineArrow{position:absolute;top:54px;width:28px;height:40px;margin:0;padding:0;border-radius:7px;background:#202c37;color:#cfd8df;font-size:25px;line-height:35px;z-index:3}
+.timelineArrow.left{left:3px}.timelineArrow.right{right:3px}
+.timelineTimes{display:flex;justify-content:space-between;color:#a3afb9;font-size:11px;margin-top:5px;padding:0 4px}
+.timelineHint{font-size:11px;color:#7f909e;margin-top:5px;text-align:center}
 
-body{
-  margin:0;
-  font-family:Arial,sans-serif;
-  background:#f4f5f7;
-  color:#171717
-}
 
-.wrap{
-  max-width:900px;
-  margin:auto;
-  padding:24px 16px
-}
-
-h1{
-  text-align:center;
-  margin:0 0 6px
-}
-
-.sub{
-  text-align:center;
-  color:#666;
-  margin:0 0 20px
-}
-
-.card{
-  background:white;
-  border:1px solid #ddd;
-  border-radius:14px;
-  padding:16px
-}
-
-.toolbar{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  justify-content:center;
-  margin-bottom:14px
-}
-
-button,.file{
-  border:0;
-  border-radius:9px;
-  padding:11px 16px;
-  font-weight:600;
-  cursor:pointer;
-  background:#222;
-  color:#fff
-}
-
-button:disabled{
-  opacity:.45;
-  cursor:not-allowed
-}
-
-.file{
-  display:inline-block;
-  background:#1769e0
-}
-
-input[type=file]{
-  display:none
-}
-
-#status{
-  text-align:center;
-  color:#555;
-  min-height:22px;
-  margin:8px
-}
-
-.stage{
-  position:relative;
-  width:100%;
-  overflow:auto;
-  background:#222;
-  border-radius:10px;
-  min-height:180px;
-  text-align:center
-}
-
-canvas{
-  display:block;
-  max-width:100%;
-  height:auto;
-  margin:auto;
-  cursor:crosshair
-}
-
-#box{
-  position:absolute;
-  border:2px solid #ff3030;
-  background:rgba(255,255,255,.08);
-  display:none;
-  pointer-events:none
-}
-
-.help{
-  text-align:center;
-  color:#666;
-  font-size:13px;
-  margin-top:10px
-}
-
-@media(max-width:850px){
-  #geoPage>div{
-    grid-template-columns:1fr!important
-  }
-}
+.queue{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.queue span{padding:5px 8px;border-radius:6px;background:#1d2934}
+.small{font-size:12px;color:#94a3af;line-height:1.45}
+.tabs{display:flex;gap:8px;margin-bottom:14px}.tabs button.active{background:#1769e0}
+#geoSection{display:none}
+.badge{display:inline-block;padding:4px 7px;border-radius:6px;background:#24313d;color:#9fb0be;font-size:11px}
+#mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px}
+#logoCanvas{display:none}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
 </head>
-
 <body>
-
-<div id="stepBar"
-style="max-width:900px;margin:12px auto 0;padding:0 16px;font-family:Arial,sans-serif;font-size:12px;font-weight:700;color:#fff">
-
-  <span id="stepOne"
-  style="display:inline-block;padding:8px 12px;border-radius:8px;background:#1769e0">
-    1. White Text Remover
-  </span>
-
-  <span id="stepTwo"
-  style="display:inline-block;padding:8px 12px;border-radius:8px;background:#e5e7eb;color:#555;margin-left:6px">
-    2. Location Preview
-  </span>
-
-</div>
-
+<header>
+<h1>Video White Text Remover + GeoTag</h1>
+<p>Trim + gallery-style crop + remove selected white text from every frame + editable GeoTag overlay.</p>
+</header>
 
 <div class="wrap">
-
-  <h1>Fast White Text Remover</h1>
-
-  <p class="sub">
-    Upload → remove the white text first → then continue directly to the location preview.
-  </p>
-
-  <div class="card">
-
-    <div class="toolbar">
-
-      <label class="file">
-        Choose Image
-        <input id="file" type="file" accept="image/*">
-      </label>
-
-      <button id="remove" disabled>
-        Remove White Text
-      </button>
-
-      <button id="undo" disabled>
-        Undo
-      </button>
-
-      <button id="download" disabled>
-        Download Clean Image
-      </button>
-
-      <button
-        id="continueGeo"
-        type="button"
-        disabled
-        style="background:#14834b">
-        Continue to Location →
-      </button>
-
-    </div>
-
-    <div id="status">
-      Choose an image to begin.
-    </div>
-
-    <div class="stage" id="stage">
-
-      <canvas id="canvas"></canvas>
-
-      <div id="box"></div>
-
-    </div>
-
-    <div class="help">
-      Draw a tight rectangle around the white text.
-      The image is NOT processed until you click Remove.
-    </div>
-
-  </div>
-
+<div class="tabs">
+<button id="tabEdit" class="active">1. Video Edit</button>
+<button id="tabGeo" disabled>2. GeoTag</button>
 </div>
 
-
-<script>
-
-const file=document.getElementById('file');
-const canvas=document.getElementById('canvas');
-const ctx=canvas.getContext('2d',{willReadFrequently:true});
-const stage=document.getElementById('stage');
-const box=document.getElementById('box');
-
-const removeBtn=document.getElementById('remove');
-const undoBtn=document.getElementById('undo');
-const downloadBtn=document.getElementById('download');
-const continueGeo=document.getElementById('continueGeo');
-const status=document.getElementById('status');
-
-let original=null;
-let selection=null;
-let drawing=false;
-let startX=0,startY=0;
-
-
-file.onchange=()=>{
-
-  const f=file.files[0];
-
-  if(!f)return;
-
-  status.textContent='Opening image…';
-
-  const url=URL.createObjectURL(f);
-
-  const img=new Image();
-
-  img.onload=()=>{
-
-    const max=1800;
-
-    const scale=
-      Math.min(
-        1,
-        max/Math.max(
-          img.naturalWidth,
-          img.naturalHeight
-        )
-      );
-
-    canvas.width=
-      Math.max(
-        1,
-        Math.round(img.naturalWidth*scale)
-      );
-
-    canvas.height=
-      Math.max(
-        1,
-        Math.round(img.naturalHeight*scale)
-      );
-
-    ctx.drawImage(
-      img,
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
-    original=
-      ctx.getImageData(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-    selection=null;
-
-    box.style.display='none';
-
-    removeBtn.disabled=false;
-    undoBtn.disabled=true;
-    downloadBtn.disabled=false;
-    continueGeo.disabled=false;
-
-    status.textContent=
-      'Ready — drag around the white text.';
-
-    URL.revokeObjectURL(url);
-
-  };
-
-
-  img.onerror=()=>{
-
-    URL.revokeObjectURL(url);
-
-    status.textContent=
-      'Trying alternate image decoder…';
-
-    const reader=new FileReader();
-
-    reader.onload=()=>{
-
-      const fallback=new Image();
-
-      fallback.onload=()=>{
-
-        const max=1800;
-
-        const scale=
-          Math.min(
-            1,
-            max/Math.max(
-              fallback.naturalWidth,
-              fallback.naturalHeight
-            )
-          );
-
-        canvas.width=
-          Math.max(
-            1,
-            Math.round(fallback.naturalWidth*scale)
-          );
-
-        canvas.height=
-          Math.max(
-            1,
-            Math.round(fallback.naturalHeight*scale)
-          );
-
-        ctx.clearRect(
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
-
-        ctx.drawImage(
-          fallback,
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
-
-        original=
-          ctx.getImageData(
-            0,
-            0,
-            canvas.width,
-            canvas.height
-          );
-
-        selection=null;
-
-        box.style.display='none';
-
-        removeBtn.disabled=false;
-        undoBtn.disabled=true;
-        downloadBtn.disabled=false;
-        continueGeo.disabled=false;
-
-        status.textContent=
-          'Ready — drag around the white text.';
-
-      };
-
-
-      fallback.onerror=()=>{
-
-        status.textContent=
-          'This image format is not supported by this browser. Try JPG, PNG or WebP.';
-
-        removeBtn.disabled=true;
-        continueGeo.disabled=true;
-
-      };
-
-      fallback.src=reader.result;
-
-    };
-
-
-    reader.onerror=()=>{
-
-      status.textContent=
-        'Could not read this image. Try JPG, PNG or WebP.';
-
-      removeBtn.disabled=true;
-      continueGeo.disabled=true;
-
-    };
-
-
-    reader.readAsDataURL(f);
-
-  };
-
-
-  img.src=url;
-
-};
-
-
-function point(e){
-
-  const r=canvas.getBoundingClientRect();
-
-  return {
-
-    x:Math.max(
-      0,
-      Math.min(
-        canvas.width,
-        (e.clientX-r.left)*canvas.width/r.width
-      )
-    ),
-
-    y:Math.max(
-      0,
-      Math.min(
-        canvas.height,
-        (e.clientY-r.top)*canvas.height/r.height
-      )
-    )
-
-  };
-
-}
-
-
-function showBox(){
-
-  if(!selection)return;
-
-  const r=canvas.getBoundingClientRect();
-
-  box.style.left=
-    (
-      canvas.offsetLeft+
-      selection.x*r.width/canvas.width
-    )+'px';
-
-  box.style.top=
-    (
-      canvas.offsetTop+
-      selection.y*r.height/canvas.height
-    )+'px';
-
-  box.style.width=
-    (
-      selection.w*r.width/canvas.width
-    )+'px';
-
-  box.style.height=
-    (
-      selection.h*r.height/canvas.height
-    )+'px';
-
-  box.style.display='block';
-
-}
-
-
-canvas.addEventListener('pointerdown',e=>{
-
-  if(!original)return;
-
-  drawing=true;
-
-  canvas.setPointerCapture(e.pointerId);
-
-  const p=point(e);
-
-  startX=p.x;
-  startY=p.y;
-
-  selection={
-    x:startX,
-    y:startY,
-    w:0,
-    h:0
-  };
-
-  showBox();
-
-});
-
-
-canvas.addEventListener('pointermove',e=>{
-
-  if(!drawing)return;
-
-  const p=point(e);
-
-  selection={
-    x:Math.min(startX,p.x),
-    y:Math.min(startY,p.y),
-    w:Math.abs(p.x-startX),
-    h:Math.abs(p.y-startY)
-  };
-
-  showBox();
-
-});
-
-
-canvas.addEventListener('pointerup',()=>{
-
-  drawing=false;
-
-  if(
-    selection.w<3||
-    selection.h<3
-  ){
-
-    selection=null;
-
-    box.style.display='none';
-
-    return;
-
-  }
-
-  status.textContent=
-    'Area selected. Click Remove White Text.';
-
-});
-
-
-function clamp(v){
-
-  return v<0?0:v>255?255:v
-
-}
-
-
-removeBtn.onclick=()=>{
-
-  if(
-    !selection||
-    selection.w<3||
-    selection.h<3
-  )return;
-
-
-  const x=
-    Math.max(
-      0,
-      Math.floor(selection.x)
-    );
-
-  const y=
-    Math.max(
-      0,
-      Math.floor(selection.y)
-    );
-
-  const w=
-    Math.min(
-      canvas.width-x,
-      Math.ceil(selection.w)
-    );
-
-  const h=
-    Math.min(
-      canvas.height-y,
-      Math.ceil(selection.h)
-    );
-
-
-  if(w<3||h<3)return;
-
-
-  status.textContent=
-    'Removing white text completely…';
-
-
-  const d=
-    ctx.getImageData(
-      x,
-      y,
-      w,
-      h
-    );
-
-  let pixels=
-    new Uint8ClampedArray(d.data);
-
-
-  const isWhite=(arr,i)=>{
-
-    const r=arr[i];
-    const g=arr[i+1];
-    const b=arr[i+2];
-
-    const mx=
-      Math.max(r,g,b);
-
-    const mn=
-      Math.min(r,g,b);
-
-    return(
-      mx>=135 &&
-      (mx-mn)<=82 &&
-      r+g+b>=420
-    );
-
-  };
-
-
-  const mask=
-    new Uint8Array(w*h);
-
-
-  for(let yy=0;yy<h;yy++){
-
-    for(let xx=0;xx<w;xx++){
-
-      const i=
-        (yy*w+xx)*4;
-
-      if(
-        isWhite(
-          pixels,
-          i
-        )
-      ){
-
-        mask[
-          yy*w+xx
-        ]=1;
-
-      }
-
-    }
-
-  }
-
-
-  for(let pass=0;pass<2;pass++){
-
-    const old=mask.slice();
-
-    for(let yy=0;yy<h;yy++){
-
-      for(let xx=0;xx<w;xx++){
-
-        if(
-          old[yy*w+xx]
-        )continue;
-
-        let hit=false;
-
-        for(
-          let dy=-1;
-          dy<=1&&!hit;
-          dy++
-        ){
-
-          for(
-            let dx=-1;
-            dx<=1;
-            dx++
-          ){
-
-            const nx=xx+dx;
-            const ny=yy+dy;
-
-            if(
-              nx>=0&&
-              nx<w&&
-              ny>=0&&
-              ny<h&&
-              old[ny*w+nx]
-            ){
-
-              hit=true;
-              break;
-
-            }
-
-          }
-
-        }
-
-        if(hit)
-          mask[yy*w+xx]=1;
-
-      }
-
-    }
-
-  }
-
-
-  for(let pass=0;pass<4;pass++){
-
-    const old=pixels.slice();
-
-    for(let yy=0;yy<h;yy++){
-
-      for(let xx=0;xx<w;xx++){
-
-        if(
-          !mask[yy*w+xx]
-        )continue;
-
-        const samples=[];
-
-        const maxR=
-          Math.min(
-            32,
-            Math.max(w,h)
-          );
-
-
-        for(let s=1;s<=maxR;s++){
-
-          let found=false;
-
-          if(
-            xx-s>=0 &&
-            !mask[yy*w+xx-s]
-          ){
-
-            samples.push(
-              (yy*w+xx-s)*4
-            );
-
-            found=true;
-
-          }
-
-
-          if(
-            xx+s<w &&
-            !mask[yy*w+xx+s]
-          ){
-
-            samples.push(
-              (yy*w+xx+s)*4
-            );
-
-            found=true;
-
-          }
-
-          if(found)break;
-
-        }
-
-
-        for(let s=1;s<=maxR;s++){
-
-          let found=false;
-
-          if(
-            yy-s>=0 &&
-            !mask[(yy-s)*w+xx]
-          ){
-
-            samples.push(
-              ((yy-s)*w+xx)*4
-            );
-
-            found=true;
-
-          }
-
-
-          if(
-            yy+s<h &&
-            !mask[(yy+s)*w+xx]
-          ){
-
-            samples.push(
-              ((yy+s)*w+xx)*4
-            );
-
-            found=true;
-
-          }
-
-          if(found)break;
-
-        }
-
-
-        for(
-          let s=1;
-          s<=Math.min(16,maxR);
-          s++
-        ){
-
-          const coords=[
-
-            [xx-s,yy-s],
-            [xx+s,yy-s],
-            [xx-s,yy+s],
-            [xx+s,yy+s]
-
-          ];
-
-          let found=false;
-
-          for(
-            const [nx,ny]
-            of coords
-          ){
-
-            if(
-              nx>=0&&
-              nx<w&&
-              ny>=0&&
-              ny<h&&
-              !mask[ny*w+nx]
-            ){
-
-              samples.push(
-                (ny*w+nx)*4
-              );
-
-              found=true;
-
-            }
-
-          }
-
-          if(
-            found&&
-            samples.length>=4
-          )break;
-
-        }
-
-
-        if(samples.length){
-
-          let r=0;
-          let g=0;
-          let b=0;
-          let n=0;
-
-          for(
-            const j
-            of samples
-          ){
-
-            r+=old[j];
-            g+=old[j+1];
-            b+=old[j+2];
-            n++;
-
-          }
-
-          const i=
-            (yy*w+xx)*4;
-
-          pixels[i]=
-            Math.round(r/n);
-
-          pixels[i+1]=
-            Math.round(g/n);
-
-          pixels[i+2]=
-            Math.round(b/n);
-
-          pixels[i+3]=
-            old[i+3];
-
-        }
-
-      }
-
-    }
-
-  }
-
-
-  for(let yy=0;yy<h;yy++){
-
-    for(let xx=0;xx<w;xx++){
-
-      if(
-        !mask[yy*w+xx]
-      )continue;
-
-      const i=
-        (yy*w+xx)*4;
-
-      const mx=
-        Math.max(
-          pixels[i],
-          pixels[i+1],
-          pixels[i+2]
-        );
-
-      const mn=
-        Math.min(
-          pixels[i],
-          pixels[i+1],
-          pixels[i+2]
-        );
-
-
-      if(
-        mx>=190 &&
-        mx-mn<=90
-      ){
-
-        let copied=false;
-
-        for(
-          let s=1;
-          s<=20&&!copied;
-          s++
-        ){
-
-          const candidates=[
-
-            [xx-s,yy],
-            [xx+s,yy],
-            [xx,yy-s],
-            [xx,yy+s]
-
-          ];
-
-          for(
-            const [nx,ny]
-            of candidates
-          ){
-
-            if(
-              nx>=0&&
-              nx<w&&
-              ny>=0&&
-              ny<h&&
-              !mask[ny*w+nx]
-            ){
-
-              const j=
-                (ny*w+nx)*4;
-
-              pixels[i]=
-                pixels[j];
-
-              pixels[i+1]=
-                pixels[j+1];
-
-              pixels[i+2]=
-                pixels[j+2];
-
-              copied=true;
-
-              break;
-
-            }
-
-          }
-
-        }
-
-      }
-
-    }
-
-  }
-
-
-  d.data.set(pixels);
-
-  ctx.putImageData(
-    d,
-    x,
-    y
-  );
-
-  undoBtn.disabled=false;
-
-  box.style.display='none';
-
-  selection=null;
-
-  status.textContent=
-    'Done — white pixels/text completely removed.';
-
-};
-
-
-undoBtn.onclick=()=>{
-
-  if(!original)return;
-
-  ctx.putImageData(
-    original,
-    0,
-    0
-  );
-
-  selection=null;
-
-  box.style.display='none';
-
-  undoBtn.disabled=true;
-
-  status.textContent=
-    'Undone. Select the text area again.';
-
-};
-
-
-downloadBtn.onclick=()=>{
-
-  if(!canvas.width)return;
-
-  canvas.toBlob(blob=>{
-
-    const a=
-      document.createElement('a');
-
-    a.href=
-      URL.createObjectURL(blob);
-
-    a.download=
-      'cleaned-image.png';
-
-    a.click();
-
-    setTimeout(
-      ()=>URL.revokeObjectURL(a.href),
-      1000
-    );
-
-  },'image/png');
-
-};
-
-</script>
-
-
-<!-- =========================================================
-     LOCATION PREVIEW
-========================================================= -->
-
-<section
-id="geoPage"
-style="
-display:none;
-font-family:Arial,Helvetica,sans-serif;
-background:#0b1015;
-color:#eef2f7;
-min-height:calc(100vh - 70px);
-padding:0 !important;
-margin:0 !important;
-">
-
-  <div
-  style="
-  display:grid;
-  grid-template-columns:360px minmax(0,1fr);
-  min-height:calc(100vh - 90px);
-  margin:0 !important;
-  padding:0 !important;
-  ">
-
-
-    <!-- LEFT CONTROL PANEL -->
-
-    <aside
-    style="
-    padding:20px;
-    background:#111820;
-    border-right:1px solid #26313b;
-    overflow:auto;
-    ">
-
-      <h2
-      style="
-      margin:0 0 5px;
-      font-size:21px
-      ">
-        📍 Location Preview
-      </h2>
-
-      <p
-      style="
-      margin:0 0 18px;
-      color:#8e9aa6;
-      font-size:12px;
-      line-height:1.45
-      ">
-        The cleaned image is carried directly from Step 1.
-        State and district are used only to locate the map;
-        only the address you type is printed on the image.
-      </p>
-
-
-      <div
-      style="
-      background:#241a12;
-      border:1px solid #5a3d1a;
-      color:#f0c27b;
-      border-radius:8px;
-      padding:10px 12px;
-      font-size:11.5px;
-      line-height:1.45;
-      margin-bottom:15px
-      ">
-        The location overlay is generated from the address you enter.
-        It is not verified camera GPS metadata.
-      </div>
-
-
-      <div
-      style="
-      font-size:13px;
-      font-weight:700;
-      margin-bottom:9px
-      ">
-        1. Location
-      </div>
-
-
-      <div style="margin-bottom:10px">
-
-        <label
-        style="
-        display:block;
-        color:#aeb8c2;
-        font-size:11px;
-        margin-bottom:6px
-        ">
-          State
-        </label>
-
-        <select
-        id="gState"
-        style="
-        width:100%;
-        background:#151e27;
-        border:1px solid #334250;
-        border-radius:8px;
-        padding:10px;
-        color:#eef2f7
-        ">
-        </select>
-
-      </div>
-
-
-      <div style="margin-bottom:10px">
-
-        <label
-        style="
-        display:block;
-        color:#aeb8c2;
-        font-size:11px;
-        margin-bottom:6px
-        ">
-          District / Town / Subdivision
-        </label>
-
-        <input
-        id="gPlace"
-        placeholder="Example: Beerwah"
-        style="
-        width:100%;
-        background:#151e27;
-        border:1px solid #334250;
-        border-radius:8px;
-        padding:10px;
-        color:#eef2f7
-        ">
-
-      </div>
-
-
-      <div style="margin-bottom:10px">
-
-        <label
-        style="
-        display:block;
-        color:#aeb8c2;
-        font-size:11px;
-        margin-bottom:6px
-        ">
-          Address / Location — printed on image
-        </label>
-
-        <textarea
-        id="gAddress"
-        placeholder="Example: SBI Complex, Beerwah, 193411, Jammu and Kashmir, India"
-        style="
-        width:100%;
-        min-height:90px;
-        background:#151e27;
-        border:1px solid #334250;
-        border-radius:8px;
-        padding:10px;
-        color:#eef2f7;
-        resize:vertical
-        "></textarea>
-
-      </div>
-
-
-      <button
-      id="gFind"
-      style="
-      width:100%;
-      margin-bottom:8px
-      ">
-        📍 Find Location
-      </button>
-
-
-      <div
-      id="gStatus"
-      style="
-      font-size:11px;
-      color:#8e9aa6;
-      line-height:1.4;
-      margin-bottom:8px
-      ">
-        Select a state and enter a district,
-        town or subdivision.
-      </div>
-
-
-      <div
-      style="
-      background:#151e27;
-      border:1px solid #263441;
-      border-radius:8px;
-      padding:9px;
-      margin-bottom:8px
-      ">
-
-        <div
-        style="
-        color:#8e9aa6;
-        font-size:10px;
-        margin-bottom:4px
-        ">
-          Latitude / Longitude
-        </div>
-
-        <div
-        id="gCoords"
-        style="font-size:12px">
-          —
-        </div>
-
-      </div>
-
-
-      <div
-      style="
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:8px
-      ">
-
-        <div style="margin-bottom:10px">
-
-          <label
-          style="
-          display:block;
-          color:#aeb8c2;
-          font-size:11px;
-          margin-bottom:6px
-          ">
-            Date
-          </label>
-
-          <input
-          id="gDate"
-          type="date"
-          style="
-          width:100%;
-          background:#151e27;
-          border:1px solid #334250;
-          border-radius:8px;
-          padding:10px;
-          color:#eef2f7
-          ">
-
-        </div>
-
-
-        <div style="margin-bottom:10px">
-
-          <label
-          style="
-          display:block;
-          color:#aeb8c2;
-          font-size:11px;
-          margin-bottom:6px
-          ">
-            Time
-          </label>
-
-          <input
-          id="gTime"
-          type="time"
-          style="
-          width:100%;
-          background:#151e27;
-          border:1px solid #334250;
-          border-radius:8px;
-          padding:10px;
-          color:#eef2f7
-          ">
-
-        </div>
-
-      </div>
-
-
-      <div
-      style="
-      font-size:13px;
-      font-weight:700;
-      margin:16px 0 9px
-      ">
-        2. Reference-style appearance
-      </div>
-
-
-      <div class="gSlider">
-
-        <div>
-          <span>Text opacity</span>
-          <b id="gTextOVal">82%</b>
-        </div>
-
-        <input
-        id="gTextO"
-        type="range"
-        min="40"
-        max="100"
-        value="82">
-
-      </div>
-
-
-      <div class="gSlider">
-
-        <div>
-          <span>Map opacity</span>
-          <b id="gMapOVal">100%</b>
-        </div>
-
-        <input
-        id="gMapO"
-        type="range"
-        min="50"
-        max="100"
-        value="100">
-
-      </div>
-
-
-      <div class="gSlider">
-
-        <div>
-          <span>Stamp height</span>
-          <b id="gHeightVal">25%</b>
-        </div>
-
-        <input
-        id="gHeight"
-        type="range"
-        min="16"
-        max="34"
-        value="25">
-
-      </div>
-
-
-      <div class="gSlider">
-
-        <div>
-          <span>Map width</span>
-          <b id="gMapWVal">29%</b>
-        </div>
-
-        <input
-        id="gMapW"
-        type="range"
-        min="20"
-        max="40"
-        value="29">
-
-      </div>
-
-
-      <div class="gSlider">
-
-        <div>
-          <span>Title size</span>
-          <b id="gTitleVal">100%</b>
-        </div>
-
-        <input
-        id="gTitle"
-        type="range"
-        min="75"
-        max="150"
-        value="100">
-
-      </div>
-
-
-      <div class="gSlider">
-
-        <div>
-          <span>Details size</span>
-          <b id="gDetailsVal">100%</b>
-        </div>
-
-        <input
-        id="gDetails"
-        type="range"
-        min="75"
-        max="145"
-        value="100">
-
-      </div>
-
-
-      <div
-      style="
-      display:flex;
-      gap:8px;
-      margin-top:12px
-      ">
-
-        <button
-        id="gBack"
-        style="
-        background:#202a34;
-        flex:1
-        ">
-          ← Back
-        </button>
-
-        <button
-        id="gDownload"
-        style="flex:1"
-        disabled>
-          ⬇ Download
-        </button>
-
-      </div>
-
-    </aside>
-
-
-    <!-- RIGHT PREVIEW -->
-
-    <main
-    style="
-    padding:20px;
-    display:flex;
-    flex-direction:column;
-    min-width:0;
-    margin:0
-    ">
-
-      <div
-      style="
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      margin-bottom:10px
-      ">
-
-        <h3
-        style="
-        margin:0;
-        font-size:15px
-        ">
-          Preview
-        </h3>
-
-        <span
-        style="
-        color:#84919d;
-        font-size:11px
-        ">
-          Bottom-left map • address only • no extra bottom margin
-        </span>
-
-      </div>
-
-
-      <div
-      style="
-      background:#05080b;
-      border:1px solid #26313b;
-      border-radius:10px;
-      min-height:500px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      overflow:auto;
-      padding:0
-      ">
-
-        <canvas id="gCanvas"></canvas>
-
-      </div>
-
-
-      <div
-      style="
-      font-size:10px;
-      color:#84919d;
-      text-align:center;
-      margin-top:8px
-      ">
-        Map data: OpenFreeMap / OpenMapTiles / OpenStreetMap contributors.
-      </div>
-
-    </main>
-
+<section id="editSection">
+<div class="grid">
+<aside class="card">
+<h2>Video</h2>
+<label>Choose MP4 / WebM / MOV</label>
+<input id="videoFile" type="file" accept="video/*">
+
+<div class="queue"><span id="fileName">No video selected</span><span id="durationBadge">0.0 s</span></div>
+
+<div class="section">
+<h3>Trim</h3>
+<div class="row">
+<div><label>Start (seconds)</label><input id="trimStart" type="number" min="0" step="0.1" value="0"></div>
+<div><label>End (seconds)</label><input id="trimEnd" type="number" min="0" step="0.1" value="0"></div>
+</div>
+<div class="row3"><button class="secondary quickTrim" data-sec="10">10.0s</button><button class="secondary quickTrim" data-sec="20">20.0s</button><button class="secondary quickTrim" data-sec="30">30.0s</button></div>
+<div class="small">10.0 = 10 seconds, 20.0 = 20 seconds. You can use decimals such as 10.5. You can also drag the yellow handles in the gallery timeline.</div>
+<input id="trimRange" type="range" min="0" max="0" step="0.1" value="0">
+<div class="row">
+<button id="setStart" class="secondary">Set start from current</button>
+<button id="setEnd" class="secondary">Set end from current</button>
+</div>
+</div>
+
+<div class="section">
+<h3>Crop</h3>
+<button id="cropMode" class="secondary">Crop: OFF</button>
+<button id="applyCrop" disabled>Apply Crop</button>
+<button id="resetCrop" class="secondary">Reset Crop</button>
+<div class="small">Turn Crop ON, then drag a rectangular box over the part you want to KEEP, like a gallery crop tool.</div>
+</div>
+
+<div class="section">
+<h3>White Text Removal</h3>
+<button id="removeMode" class="secondary">Select White Text Area</button>
+<button id="removeWhite" disabled>Remove White Text</button>
+<button id="clearWhite" class="secondary">Clear Selection</button>
+<label>White detection sensitivity <b id="whiteVal">165</b></label>
+<input id="whiteThreshold" type="range" min="110" max="245" value="165">
+<label>Removal strength <b id="removeOpacityVal">100%</b></label>
+<input id="removeOpacity" type="range" min="50" max="100" value="100">
+<label>Strong inpaint passes <b id="inpaintPassVal">5</b></label>
+<input id="inpaintPasses" type="range" min="1" max="8" value="5">
+<div class="small">Strong mode detects bright/white text including anti-aliased edges, expands the mask, and repeatedly fills the selected text area from surrounding pixels on every video frame.</div>
+</div>
+
+<div class="section">
+<h3>Export</h3>
+<button id="goGeo" disabled>Continue to GeoTag →</button>
+<button id="downloadVideo" disabled>Download Video</button>
+<div id="exportStatus" class="status">Load a video to begin.</div>
+</div>
+</aside>
+
+<main class="card">
+<h2>Video Preview</h2>
+<div class="stage" id="stage">
+<canvas id="viewCanvas"></canvas>
+<div id="selection"></div>
+</div>
+<div class="row">
+<button id="playBtn" disabled>▶ Play</button>
+<button id="pauseBtn" class="secondary" disabled>⏸ Pause</button>
+<button id="frameBack" class="secondary" disabled>◀ Frame</button>
+<button id="frameNext" class="secondary" disabled>Frame ▶</button>
+</div>
+<div class="status" id="editStatus">Select a video.</div>
+<div class="galleryTimeline">
+  <div class="timelineHead"><b>VIDEO TIMELINE <span class="badge">Like Gallery</span></b><span>Drag the yellow handles • tap anywhere to move</span></div>
+  <div id="timelineWrap">
+    <button id="timelinePrev" class="timelineArrow left" title="Previous section">‹</button>
+    <canvas id="timelineCanvas" width="1400" height="132"></canvas>
+    <button id="timelineNext" class="timelineArrow right" title="Next section">›</button>
   </div>
-
+  <div class="timelineTimes"><span id="timelineStartLabel">00:00</span><span id="timelineCurrentLabel">00:00</span><span id="timelineEndLabel">00:00</span></div>
+  <div class="timelineHint">Yellow area = selected video • Yellow handles = trim • Blue line = current position</div>
+</div>
+</main>
+</div>
 </section>
 
+<section id="geoSection">
+<div class="grid">
+<aside class="card">
+<h2>GeoTag</h2>
+<div id="geoCounter" class="badge">Video not ready</div>
 
-<div
-id="gMapEngine"
-style="
-position:fixed;
-left:-10000px;
-top:-10000px;
-width:1100px;
-height:700px;
-visibility:hidden
-">
+<div class="section">
+<h3>Location</h3>
+<label>State</label>
+<input id="gState" type="text" value="Jammu and Kashmir">
+<label>District / Town</label>
+<input id="gPlace" type="text" value="Beerwah">
+<label>Address / Location — printed on video</label>
+<textarea id="gAddress">Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India</textarea>
+<button id="findLocation">📍 Find Location</button>
+<div id="gCoords" class="status">Enter a location and press Find Location.</div>
+<canvas id="mapPreview"></canvas>
 </div>
 
+<div class="section">
+<h3>Date & Moving Time</h3>
+<div class="row">
+<div><label>Date</label><input id="gDate" type="date"></div>
+<div><label>Start Time</label><input id="gTime" type="time" step="1"></div>
+</div>
+<div class="small">During export, the displayed time advances with the video: 00:01 → 00:02 → 00:03, etc.</div>
+</div>
 
-<link
-rel="stylesheet"
-href="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.css">
+<div class="section">
+<h3>Overlay</h3>
+<div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
+<div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
+<div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
+<div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="10" max="60" value="30">
+<div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
+<div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
+</div>
 
-<script
-src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js">
-</script>
+<div class="section">
+<h3>Blue Camera Logo Position</h3>
+<div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
+<div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
+<div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
+</div>
 
+<div class="section">
+<button id="backEdit" class="secondary">← Back</button>
+<button id="exportGeo">⬇ Render GeoTagged Video</button>
+<button id="downloadGeo" disabled>⬇ Download GeoTagged Video</button>
+</div>
+<div id="geoStatus" class="status">Find a location, then export.</div>
+</aside>
 
-<style>
+<main class="card">
+<h2>GeoTag Preview</h2>
+<div class="stage"><canvas id="geoCanvas"></canvas></div>
+<div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
+</main>
+</div>
+</section>
+</div>
 
-#gMapEngine{
-  position:fixed;
-  left:-10000px;
-  top:-10000px;
-  width:1100px;
-  height:700px;
-  visibility:hidden
-}
-
-.gSlider{
-  background:#151e27;
-  border:1px solid #263441;
-  border-radius:9px;
-  padding:10px;
-  margin-bottom:8px;
-  color:#eef2f7;
-  font-size:11px
-}
-
-.gSlider>div{
-  display:flex;
-  justify-content:space-between;
-  margin-bottom:7px
-}
-
-.gSlider b{
-  color:#63a8ff
-}
-
-.gSlider input{
-  width:100%;
-  accent-color:#2387ff
-}
-
-
-/* =========================================================
-   ONLY GEOTAG POSITION FIXES
-   ========================================================= */
-
-/* No outer left/right/top margin */
-#geoPage{
-  width:100%;
-  margin:0 !important;
-  padding:0 !important;
-}
-
-/* Full-width GeoTag workspace */
-#geoPage>div{
-  width:100%;
-  margin:0 !important;
-  padding:0 !important;
-}
-
-/* Keep preview itself clean */
-#geoPage main{
-  margin:0 !important;
-}
-
-/* Canvas must not create an extra gap */
-#gCanvas{
-  display:block;
-  margin:0 auto !important;
-}
-
-/* No padding around the GeoTag preview canvas */
-#geoPage main>div:nth-of-type(2){
-  padding:0 !important;
-}
-
-
-/* Mobile */
-@media(max-width:850px){
-
-  #geoPage>div{
-    grid-template-columns:1fr!important;
-  }
-
-  #geoPage main{
-    padding:12px !important;
-  }
-
-}
-
-</style>
-
+<video id="video" playsinline preload="metadata" style="display:none"></video>
+<canvas id="workCanvas" style="display:none"></canvas>
+<canvas id="logoCanvas" width="200" height="120"></canvas>
 
 <script>
+const $=id=>document.getElementById(id);
+const video=$('video'), view=$('viewCanvas'), vctx=view.getContext('2d',{willReadFrequently:true});
+const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true});
+const geo=$('geoCanvas'), gctx=geo.getContext('2d');
+const stage=$('stage'), selBox=$('selection');
 
-/* =========================================================
-   COMBINED ONE-FILE GEO STAGE
-========================================================= */
+let file=null, videoURL=null, duration=0, playing=false;
+let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
+let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
+let outputW=0, outputH=0;
+let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
-const g=id=>document.getElementById(id);
-
-const gCanvas=
-  g('gCanvas');
-
-const gCtx=
-  gCanvas.getContext('2d');
-
-let cleanedBlob=null;
-let gLat=null;
-let gLon=null;
-let gMap=null;
-let gMapLoaded=false;
-let gDrawToken=0;
-
-
-const GSTATE={
-
-  textOpacity:82,
-  mapOpacity:100,
-  height:25,
-  mapWidth:29,
-  titleSize:100,
-  detailsSize:100
-
+const state={
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,
+ logoX:90,logoY:50,logoSize:70
 };
 
+function fmt(n){return Number(n||0).toFixed(1)}
+function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
+function setToday(){
+ const d=new Date();
+ $('gDate').value=d.toISOString().slice(0,10);
+ $('gTime').value=[d.getHours(),d.getMinutes(),d.getSeconds()].map((x,i)=>String(x).padStart(i===0?2:2,'0')).join(':');
+}
+setToday();
 
-const stateNames=[
-  'Andhra Pradesh',
-  'Arunachal Pradesh',
-  'Assam',
-  'Bihar',
-  'Chhattisgarh',
-  'Goa',
-  'Gujarat',
-  'Haryana',
-  'Himachal Pradesh',
-  'Jharkhand',
-  'Karnataka',
-  'Kerala',
-  'Madhya Pradesh',
-  'Maharashtra',
-  'Manipur',
-  'Meghalaya',
-  'Mizoram',
-  'Nagaland',
-  'Odisha',
-  'Punjab',
-  'Rajasthan',
-  'Sikkim',
-  'Tamil Nadu',
-  'Telangana',
-  'Tripura',
-  'Uttar Pradesh',
-  'Uttarakhand',
-  'West Bengal',
-  'Delhi',
-  'Jammu and Kashmir',
-  'Ladakh',
-  'Puducherry',
-  'Chandigarh',
-  'Andaman and Nicobar Islands',
-  'Dadra and Nagar Haveli and Daman and Diu',
-  'Lakshadweep'
-];
-
-
-stateNames.forEach(s=>{
-
-  const o=
-    document.createElement('option');
-
-  o.value=s;
-  o.textContent=s;
-
-  g('gState').appendChild(o);
-
+function setStatus(t){$('editStatus').textContent=t}
+function resizePreview(){
+ if(!video.videoWidth)return;
+ const max=1100, s=Math.min(1,max/video.videoWidth);
+ view.width=Math.max(1,Math.round(video.videoWidth*s));
+ view.height=Math.max(1,Math.round(video.videoHeight*s));
+ drawPreview();
+}
+function sourceRect(){
+ const W=video.videoWidth,H=video.videoHeight;
+ if(!crop)return {x:0,y:0,w:W,h:H};
+ return crop;
+}
+function drawBase(ctx2,W,H){
+ const r=sourceRect();
+ ctx2.clearRect(0,0,W,H);
+ ctx2.drawImage(video,r.x,r.y,r.w,r.h,0,0,W,H);
+}
+function isWhite(data,i,t){
+ const r=data[i],g=data[i+1],b=data[i+2];
+ const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+ const neutral=(mx-mn)<=105;
+ const brightness=(r+g+b)/3;
+ return neutral && (mx>=t || brightness>=t);
+}
+function removeWhiteFromCanvas(ctx2,W,H,rect){
+ if(!rect)return;
+ const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
+ const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
+ if(x1<=x0||y1<=y0)return;
+ const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
+ const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
+ const W2=x1-x0,H2=y1-y0,N=W2*H2;
+ const mask=new Uint8Array(N);
+ // Detect white text plus anti-aliased gray/white edge pixels.
+ for(let y=0;y<H2;y++){
+   for(let x=0;x<W2;x++){
+     const p=y*W2+x,i=p*4;
+     if(isWhite(d,i,t)) mask[p]=1;
+   }
+ }
+ // Expand the mask by a few pixels so faint anti-aliased text edges are removed too.
+ const expanded=new Uint8Array(mask);
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x; if(mask[p]){
+     for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+       const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
+     }
+   }
+ }
+ let cur=new Uint8ClampedArray(d);
+ const passes=Math.max(1,+$('inpaintPasses').value||5);
+ // Iterative boundary inpainting: each pass grows real surrounding pixels into the mask.
+ for(let pass=0;pass<passes;pass++){
+   const next=new Uint8ClampedArray(cur);
+   let changed=false;
+   for(let y=0;y<H2;y++){
+     for(let x=0;x<W2;x++){
+       const p=y*W2+x; if(!expanded[p]) continue;
+       let sr=0,sg=0,sb=0,sw=0;
+       for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++){
+         if(dx===0&&dy===0)continue;
+         const xx=x+dx,yy=y+dy;
+         if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
+         const q=yy*W2+xx;
+         // Prefer pixels outside the original/expanded text mask; after each pass newly filled pixels can help.
+         if(expanded[q] && pass<passes-1) continue;
+         const dist=Math.sqrt(dx*dx+dy*dy);
+         const w=1/(dist+0.5);
+         const j=q*4; sr+=cur[j]*w;sg+=cur[j+1]*w;sb+=cur[j+2]*w;sw+=w;
+       }
+       if(sw){
+         const i=p*4,a=strength;
+         next[i]=cur[i]*(1-a)+(sr/sw)*a;
+         next[i+1]=cur[i+1]*(1-a)+(sg/sw)*a;
+         next[i+2]=cur[i+2]*(1-a)+(sb/sw)*a;
+         changed=true;
+       }
+     }
+   }
+   cur=next; if(!changed)break;
+ }
+ // Final smoothing/coverage pass over the detected mask, using a larger neighborhood for strong removal.
+ const out=new Uint8ClampedArray(cur);
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x;if(!expanded[p])continue;
+   let sr=0,sg=0,sb=0,sw=0;
+   for(let dy=-6;dy<=6;dy++) for(let dx=-6;dx<=6;dx++){
+     if(dx===0&&dy===0)continue;
+     const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
+     const q=yy*W2+xx;if(expanded[q])continue;
+     const dist=Math.sqrt(dx*dx+dy*dy),w=1/(dist+1);
+     const j=q*4;sr+=cur[j]*w;sg+=cur[j+1]*w;sb+=cur[j+2]*w;sw+=w;
+   }
+   if(sw){const i=p*4;out[i]=cur[i]*(1-strength)+(sr/sw)*strength;out[i+1]=cur[i+1]*(1-strength)+(sg/sw)*strength;out[i+2]=cur[i+2]*(1-strength)+(sb/sw)*strength;}
+ }
+ ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
+}
+function drawPreview(){
+ if(!video.videoWidth)return;
+ const r=sourceRect();
+ const s=Math.min(1,1100/r.w);
+ view.width=Math.round(r.w*s);view.height=Math.round(r.h*s);
+ vctx.clearRect(0,0,view.width,view.height);
+ vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
+ if(whiteRect){
+   const wr=whiteRect;
+   const sx2=wr.x/r.w,sy2=wr.y/r.h,sw=wr.w/r.w,sh=wr.h/r.h;
+   const temp=document.createElement('canvas');temp.width=view.width;temp.height=view.height;
+   const tc=temp.getContext('2d',{willReadFrequently:true});
+   tc.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
+   removeWhiteFromCanvas(tc,view.width,view.height,{x:sx2*view.width,y:sy2*view.height,w:sw*view.width,h:sh*view.height});
+   vctx.clearRect(0,0,view.width,view.height);vctx.drawImage(temp,0,0);
+ }
+}
+function updateSelectionBox(){
+ if(!selecting && !whiteRect && !crop)return;
+ const r=sourceRect();
+ const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
+ let q=whiteRect||crop;
+ if(!q){selBox.style.display='none';return}
+ const x=C.left-R.left+q.x/r.w*C.width;
+ const y=C.top-R.top+q.y/r.h*C.height;
+ const w=q.w/r.w*C.width,h=q.h/r.h*C.height;
+ selBox.style.left=x+'px';selBox.style.top=y+'px';selBox.style.width=w+'px';selBox.style.height=h+'px';selBox.style.display='block';
+}
+function pointerPos(e){
+ const R=view.getBoundingClientRect(),r=sourceRect();
+ return {x:clamp((e.clientX-R.left)/R.width*r.w,0,r.w),y:clamp((e.clientY-R.top)/R.height*r.h,0,r.h)}
+}
+view.addEventListener('pointerdown',e=>{
+ if(!cropMode&&!removeMode)return;
+ selecting=true;view.setPointerCapture(e.pointerId);
+ const p=pointerPos(e);sx=p.x;sy=p.y;selBox.style.display='block';
+});
+view.addEventListener('pointermove',e=>{
+ if(!selecting)return;
+ const p=pointerPos(e);
+ const q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
+ const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
+ selBox.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
+ selBox.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
+ selBox.style.width=(q.w/r.w*C.width)+'px';selBox.style.height=(q.h/r.h*C.height)+'px';
+});
+view.addEventListener('pointerup',e=>{
+ if(!selecting)return;selecting=false;
+ const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
+ if(q.w<5||q.h<5){return}
+ if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
+ if(removeMode){whiteRect={...q};$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
+ updateSelectionBox();
 });
 
-
-function makeCleanBlob(){
-
-  return new Promise(
-    (resolve,reject)=>{
-
-      if(
-        !canvas.width||
-        !canvas.height
-      ){
-
-        reject(
-          new Error(
-            'Source canvas is empty.'
-          )
-        );
-
-        return;
-
-      }
-
-      canvas.toBlob(
-
-        blob=>
-          blob
-          ?resolve(blob)
-          :reject(
-            new Error(
-              'Could not create image blob.'
-            )
-          ),
-
-        'image/jpeg',
-        0.95
-
-      );
-
-    }
-  );
-
+function timelineFmt(sec){
+  sec=Math.max(0,Number(sec)||0); const m=Math.floor(sec/60), s=Math.floor(sec%60);
+  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
 }
+function drawTimeline(){
+  const c=$('timelineCanvas'),ctx=c.getContext('2d');
+  const W=c.width,H=c.height; ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#05090d';ctx.fillRect(0,0,W,H);
+  const top=27, thumbH=76, frames=timelineFrames;
 
-
-function blobImage(blob){
-
-  return new Promise(
-    (resolve,reject)=>{
-
-      const url=
-        URL.createObjectURL(blob);
-
-      const img=
-        new Image();
-
-
-      img.onload=()=>{
-
-        URL.revokeObjectURL(url);
-
-        resolve(img);
-
-      };
-
-
-      img.onerror=()=>{
-
-        URL.revokeObjectURL(url);
-
-        const r=
-          new FileReader();
-
-
-        r.onload=()=>{
-
-          const x=
-            new Image();
-
-          x.onload=()=>resolve(x);
-
-          x.onerror=reject;
-
-          x.src=r.result;
-
-        };
-
-
-        r.onerror=reject;
-
-        r.readAsDataURL(blob);
-
-      };
-
-
-      img.src=url;
-
-    }
-  );
-
-}
-
-
-function setGeoPage(show){
-
-  document.querySelector('.wrap').style.display=
-    show?'none':'';
-
-  document.getElementById('stepBar').style.display='';
-
-  g('geoPage').style.display=
-    show?'block':'none';
-
-
-  g('stepOne').style.background=
-    show?'#e5e7eb':'#1769e0';
-
-  g('stepOne').style.color=
-    show?'#555':'#fff';
-
-  g('stepTwo').style.background=
-    show?'#1769e0':'#e5e7eb';
-
-  g('stepTwo').style.color=
-    show?'#fff':'#555';
-
-}
-
-
-function initGeoMap(){
-
-  if(!window.maplibregl){
-
-    console.warn(
-      'MapLibre is unavailable; continuing without interactive map rendering.'
-    );
-
-    return;
-
+  // Gallery-style thumbnail strip.
+  if(frames.length){
+    const fw=W/frames.length;
+    frames.forEach((im,i)=>{
+      const x=i*fw;
+      ctx.drawImage(im,x,top,Math.ceil(fw)+1,thumbH);
+      // Small separator between thumbnails.
+      ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(x+fw-1,top,1,thumbH);
+    });
+  }else{
+    ctx.fillStyle='#18232d';ctx.fillRect(0,top,W,thumbH);
+    ctx.fillStyle='#72808c';ctx.font='14px Arial';ctx.fillText('Load a video to create the gallery timeline',20,top+40);
   }
-
-
-  try{
-
-    gMap=
-      new maplibregl.Map({
-
-        container:'gMapEngine',
-
-        style:
-          'https://tiles.openfreemap.org/styles/liberty',
-
-        center:[
-          77.4126,
-          23.2599
-        ],
-
-        zoom:5,
-
-        interactive:false,
-
-        attributionControl:false,
-
-        preserveDrawingBuffer:true
-
-      });
-
-
-    gMap.once(
-      'load',
-      ()=>{
-        gMapLoaded=true;
-      }
-    );
-
-
-  }catch(e){
-
-    console.warn(
-      'Map initialization failed:',
-      e
-    );
-
-    gMap=null;
-
-    gMapLoaded=false;
-
-  }
-
-}
-
-
-initGeoMap();
-
-
-function wrapGeo(
-  text,
-  maxWidth,
-  font,
-  maxLines
-){
-
-  gCtx.font=font;
-
-  const words=
-    String(text||'')
-      .split(/\s+/);
-
-  const lines=[];
-
-  let line='';
-
-
-  for(
-    const word
-    of words
-  ){
-
-    const test=
-      line
-      ?line+' '+word
-      :word;
-
-
-    if(
-      gCtx.measureText(test).width>
-      maxWidth&&
-      line
-    ){
-
-      lines.push(line);
-
-      line=word;
-
-      if(
-        lines.length===maxLines
-      )break;
-
-    }else{
-
-      line=test;
-
-    }
-
-  }
-
-
-  if(
-    line&&
-    lines.length<maxLines
-  ){
-
-    lines.push(line);
-
-  }
-
-
-  return lines;
-
-}
-
-
-function fmtDate(v){
-
-  if(!v)return'Date';
-
-  const p=v.split('-');
-
-  return p.length===3
-    ?`${p[2]}/${p[1]}/${p[0]}`
-    :v;
-
-}
-
-
-function fmtTime(v){
-
-  if(!v)return'Time';
-
-  const [h,m]=
-    v.split(':')
-      .map(Number);
-
-  const ap=
-    h>=12?'PM':'AM';
-
-  const hh=
-    h%12||12;
-
-  return(
-    `${String(hh).padStart(2,'0')}:`+
-    `${String(m).padStart(2,'0')} ${ap}`
-  );
-
-}
-
-
-async function findGeo(){
-
-  const st=
-    g('gState')
-      .value
-      .trim();
-
-  const place=
-    g('gPlace')
-      .value
-      .trim();
-
-  const addr=
-    g('gAddress')
-      .value
-      .trim();
-
-
-  if(!st){
-
-    g('gStatus').textContent=
-      'Please select a state.';
-
-    return;
-
-  }
-
-
-  if(!place){
-
-    g('gStatus').textContent=
-      'Please enter a district, town or subdivision.';
-
-    return;
-
-  }
-
-
-  const queries=[
-
-    [
-      addr,
-      place,
-      st,
-      'India'
-    ]
-    .filter(Boolean)
-    .join(', '),
-
-    [
-      place,
-      st,
-      'India'
-    ]
-    .filter(Boolean)
-    .join(', ')
-
-  ];
-
-
-  g('gFind').disabled=true;
-
-  g('gFind').textContent=
-    '📍 Finding…';
-
-  g('gStatus').textContent=
-    'Searching…';
-
-
-  try{
-
-    let found=null;
-
-
-    for(
-      const q
-      of queries
-    ){
-
-      try{
-
-        const u=
-          'https://nominatim.openstreetmap.org/search?'+
-          new URLSearchParams({
-
-            q,
-
-            format:'jsonv2',
-
-            addressdetails:'1',
-
-            limit:'5',
-
-            countrycodes:'in',
-
-            'accept-language':'en'
-
-          });
-
-
-        const r=
-          await fetch(u);
-
-
-        if(!r.ok)continue;
-
-
-        const results=
-          await r.json();
-
-
-        if(!results.length)continue;
-
-
-        found=
-          results.find(
-            x=>
-              /city|town|village|suburb|locality|administrative|municipality/i
-              .test(x.type||'')
-          )
-          ||
-          results[0];
-
-
-        if(found)break;
-
-      }catch(e){
-
-        console.warn(e);
-
-      }
-
-    }
-
-
-    if(!found)
-      throw new Error('not found');
-
-
-    const la=
-      Number(found.lat);
-
-    const lo=
-      Number(found.lon);
-
-
-    if(
-      !Number.isFinite(la)||
-      !Number.isFinite(lo)
-    ){
-
-      throw new Error(
-        'bad coordinates'
-      );
-
-    }
-
-
-    gLat=la;
-    gLon=lo;
-
-
-    g('gCoords').textContent=
-      `Lat ${la.toFixed(6)}° Long ${lo.toFixed(6)}°`;
-
-
-    g('gStatus').textContent=
-      'Location found successfully.';
-
-
-    if(gMapLoaded){
-
-      gMap.jumpTo({
-
-        center:[
-          lo,
-          la
-        ],
-
-        zoom:14
-
-      });
-
-      gMap.triggerRepaint();
-
-    }
-
-
-    g('gDownload').disabled=
-      !cleanedBlob;
-
-
-    await drawGeo();
-
-
-  }catch(e){
-
-    gLat=null;
-    gLon=null;
-
-    g('gCoords').textContent='—';
-
-    g('gStatus').textContent=
-      'Location not found. Try the town/subdivision with the state and PIN code.';
-
-    g('gDownload').disabled=true;
-
-    await drawGeo();
-
-  }finally{
-
-    g('gFind').disabled=false;
-
-    g('gFind').textContent=
-      '📍 Find Location';
-
-  }
-
-}
-
-
-g('gFind').onclick=findGeo;
-
-
-[
-  'gAddress',
-  'gDate',
-  'gTime'
-]
-.forEach(id=>
-
-  g(id).addEventListener(
-    'input',
-    ()=>drawGeo()
-  )
-
-);
-
-
-[
-  [
-    'gTextO',
-    'textOpacity',
-    'gTextOVal'
-  ],
-
-  [
-    'gMapO',
-    'mapOpacity',
-    'gMapOVal'
-  ],
-
-  [
-    'gHeight',
-    'height',
-    'gHeightVal'
-  ],
-
-  [
-    'gMapW',
-    'mapWidth',
-    'gMapWVal'
-  ],
-
-  [
-    'gTitle',
-    'titleSize',
-    'gTitleVal'
-  ],
-
-  [
-    'gDetails',
-    'detailsSize',
-    'gDetailsVal'
-  ]
-
-]
-.forEach(
-  ([id,key,val])=>{
-
-    g(id).addEventListener(
-      'input',
-      ()=>{
-
-        GSTATE[key]=
-          Number(
-            g(id).value
-          );
-
-        g(val).textContent=
-          g(id).value+'%';
-
-        drawGeo();
-
-      }
-    );
-
-  }
-);
-
-
-/* =========================================================
-   MAP — IMPORTANT FIX
-   Map height is EXACTLY the GeoTag/stamp height.
-   No grey strip above the map.
-========================================================= */
-
-async function drawMapIntoCanvas(
-  x,
-  y,
-  w,
-  h,
-  token
-){
-
-  /*
-   * The map is drawn from the exact y position
-   * of the GeoTag and the exact height of the GeoTag.
-   *
-   * No extra top/bottom padding.
-   */
-
-  if(
-    !gMapLoaded||
-    !gMap||
-    gLat===null||
-    gLon===null
-  ){
-
-    /*
-     * Do not create a visible grey separator.
-     * The complete map rectangle is filled instead.
-     */
-
-    gCtx.fillStyle='#d9dedf';
-
-    gCtx.fillRect(
-      x,
-      y,
-      w,
-      h
-    );
-
-    return;
-
-  }
-
-
-  /*
-   * Resize the hidden map engine to the exact
-   * aspect ratio of the map area.
-   */
-
-  gMap.resize();
-
-
-  gMap.jumpTo({
-
-    center:[
-      gLon,
-      gLat
-    ],
-
-    zoom:14
-
+  if(!duration){return;}
+
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start,duration);
+  const cur=clamp(video.currentTime||0,0,duration);
+  const xS=start/duration*W,xE=end/duration*W,xC=cur/duration*W;
+
+  // Darken the portions outside the selected gallery range.
+  ctx.fillStyle='rgba(0,0,0,.68)';
+  if(xS>0)ctx.fillRect(0,top,xS,thumbH);
+  if(xE<W)ctx.fillRect(xE,top,W-xE,thumbH);
+
+  // Yellow selected range, matching common gallery trim UIs.
+  ctx.strokeStyle='#ffd400';ctx.lineWidth=4;
+  ctx.strokeRect(Math.max(1,xS),top+1,Math.max(2,xE-xS-2),thumbH-2);
+
+  // Tall yellow trim handles with center grip.
+  [xS,xE].forEach(x=>{
+    ctx.fillStyle='#ffd400';ctx.fillRect(x-5,top-6,10,thumbH+12);
+    ctx.fillStyle='#222';ctx.fillRect(x-2,top+24,4,28);
+    ctx.beginPath();ctx.moveTo(x-5,top-9);ctx.lineTo(x+5,top-9);ctx.lineTo(x,top-3);ctx.closePath();ctx.fillStyle='#ffd400';ctx.fill();
   });
 
-
-  gMap.triggerRepaint();
-
-
-  await new Promise(
-    r=>setTimeout(r,250)
-  );
-
-
-  if(
-    token!==gDrawToken
-  )return;
-
-
-  const mc=
-    gMap.getCanvas();
-
-
-  /*
-   * Clip EXACTLY to the GeoTag map rectangle.
-   */
-
-  gCtx.save();
-
-  gCtx.beginPath();
-
-  gCtx.rect(
-    x,
-    y,
-    w,
-    h
-  );
-
-  gCtx.clip();
-
-
-  /*
-   * No grey line.
-   * The background is the same full height as
-   * the GeoTag stamp.
-   */
-
-  gCtx.fillStyle='#d9dedf';
-
-  gCtx.fillRect(
-    x,
-    y,
-    w,
-    h
-  );
-
-
-  try{
-
-    gCtx.globalAlpha=
-      GSTATE.mapOpacity/100;
-
-    /*
-     * Fill the ENTIRE map rectangle.
-     */
-
-    gCtx.drawImage(
-      mc,
-      x,
-      y,
-      w,
-      h
-    );
-
-  }catch(e){
-
-    console.warn(
-      'Map draw failed:',
-      e
-    );
-
+  // Time ticks above the thumbnails.
+  ctx.font='10px Arial';ctx.textAlign='center';
+  const tickCount=Math.min(12,Math.max(5,Math.ceil(duration/5)+1));
+  for(let i=0;i<tickCount;i++){
+    const t=duration*i/(tickCount-1||1),x=t/duration*W;
+    ctx.strokeStyle='rgba(210,220,230,.35)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,18);ctx.lineTo(x,25);ctx.stroke();
+    ctx.fillStyle='#9ba8b3';ctx.fillText(timelineFmt(t),x,12);
   }
+  ctx.textAlign='start';
 
+  // Current blue playhead.
+  ctx.strokeStyle='#1597ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(xC,17);ctx.lineTo(xC,H-8);ctx.stroke();
+  ctx.fillStyle='#1597ff';ctx.beginPath();ctx.moveTo(xC-7,17);ctx.lineTo(xC+7,17);ctx.lineTo(xC,25);ctx.closePath();ctx.fill();
 
-  gCtx.globalAlpha=1;
+  // Current time bubble.
+  const label=timelineFmt(cur);ctx.font='bold 12px Arial';const tw=ctx.measureText(label).width+16;
+  const bx=clamp(xC-tw/2,2,W-tw-2);ctx.fillStyle='#253542';
+  roundRect(ctx,bx,0,tw,18,4);ctx.fill();
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(label,bx+tw/2,13);ctx.textAlign='start';
 
+  $('timelineStartLabel').textContent=timelineFmt(start);
+  $('timelineCurrentLabel').textContent=timelineFmt(cur);
+  $('timelineEndLabel').textContent=timelineFmt(end);
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+// Same as roundRect but only the top-left/top-right corners are rounded —
+// the bottom edge is a straight/square line all the way across.
+function roundRectTopOnly(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x,y+h);
+  ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r);
+  ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h);
+  ctx.closePath();
+}
+async function buildTimeline(){
+  if(!duration||!video.videoWidth)return;
+  timelineFrames=[];timelineReady=false;drawTimeline();
+  const saved=video.currentTime;
+  const n=Math.min(18,Math.max(8,Math.ceil(duration/2)));
+  for(let i=0;i<n;i++){
+    const t=duration*(i/(n-1||1));
+    video.currentTime=t;
+    await new Promise(res=>{const f=()=>res();video.addEventListener('seeked',f,{once:true});setTimeout(res,250)});
+    const im=document.createElement('canvas');
+    const w=120,h=Math.max(68,Math.round(120*video.videoHeight/video.videoWidth));im.width=w;im.height=76;
+    const ictx=im.getContext('2d');
+    ictx.fillStyle='#111';ictx.fillRect(0,0,w,76);
+    const scale=Math.min(w/video.videoWidth,76/video.videoHeight);const dw=video.videoWidth*scale,dh=video.videoHeight*scale;
+    ictx.drawImage(video,(w-dw)/2,(76-dh)/2,dw,dh);timelineFrames.push(im);
+    drawTimeline();
+  }
+  video.currentTime=clamp(saved,0,duration);timelineReady=true;drawTimeline();
+}
+function timelineTimeFromEvent(e){
+  const r=$('timelineCanvas').getBoundingClientRect();return clamp((e.clientX-r.left)/r.width,0,1)*duration;
+}
+$('timelineCanvas').addEventListener('pointerdown',e=>{
+  if(!duration)return;
+  const t=timelineTimeFromEvent(e),start=+$('trimStart').value||0,end=+$('trimEnd').value||duration;
+  const r=$('timelineCanvas').getBoundingClientRect(),px=t/duration*r.width,ps=start/duration*r.width,pe=end/duration*r.width;
+  if(Math.abs(px-ps)<18)timelineDragging='start';
+  else if(Math.abs(px-pe)<18)timelineDragging='end';
+  else timelineDragging='playhead';
+  $('timelineCanvas').setPointerCapture(e.pointerId);
+  timelineMove(e);
+});
+function timelineMove(e){
+  if(!timelineDragging||!duration)return;
+  const t=timelineTimeFromEvent(e),step=.1;
+  if(timelineDragging==='start'){
+    const end=+$('trimEnd').value||duration; $('trimStart').value=fmt(Math.min(t,end-.1));
+    if(video.currentTime<+$('trimStart').value)video.currentTime=+$('trimStart').value;
+  }else if(timelineDragging==='end'){
+    const start=+$('trimStart').value||0; $('trimEnd').value=fmt(Math.max(t,start+.1));
+    if(video.currentTime>+$('trimEnd').value)video.currentTime=+$('trimEnd').value;
+  }else{
+    video.currentTime=clamp(t,+$('trimStart').value||0,+$('trimEnd').value||duration);
+  }
+  drawTimeline();drawPreview();drawGeoPreview();
+}
+$('timelineCanvas').addEventListener('pointermove',timelineMove);
+$('timelineCanvas').addEventListener('pointerup',()=>timelineDragging=null);
+$('timelineCanvas').addEventListener('pointercancel',()=>timelineDragging=null);
+$('timelinePrev').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)-5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
+$('timelineNext').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)+5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
 
-  /*
-   * Location marker.
-   */
+document.querySelectorAll('.quickTrim').forEach(btn=>btn.addEventListener('click',()=>{
+ const sec=Math.min(+$('durationBadge').textContent||duration,+btn.dataset.sec); $('trimStart').value='0.0'; $('trimEnd').value=fmt(Math.min(duration,+btn.dataset.sec)); video.currentTime=0; drawTimeline();
+}));
+$('videoFile').addEventListener('change',()=>{
+ file=$('videoFile').files[0]; if(!file)return;
+ if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
+ $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
+});
+video.addEventListener('loadedmetadata',()=>{
+ duration=video.duration||0;
+ $('durationBadge').textContent=fmt(duration)+' s';
+ $('trimStart').value='0';$('trimEnd').value=fmt(duration);
+ $('trimRange').max=duration; $('trimRange').value=0;
+ resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext'].forEach(x=>$(x).disabled=false);
+ $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
+ buildTimeline();
+});
+video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
+video.addEventListener('play',()=>{playing=true;});
+video.addEventListener('pause',()=>{playing=false;});
+$('trimRange').addEventListener('input',()=>{video.currentTime=+$('trimRange').value;drawTimeline()});
+$('trimStart').addEventListener('input',()=>{let v=clamp(+$('trimStart').value||0,0,duration);let e=+$('trimEnd').value||duration;if(v>=e)v=Math.max(0,e-.1);$('trimStart').value=fmt(v);if(video.currentTime<v)video.currentTime=v;drawTimeline()});
+$('trimEnd').addEventListener('input',()=>{let v=clamp(+$('trimEnd').value||duration,0,duration);let s=+$('trimStart').value||0;if(v<=s)v=Math.min(duration,s+.1);$('trimEnd').value=fmt(v);if(video.currentTime>v)video.currentTime=v;drawTimeline()});
+$('setStart').onclick=()=>{$('trimStart').value=fmt(clamp(video.currentTime,0,(+$('trimEnd').value||duration)-.1));drawTimeline()}
+$('setEnd').onclick=()=>{$('trimEnd').value=fmt(clamp(video.currentTime,(+$('trimStart').value||0)+.1,duration));drawTimeline()}
+$('playBtn').onclick=()=>video.play();
+$('pauseBtn').onclick=()=>video.pause();
+$('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.currentTime-1/30)}
+$('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
+$('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
+$('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
+$('applyCrop').onclick=()=>{if(!crop)return;const old=sourceRect();crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
+$('removeWhite').onclick=()=>{if(!whiteRect)return;setStatus('White-text removal will be applied to every frame during export.');drawPreview()}
+$('clearWhite').onclick=()=>{whiteRect=null;$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
+$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;drawPreview()}
+$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';drawPreview()}
+$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;drawPreview()}
 
-  const px=
-    x+w/2;
+function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
+function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
+function formatMovingTime(base,delta){
+ let t=parseStartTime(base)+Math.max(0,delta),h=Math.floor(t/3600)%24,m=Math.floor(t/60)%60,s=Math.floor(t%60);
+ return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function wrapText(ctx,text,max,font,maxLines=3){
+ ctx.font=font;const words=String(text||'').trim().split(/\s+/),lines=[];let line='';
+ for(const word of words){const test=line?line+' '+word:word;if(ctx.measureText(test).width>max&&line){lines.push(line);line=word;if(lines.length>=maxLines)break}else line=test}
+ if(line&&lines.length<maxLines)lines.push(line);return lines;
+}
+function drawLogo(ctx,x,y,size){
+  // Clean camera badge inspired by the reference photo.
+  ctx.save();
+  ctx.translate(x,y);
+  const r=Math.max(8,size*.18);
+  ctx.fillStyle='#149bd3';
+  ctx.beginPath();
+  ctx.roundRect(-size/2,-size/2,size,size,r);
+  ctx.fill();
 
-  const py=
-    y+h/2;
+  // White camera body.
+  const bodyW=size*.68, bodyH=size*.40, bodyX=-bodyW/2, bodyY=-bodyH/2+size*.035;
+  ctx.fillStyle='#fff';
+  ctx.beginPath();
+  ctx.roundRect(bodyX,bodyY,bodyW,bodyH,Math.max(3,size*.025));
+  ctx.fill();
 
-  const r=
-    Math.max(
-      7,
-      h*.075
-    );
+  // Camera top bump.
+  const bumpW=size*.25, bumpH=size*.10;
+  ctx.beginPath();
+  ctx.roundRect(-bumpW*.42,bodyY-bumpH*.72,bumpW,bumpH,Math.max(2,size*.015));
+  ctx.fill();
 
+  // Blue lens with white ring.
+  ctx.fillStyle='#149bd3';
+  ctx.beginPath();
+  ctx.arc(0,bodyY+bodyH/2,size*.145,0,Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle='#fff';
+  ctx.lineWidth=Math.max(2,size*.035);
+  ctx.beginPath();
+  ctx.arc(0,bodyY+bodyH/2,size*.19,0,Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+}
+async function findLocation(){
+ const q=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+ if(!q){$('gCoords').textContent='Enter a district/town.';return}
+ $('gCoords').textContent='Finding location…';
+ try{
+  const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
+  const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
+  lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
+  mapImg=await makeMap(lat,lon);drawGeoPreview();
+ }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
+}
+$('findLocation').onclick=findLocation;
 
-  gCtx.fillStyle='#e53935';
-
-  gCtx.beginPath();
-
-  gCtx.arc(
-    px,
-    py,
-    r,
-    0,
-    Math.PI*2
-  );
-
-  gCtx.fill();
-
-
-  gCtx.beginPath();
-
-  gCtx.moveTo(
-    px-r*.7,
-    py+r*.35
-  );
-
-  gCtx.lineTo(
-    px,
-    py+r*1.8
-  );
-
-  gCtx.lineTo(
-    px+r*.7,
-    py+r*.35
-  );
-
-  gCtx.closePath();
-
-  gCtx.fill();
-
-
-  gCtx.fillStyle='#fff';
-
-  gCtx.beginPath();
-
-  gCtx.arc(
-    px,
-    py,
-    r*.4,
-    0,
-    Math.PI*2
-  );
-
-  gCtx.fill();
-
-
-  gCtx.restore();
-
+function tileXY(lat,lon,z){
+ const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
+}
+async function makeMap(lat,lon){
+ const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
+ const c=document.createElement('canvas');c.width=size;c.height=size;const cctx=c.getContext('2d');
+ cctx.clearRect(0,0,size,size);
+ for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+  const im=new Image();im.crossOrigin='anonymous';
+  const url=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
+  await new Promise(res=>{im.onload=()=>{cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};im.onerror=()=>res();im.src=url});
+ }
+ cctx.fillStyle='#e53935';cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
+ cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);cctx.fillStyle='#333';cctx.font='12px Arial';cctx.fillText('© OpenStreetMap contributors',12,size-14);
+ return c;
 }
 
+function drawGeoFrame(baseCtx,W,H,seconds){
+  // GeoTag layout matched to the user's second reference image:
+  // compact rounded dark strip, map flush-left, compact text, small camera badge at right.
+  baseCtx.save();
 
-async function drawGeo(){
+  const stampOpacity=clamp(state.gOpacity/100,0,1);
+  const mapOpacity=clamp(state.gMapO/100,0,1);
+  const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
+  const margin=0;
+  const x=margin, y=H-stampH;
+  const stampW=W-margin*2;
+  const radius=Math.max(18,Math.round(stampH*.14));
+  const pad=Math.max(5,Math.round(stampH*.022));
+  const gap=Math.max(12,Math.round(stampH*.045));
 
-  const token=
-    ++gDrawToken;
+  // Main rounded dark translucent stamp.
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='rgba(0,0,0,.76)';
+  roundRectTopOnly(baseCtx,x,y,stampW,stampH,radius);
+  baseCtx.fill();
 
+  // Map: no artificial grey border/padding. It fills the left portion of the stamp.
+  const mapX=x+pad;
+  const mapY=y+pad;
+  const mapH=Math.max(30,stampH-pad*2);
 
-  if(!cleanedBlob){
+  // Camera badge is reserved on the far right.
+  const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
+  const logoCenterX=clamp(
+    W*state.logoX/100,
+    x+stampW*.72+logoSize/2,
+    x+stampW-logoSize/2-pad
+  );
+  const logoCenterY=clamp(
+    y+stampH*(state.logoY/100),
+    y+logoSize/2+pad,
+    y+stampH-logoSize/2-pad
+  );
+  const logoLeft=logoCenterX-logoSize/2;
+  const mapGap=Math.max(10,stampH*.035);
+  const requestedMapW=stampW*state.gMapW/100;
+  const maxMapW=Math.max(100,logoLeft-mapX-mapGap);
+  const mapW=clamp(requestedMapW,120,maxMapW);
 
-    gCanvas.width=900;
-
-    gCanvas.height=550;
-
-    gCtx.fillStyle='#17202a';
-
-    gCtx.fillRect(
-      0,
-      0,
-      900,
-      550
-    );
-
-    gCtx.fillStyle='#81909d';
-
-    gCtx.font='22px Arial';
-
-    gCtx.textAlign='center';
-
-    gCtx.fillText(
-      'Continue from White Text Remover',
-      450,
-      275
-    );
-
-    return;
-
+  if(mapImg){
+    baseCtx.save();
+    baseCtx.globalAlpha=stampOpacity*mapOpacity;
+    // Clip exactly to the map rectangle so no grey canvas margin is visible.
+    roundRect(baseCtx,mapX,mapY,mapW,mapH,Math.max(3,Math.min(8,stampH*.018)));
+    baseCtx.clip();
+    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
+    baseCtx.restore();
   }
 
-
-  const img=
-    await blobImage(
-      cleanedBlob
-    );
-
-
-  if(
-    token!==gDrawToken
-  )return;
-
-
-  const scale=
-    Math.min(
-      1,
-      1400/img.naturalWidth
-    );
-
-
-  const W=
-    Math.max(
-      1,
-      Math.round(
-        img.naturalWidth*scale
-      )
-    );
-
-
-  const H=
-    Math.max(
-      1,
-      Math.round(
-        img.naturalHeight*scale
-      )
-    );
-
-
-  gCanvas.width=W;
-
-  gCanvas.height=H;
-
-
-  gCtx.setTransform(
-    1,
-    0,
-    0,
-    1,
-    0,
-    0
-  );
-
-
-  gCtx.drawImage(
-    img,
-    0,
-    0,
-    W,
-    H
-  );
-
-
-  if(
-    gLat===null||
-    gLon===null
-  )return;
-
-
-  /* =======================================================
-     EXACT GEOTAG POSITION
-     ======================================================= */
-
-  /*
-   * GeoTag occupies the bottom portion of the image.
-   */
-
-  const stampH=
-    Math.min(
-      H,
-      Math.round(
-        H*GSTATE.height/100
-      )
-    );
-
-
-  /*
-   * This is the ONLY Y position used by the
-   * GeoTag and map.
-   */
-
-  const stampY=
-    H-stampH;
-
-
-  const stampW=W;
-
-
-  /*
-   * Map width is calculated from the complete image.
-   */
-
-  const mapW=
-    Math.max(
-      1,
-      Math.min(
-        W,
-        Math.round(
-          W*GSTATE.mapWidth/100
-        )
-      )
-    );
-
-
-  const panelW=
-    W-mapW;
-
-
-  /*
-   * Clip the complete GeoTag.
-   */
-
-  gCtx.save();
-
-  gCtx.beginPath();
-
-  gCtx.rect(
-    0,
-    stampY,
-    stampW,
-    stampH
-  );
-
-  gCtx.clip();
-
-
-  /*
-   * MAP:
-   *
-   * x = 0
-   * y = stampY
-   * width = mapW
-   * height = stampH
-   *
-   * Therefore there can be NO grey line above it.
-   */
-
-  await drawMapIntoCanvas(
-    0,
-    stampY,
-    mapW,
-    stampH,
-    token
-  );
-
-
-  if(
-    token!==gDrawToken
-  ){
-
-    gCtx.restore();
-
-    return;
-
-  }
-
-
-  /*
-   * Text panel begins at EXACTLY the same
-   * Y position as the map.
-   */
-
-  gCtx.fillStyle=
-    `rgba(8,8,8,${GSTATE.textOpacity/100})`;
-
-  gCtx.fillRect(
-    mapW,
-    stampY,
-    panelW,
-    stampH
-  );
-
-
-  /*
-   * ONLY the typed address is printed.
-   */
-
-  const address=
-    g('gAddress')
-      .value
-      .trim()||
-    'Address';
-
-
-  const addressParts=
-    address
-      .split(',')
-      .map(x=>x.trim())
-      .filter(Boolean);
-
-
-  const titleText=
-    addressParts
-      .slice(0,2)
-      .join(', ')||
-    address;
-
-
-  const detailText=
-    addressParts
-      .slice(2)
-      .join(', ')||
-    '';
-
-
-  const left=
-    mapW+
-    Math.max(
-      12,
-      panelW*.035
-    );
-
-
-  const maxW=
-    panelW-
-    Math.max(
-      24,
-      panelW*.07
-    );
-
-
-  const titleSize=
-    Math.max(
-      18,
-      Math.round(
-        stampH*
-        .145*
-        GSTATE.titleSize/
-        100
-      )
-    );
-
-
-  const detailSize=
-    Math.max(
-      11,
-      Math.round(
-        titleSize*
-        .60*
-        GSTATE.detailsSize/
-        100
-      )
-    );
-
-
-  gCtx.textAlign='left';
-
-  gCtx.fillStyle='#fff';
-
-  gCtx.font=
-    `700 ${titleSize}px Arial`;
-
-
-  let y=
-    stampY+
-    titleSize*1.15;
-
-
-  const titleLines=
-    wrapGeo(
-      titleText,
-      maxW,
-      `700 ${titleSize}px Arial`,
-      2
-    );
-
-
-  for(
-    const line
-    of titleLines
-  ){
-
-    gCtx.fillText(
-      line,
-      left,
-      y
-    );
-
-    y+=
-      titleSize*1.05;
-
-  }
-
-
-  gCtx.font=
-    `400 ${detailSize}px Arial`;
-
-  gCtx.fillStyle=
-    'rgba(255,255,255,.98)';
-
-
-  const detailLines=
-    wrapGeo(
-      detailText,
-      maxW,
-      `400 ${detailSize}px Arial`,
-      4
-    );
-
-
-  for(
-    const line
-    of detailLines
-  ){
-
-    y+=
-      detailSize*1.14;
-
-    gCtx.fillText(
-      line,
-      left,
-      y
-    );
-
-  }
-
-
-  y+=
-    detailSize*1.15;
-
-
-  gCtx.font=
-    `600 ${detailSize}px Arial`;
-
-
-  gCtx.fillText(
-    `Lat ${gLat.toFixed(6)}° Long ${gLon.toFixed(6)}°`,
-    left,
-    y
-  );
-
-
-  y+=
-    detailSize*1.25;
-
-
-  gCtx.font=
-    `400 ${detailSize}px Arial`;
-
-
-  gCtx.fillText(
-    `${fmtDate(g('gDate').value)} ${fmtTime(g('gTime').value)}`,
-    left,
-    y
-  );
-
-
-  /*
-   * Camera badge at lower-right.
-   */
-
-  const badge=
-    Math.max(
-      32,
-      Math.min(
-        stampH*.56,
-        110,
-        panelW*.21
-      )
-    );
-
-
-  const bx=
-    W-
-    badge-
-    Math.max(
-      12,
-      panelW*.025
-    );
-
-
-  const by=
-    stampY+
-    stampH-
-    badge-
-    Math.max(
-      7,
-      stampH*.035
-    );
-
-
-  const radius=
-    Math.max(
-      6,
-      badge*.16
-    );
-
-
-  gCtx.save();
-
-
-  gCtx.beginPath();
-
-  gCtx.roundRect(
-    bx,
-    by,
-    badge,
-    badge,
-    radius
-  );
-
-
-  gCtx.fillStyle='#1595d0';
-
-  gCtx.fill();
-
-
-  /*
-   * Camera body
-   */
-
-  const camX=
-    bx+
-    badge*.18;
-
-  const camY=
-    by+
-    badge*.30;
-
-  const camW=
-    badge*.64;
-
-  const camH=
-    badge*.42;
-
-
-  gCtx.fillStyle='#fff';
-
-  gCtx.beginPath();
-
-  gCtx.roundRect(
-    camX,
-    camY,
-    camW,
-    camH,
-    badge*.07
-  );
-
-  gCtx.fill();
-
-
-  /*
-   * Camera top
-   */
-
-  gCtx.beginPath();
-
-  gCtx.moveTo(
-    camX+badge*.10,
-    camY
-  );
-
-  gCtx.lineTo(
-    camX+badge*.19,
-    camY-badge*.08
-  );
-
-  gCtx.lineTo(
-    camX+badge*.34,
-    camY-badge*.08
-  );
-
-  gCtx.lineTo(
-    camX+badge*.40,
-    camY
-  );
-
-  gCtx.closePath();
-
-  gCtx.fill();
-
-
-  /*
-   * Lens
-   */
-
-  gCtx.fillStyle='#1595d0';
-
-  gCtx.beginPath();
-
-  gCtx.arc(
-    bx+badge*.50,
-    by+badge*.51,
-    badge*.14,
-    0,
-    Math.PI*2
-  );
-
-  gCtx.fill();
-
-
-  gCtx.fillStyle='#fff';
-
-  gCtx.beginPath();
-
-  gCtx.arc(
-    bx+badge*.50,
-    by+badge*.51,
-    badge*.075,
-    0,
-    Math.PI*2
-  );
-
-  gCtx.fill();
-
-
-  gCtx.restore();
-
-
-  gCtx.restore();
-
+  // Text area.
+  const tx=mapX+mapW+gap;
+  const textRight=logoLeft-gap;
+  const maxW=Math.max(150,textRight-tx);
+  const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
+  const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
+  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+  const address=$('gAddress').value.trim();
+  const coordText=`Lat ${lat==null?'—':lat.toFixed(6)}°  Long ${lon==null?'—':lon.toFixed(6)}°`;
+  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
+
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='#fff';
+  baseCtx.textBaseline='alphabetic';
+  baseCtx.shadowColor='rgba(0,0,0,.30)';
+  baseCtx.shadowBlur=Math.max(1,stampH*.008);
+
+  baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
+  const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
+  let yy=y+pad+titleSize;
+  titleLines.forEach(line=>{baseCtx.fillText(line,tx,yy);yy+=titleSize*1.02});
+
+  baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
+  const lineGap=Math.max(3,detailSize*.25);
+  const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
+  addressLines.forEach(line=>{if(yy<=y+stampH-pad)baseCtx.fillText(line,tx,yy);yy+=detailSize+lineGap});
+  if(yy<=y+stampH-pad){baseCtx.fillText(coordText,tx,yy);yy+=detailSize+lineGap*1.05;}
+  if(yy<=y+stampH-pad)baseCtx.fillText(dateTime,tx,yy);
+  baseCtx.restore();
+
+  // Small, clean blue camera badge on the right.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
+  baseCtx.restore();
+  baseCtx.restore();
 }
 
+function prepareOutput(){
+ const r=sourceRect();outputW=Math.max(2,Math.round(r.w));outputH=Math.max(2,Math.round(r.h));
+ work.width=outputW;work.height=outputH;
+}
+// Fast video-only white-text removal.
+// The editor preview keeps the strong multi-pass remover, while export uses
+// a lightweight two-pass method so the video clock stays normal.
+// Export remover: thorough enough to fully cover thick text (wide directional
+// search + mask dilation for anti-aliased edges), but cheap per pixel (a
+// single directional fill, not repeated multi-pass diffusion) so it can run
+// on hundreds of video frames without taking forever.
+function removeWhiteFromCanvasExport(ctx2,W,H,rect){
+  if(!rect)return;
+  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
+  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const rw=x1-x0, rh=y1-y0;
+  if(rw<2||rh<2)return;
 
-function openLocationPage(){
-
-  try{
-
-    setGeoPage(true);
-
-
-    g('stepOne').style.background=
-      '#e5e7eb';
-
-    g('stepOne').style.color=
-      '#555';
-
-    g('stepTwo').style.background=
-      '#1769e0';
-
-    g('stepTwo').style.color=
-      '#fff';
-
-
-    const now=
-      new Date();
-
-
-    if(
-      !g('gDate').value
-    ){
-
-      g('gDate').value=
-        `${now.getFullYear()}-`+
-        `${String(now.getMonth()+1).padStart(2,'0')}-`+
-        `${String(now.getDate()).padStart(2,'0')}`;
-
+  const img=ctx2.getImageData(x0,y0,rw,rh);
+  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
+  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
+  for(let y=0;y<rh;y++){
+    for(let x=0;x<rw;x++){
+      const p=y*rw+x,i=p*4;
+      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
+      const neutral=(mx-mn)<=115;
+      const bright=(rr+gg+bb)/3;
+      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
     }
-
-
-    if(
-      !g('gTime').value
-    ){
-
-      g('gTime').value=
-        `${String(now.getHours()).padStart(2,'0')}:`+
-        `${String(now.getMinutes()).padStart(2,'0')}`;
-
+  }
+  // Dilate 2px to catch anti-aliased text edges.
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(mask[p]){
+      for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+        const xx=x+dx,yy=y+dy;
+        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
+      }
     }
-
-
-    makeCleanBlob()
-      .then(blob=>{
-
-        cleanedBlob=blob;
-
-        g('gDownload').disabled=
-          !cleanedBlob;
-
-        return drawGeo();
-
-      })
-      .catch(err=>{
-
-        console.error(
-          'Cleaned image preparation failed:',
-          err
-        );
-
-        g('gDownload').disabled=true;
-
-        g('gStatus').textContent=
-          'Location page opened, but the cleaned image could not be prepared.';
-
-      });
-
-
-  }catch(e){
-
-    console.error(
-      'Location page open failed:',
-      e
-    );
-
-
-    document.querySelector('.wrap').style.display=
-      'none';
-
-    document.getElementById('geoPage').style.display=
-      'block';
-
   }
 
+  // Search far enough to get through even thick text/logos, but this is
+  // O(area * search), not O(area * search^2) like a kernel pass.
+  const maxSearch=Math.min(50,Math.max(24,Math.round(Math.max(rw,rh)/2)));
+  const filled=new Uint8ClampedArray(d);
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(!expanded[p])continue;
+    let sr=0,sg=0,sb=0,n=0;
+    for(let k=1;k<=maxSearch;k++){const lx=x-k;if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const rx=x+k;if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const ty=y-k;if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const by=y+k;if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    if(n){const i=p*4;filled[i]=d[i]*(1-strength)+(sr/n)*strength;filled[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;filled[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
+  }
+
+  // One cheap 3x3 smoothing pass over just the mask area to soften seams.
+  const out=new Uint8ClampedArray(filled);
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x; if(!expanded[p])continue;
+    let sr=0,sg=0,sb=0,n=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const xx=x+dx,yy=y+dy;
+      if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
+      const q=yy*rw+xx,j=q*4;
+      sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;
+    }
+    if(n){const i=p*4;out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;}
+  }
+  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
 }
 
+function removeWhiteFromCanvasFast(ctx2,W,H,rect){
+  if(!rect)return;
+  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
+  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const rw=x1-x0, rh=y1-y0;
+  if(rw<2||rh<2)return;
 
-const continueButton=
-  document.getElementById(
-    'continueGeo'
-  );
+  // Fast VIDEO inpaint: no blur. Detect bright neutral pixels, expand the
+  // mask by 1px, then replace masked pixels with nearby real pixels from the
+  // same row/column. This keeps edges sharp and is much faster than the
+  // strong multi-pass editor inpaint.
+  const img=ctx2.getImageData(x0,y0,rw,rh);
+  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
+  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
+  for(let y=0;y<rh;y++){
+    for(let x=0;x<rw;x++){
+      const p=y*rw+x,i=p*4;
+      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
+      const neutral=(mx-mn)<=115;
+      const bright=(rr+gg+bb)/3;
+      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
+    }
+  }
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(!mask[p])continue;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const xx=x+dx,yy=y+dy;
+      if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
+    }
+  }
 
+  // For each masked pixel, find the nearest clean pixel horizontally and
+  // vertically. Average those real pixels. No artificial blur is introduced.
+  const out=new Uint8ClampedArray(d);
+  const maxSearch=10;
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(!expanded[p])continue;
+    let sr=0,sg=0,sb=0,n=0;
+    // left/right
+    for(let k=1;k<=maxSearch;k++){
+      const lx=x-k,rx=x+k;
+      if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+      if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+    }
+    // top/bottom
+    for(let k=1;k<=maxSearch;k++){
+      const ty=y-k,by=y+k;
+      if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+      if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+    }
+    if(n){const i=p*4;out[i]=d[i]*(1-strength)+(sr/n)*strength;out[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;out[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
+  }
+  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
+}
 
-continueButton.disabled=false;
+let fastGL=null;
+function initFastGL(){
+  if(fastGL)return fastGL;
+  const c=document.createElement('canvas');
+  c.width=outputW;c.height=outputH;
+  const gl=c.getContext('webgl',{premultipliedAlpha:false,antialias:false,preserveDrawingBuffer:false});
+  if(!gl)return null;
+  const vs=`attribute vec2 p; varying vec2 uv; void main(){uv=(p+1.0)*0.5; gl_Position=vec4(p,0.,1.);}`;
+  const fs=`precision mediump float; varying vec2 uv; uniform sampler2D tex; uniform vec4 rr; uniform float th; uniform float strength; uniform vec2 px;
+  void main(){ vec4 c=texture2D(tex,uv); bool inside=uv.x>=rr.x&&uv.x<=rr.z&&uv.y>=rr.y&&uv.y<=rr.w;
+    float mx=max(c.r,max(c.g,c.b)), mn=min(c.r,min(c.g,c.b)); float bright=(c.r+c.g+c.b)/3.0;
+    if(inside && mx>=th && (mx-mn)<=0.28 && bright>=th){
+      vec3 a=texture2D(tex,uv+vec2(-px.x,0.)).rgb; vec3 b=texture2D(tex,uv+vec2(px.x,0.)).rgb;
+      vec3 d=texture2D(tex,uv+vec2(0.,-px.y)).rgb; vec3 e=texture2D(tex,uv+vec2(0.,px.y)).rgb;
+      vec3 fill=(a+b+d+e)*0.25; c.rgb=mix(c.rgb,fill,strength);
+    } gl_FragColor=c; }`;
+  function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);return s}
+  const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  const pos=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+  fastGL={gl,c,pr,tex,rr:gl.getUniformLocation(pr,'rr'),th:gl.getUniformLocation(pr,'th'),strength:gl.getUniformLocation(pr,'strength'),px:gl.getUniformLocation(pr,'px')};
+  return fastGL;
+}
+function drawVideoFastGPU(r){
+  const g=initFastGL(); if(!g)return false;
+  const {gl,c,pr,tex}=g; gl.viewport(0,0,outputW,outputH);gl.useProgram(pr);
+  gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
+  gl.uniform1f(g.th,(+$('whiteThreshold').value||165)/255);gl.uniform1f(g.strength,(+$('removeOpacity').value||100)/100);gl.uniform2f(g.px,1/outputW,1/outputH);
+  if(whiteRect){const sx=outputW/r.w,sy=outputH/r.h;const x=whiteRect.x*sx/outputW,y=1-(whiteRect.y+whiteRect.h)*sy/outputH,w=whiteRect.w*sx/outputW,h=whiteRect.h*sy/outputH;gl.uniform4f(g.rr,x,y,x+w,y+h)}else gl.uniform4f(g.rr,0,0,0,0);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return c;
+}
 
-continueButton.type='button';
+function drawExportFrame(elapsedOverride){
+  const r=sourceRect();
+  wctx.clearRect(0,0,outputW,outputH);
+  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+  if(whiteRect){
+    const sx=outputW/r.w, sy=outputH/r.h;
+    removeWhiteFromCanvasExport(wctx,outputW,outputH,{
+      x:whiteRect.x*sx, y:whiteRect.y*sy, w:whiteRect.w*sx, h:whiteRect.h*sy
+    });
+  }
+  if(lat!=null&&lon!=null){
+    const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
+    drawGeoFrame(wctx,outputW,outputH,elapsed);
+  }
+}
 
-continueButton.addEventListener(
-  'click',
-  openLocationPage
-);
+function seekVideo(target){
+  return new Promise(resolve=>{
+    const t=clamp(target,0,duration||target);
+    let done=false;
+    const finish=()=>{
+      if(done)return; done=true;
+      video.removeEventListener('seeked',onSeeked);
+      resolve();
+    };
+    const onSeeked=()=>{
+      // Wait two animation frames after 'seeked' so the newly decoded frame
+      // is actually painted before we read it with drawImage — some
+      // browsers fire 'seeked' slightly before the frame is ready.
+      requestAnimationFrame(()=>requestAnimationFrame(finish));
+    };
+    video.addEventListener('seeked',onSeeked,{once:true});
+    video.currentTime=t;
+    // Last-resort safety net only (real seeks normally finish well before
+    // this) — long enough to never race ahead of a real seek.
+    setTimeout(finish,2000);
+  });
+}
 
-continueButton.onclick=
-  openLocationPage;
-
-
-g('gBack').onclick=()=>{
-
-  setGeoPage(false);
-
-};
-
-
-g('gDownload').onclick=
-  async()=>{
-
-    if(!cleanedBlob)return;
-
-    const btn=
-      g('gDownload');
-
-
-    btn.disabled=true;
-
-    btn.textContent=
-      'Preparing…';
-
-
+async function pickVideoCodec(width,height,fps){
+  const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
+  for(const codec of candidates){
     try{
+      const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps});
+      if(support&&support.supported)return codec;
+    }catch(e){}
+  }
+  return 'avc1.42e01f';
+}
 
-      await drawGeo();
+// Frame-accurate export: every frame is drawn, then encoded with an exact
+// timestamp via WebCodecs. Nothing here depends on the video actually
+// playing in real time, so a slow frame just makes export take longer —
+// it can never cause stutter/duplicated frames in the output, unlike
+// screen-recording a canvas with MediaRecorder.
+async function exportVideoFrameAccurate(){
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=end-start;
+  const fps=30;
+  const frameCount=Math.max(1,Math.round(length*fps));
 
+  prepareOutput();
+  video.pause();
 
-      await new Promise(
-        r=>
-          requestAnimationFrame(
-            ()=>
-              requestAnimationFrame(r)
-          )
-      );
+  // Best-effort audio: decode the original file's audio track fully, then
+  // we'll slice out just [start,end] below. If this fails (e.g. no audio
+  // track), export continues silently rather than failing.
+  let audioBuffer=null;
+  try{
+    const arr=await file.arrayBuffer();
+    const actx=new (window.AudioContext||window.webkitAudioContext)();
+    audioBuffer=await actx.decodeAudioData(arr);
+  }catch(e){console.warn('No usable audio track for export',e)}
+  const hasAudio=!!audioBuffer;
 
+  const codec=await pickVideoCodec(outputW,outputH,fps);
+  const muxer=new Mp4Muxer.Muxer({
+    target:new Mp4Muxer.ArrayBufferTarget(),
+    fastStart:'in-memory',
+    video:{codec:'avc',width:outputW,height:outputH},
+    audio:hasAudio?{codec:'aac',numberOfChannels:audioBuffer.numberOfChannels,sampleRate:audioBuffer.sampleRate}:undefined,
+  });
 
-      const blob=
-        await new Promise(
-          (resolve,reject)=>{
+  const videoEncoder=new VideoEncoder({
+    output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
+    error:e=>console.error('video encoder error',e)
+  });
+  videoEncoder.configure({codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps});
 
-            gCanvas.toBlob(
-              b=>
-                b
-                ?resolve(b)
-                :reject(
-                  new Error(
-                    'Canvas export returned no data'
-                  )
-                ),
-              'image/png'
-            );
+  $('exportStatus').textContent='Rendering video… 0%';
 
-          }
-        );
+  await seekVideo(start);
+  const wasMuted=video.muted;
+  video.muted=true; // we mux audio separately below; muting avoids audio glitches at fast playback
+  video.playbackRate=1;
 
+  let frameIndex=0;
+  await new Promise((resolve,reject)=>{
+    let finished=false;
+    const finish=()=>{
+      if(finished)return; finished=true;
+      try{video.pause()}catch(e){}
+      resolve();
+    };
+    const onFrame=(now,metadata)=>{
+      if(finished)return;
+      const elapsed=Math.max(0,(metadata&&metadata.mediaTime!=null?metadata.mediaTime:video.currentTime)-start);
+      if(elapsed>=length-0.01){finish();return}
+      drawExportFrame(elapsed);
+      const vf=new VideoFrame(work,{timestamp:Math.round(elapsed*1e6)});
+      videoEncoder.encode(vf,{keyFrame:frameIndex%(fps*2)===0});
+      vf.close();
+      frameIndex++;
+      if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(99,Math.round(elapsed/length*100))+'%';
+      video.requestVideoFrameCallback(onFrame);
+    };
+    video.addEventListener('ended',finish,{once:true});
+    video.requestVideoFrameCallback(onFrame);
+    video.play().catch(reject);
+  });
 
-      const u=
-        URL.createObjectURL(blob);
+  video.playbackRate=1;
+  video.muted=wasMuted;
+  await videoEncoder.flush();
+  videoEncoder.close();
 
-
-      const a=
-        document.createElement('a');
-
-
-      a.href=u;
-
-      a.download=
-        'location-preview.png';
-
-      a.style.display='none';
-
-
-      document.body.appendChild(a);
-
-      a.click();
-
-      a.remove();
-
-
-      setTimeout(
-        ()=>URL.revokeObjectURL(u),
-        2000
-      );
-
-
-    }catch(e){
-
-      console.error(
-        'Download failed:',
-        e
-      );
-
-      alert(
-        'Download failed. Please try again after the preview appears.'
-      );
-
-
-    }finally{
-
-      btn.disabled=
-        !cleanedBlob;
-
-      btn.textContent=
-        '⬇ Download';
-
+  if(hasAudio){
+    const sr=audioBuffer.sampleRate, ch=audioBuffer.numberOfChannels;
+    const s0=Math.floor(start*sr), s1=Math.min(audioBuffer.length,Math.floor(end*sr));
+    const audioEncoder=new AudioEncoder({
+      output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),
+      error:e=>console.error('audio encoder error',e)
+    });
+    audioEncoder.configure({codec:'mp4a.40.2',sampleRate:sr,numberOfChannels:ch,bitrate:128000});
+    const chunkSize=1024;
+    for(let s=s0;s<s1;s+=chunkSize){
+      const n=Math.min(chunkSize,s1-s);
+      const interleaved=new Float32Array(n*ch);
+      for(let c=0;c<ch;c++){
+        const data=audioBuffer.getChannelData(c);
+        for(let k=0;k<n;k++)interleaved[k*ch+c]=data[s+k];
+      }
+      const audioData=new AudioData({format:'f32',sampleRate:sr,numberOfFrames:n,numberOfChannels:ch,timestamp:Math.round((s-s0)/sr*1e6),data:interleaved});
+      audioEncoder.encode(audioData);
+      audioData.close();
     }
+    await audioEncoder.flush();
+    audioEncoder.close();
+  }
 
+  muxer.finalize();
+  exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
+  $('exportStatus').textContent='Video rendered — frame-accurate MP4, no lag. Download button is ready.';
+  $('downloadVideo').disabled=false;
+}
+
+// Fallback for browsers without WebCodecs (e.g. Safari, Firefox): real-time
+// canvas capture. This can still stutter on slow devices — Chrome or Edge
+// (desktop or Android) will use the frame-accurate path above instead.
+async function exportVideoRealtimeFallback(){
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=end-start;
+
+  prepareOutput();
+  video.pause();
+  await seekVideo(start);
+
+  const canvasStream=work.captureStream(0);
+  const canvasVideoTrack=canvasStream.getVideoTracks()[0];
+  try{
+    const sourceStream=video.captureStream ? video.captureStream() :
+                       (video.mozCaptureStream ? video.mozCaptureStream() : null);
+    if(sourceStream) sourceStream.getAudioTracks().forEach(track=>canvasStream.addTrack(track));
+  }catch(e){console.warn('Audio capture unavailable',e)}
+
+  let mime='';
+  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){
+    if(MediaRecorder.isTypeSupported(m)){mime=m;break}
+  }
+  if(!mime){$('exportStatus').textContent='This browser cannot record video in a supported format.';return}
+
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:8000000,audioBitsPerSecond:128000});
+  const chunks=[];
+  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
+
+  let stopped=false, frameCallbackId=null, rafId=0;
+  const stop=()=>{
+    if(stopped)return; stopped=true;
+    if(rafId)cancelAnimationFrame(rafId);
+    if(frameCallbackId!==null && video.cancelVideoFrameCallback){try{video.cancelVideoFrameCallback(frameCallbackId)}catch(e){}}
+    try{video.pause()}catch(e){}
+    try{rec.stop()}catch(e){}
   };
 
-</script>
+  $('exportStatus').textContent='Rendering video… 0%';
+  rec.start(250);
 
+  const renderFrame=()=>{
+    if(stopped)return;
+    const elapsed=Math.max(0,video.currentTime-start);
+    if(elapsed>=length-0.03){drawExportFrame();if(canvasVideoTrack.requestFrame)canvasVideoTrack.requestFrame();stop();return}
+    drawExportFrame();
+    if(canvasVideoTrack.requestFrame)canvasVideoTrack.requestFrame();
+    $('exportStatus').textContent='Rendering video… '+clamp(Math.round(elapsed/length*100),0,99)+'%';
+    if(video.requestVideoFrameCallback){
+      frameCallbackId=video.requestVideoFrameCallback(renderFrame);
+    }else{
+      rafId=requestAnimationFrame(renderFrame);
+    }
+  };
+
+  renderFrame();
+  await video.play();
+
+  while(!stopped){
+    if(video.currentTime>=end-0.03){stop();break}
+    await new Promise(r=>setTimeout(r,50));
+  }
+
+  exportBlob=await done;
+  $('exportStatus').textContent='Video rendered at normal speed ('+(mime.includes('mp4')?'MP4':'WebM')+'). Download button is ready.';
+  $('downloadVideo').disabled=false;
+}
+
+async function exportVideo(){
+  if(!file)return;
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=end-start;
+  prepareOutput();
+  video.pause();
+  await seekVideo(start);
+
+  const fps=Math.min(30,Math.max(24,video.getVideoPlaybackQuality?30:30));
+  const canvasStream=work.captureStream(fps);
+  const sourceStream=video.captureStream?video.captureStream():null;
+  if(sourceStream) sourceStream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
+  let mime='';
+  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
+  if(!mime)throw new Error('This Chrome cannot record video.');
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(24000000,Math.max(6000000,outputW*outputH*6)),audioBitsPerSecond:128000});
+  const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
+  let stopped=false,frameId=null,raf=0;
+  const stop=()=>{if(stopped)return;stopped=true;if(frameId!==null&&video.cancelVideoFrameCallback)try{video.cancelVideoFrameCallback(frameId)}catch(e){}if(raf)cancelAnimationFrame(raf);try{video.pause()}catch(e){}try{rec.stop()}catch(e){}};
+  const render=(now,meta)=>{
+    if(stopped)return;
+    const t=meta&&meta.mediaTime!=null?meta.mediaTime:video.currentTime;
+    const elapsed=t-start;
+    if(elapsed>=length-0.02){drawExportFrame(length);stop();return}
+    drawExportFrame(elapsed);
+    if(Math.floor(elapsed*10)%5===0)$('exportStatus').textContent='Fast rendering… '+Math.min(99,Math.round(elapsed/length*100))+'%';
+    if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  };
+  $('exportStatus').textContent='Fast rendering… 0%';
+  rec.start(500);
+  video.muted=true;video.playbackRate=1;
+  if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  await video.play();
+  while(!stopped){if(video.currentTime>=end-0.02){stop();break}await new Promise(r=>setTimeout(r,30));}
+  exportBlob=await done;
+  video.muted=false;
+  $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
+  $('downloadVideo').disabled=false;
+}
+// ---------- ffmpeg.wasm: reliable, universally-playable MP4 output ----------
+let ffmpegInstance=null, ffmpegLoading=null;
+async function getFFmpeg(onLog){
+ if(ffmpegInstance)return ffmpegInstance;
+ if(!ffmpegLoading){
+  ffmpegLoading=(async()=>{
+   const {FFmpeg}=window.FFmpegWASM;
+   const ff=new FFmpeg();
+   if(onLog)ff.on('log',({message})=>onLog(message));
+   await ff.load({
+    coreURL:'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+    wasmURL:'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+   });
+   ffmpegInstance=ff;
+   return ff;
+  })();
+ }
+ return ffmpegLoading;
+}
+// Transcodes any recorded blob (webm/mp4) into a clean H.264/AAC MP4 via ffmpeg.wasm,
+// which fixes container/codec quirks from MediaRecorder and guarantees the file
+// downloads and plays everywhere (phones, WhatsApp, editors, etc).
+// Only re-encodes when actually needed (webm from browsers without native MP4
+// recording support). If the recorder already produced MP4/H.264, we hand that
+// back untouched — re-encoding an already-compressed video degrades quality
+// (visible pixelation/blockiness) and costs a lot of time for no benefit.
+async function transcodeToMp4(blob,statusEl){
+ if(blob.type.includes('mp4')){
+  if(statusEl)statusEl.textContent='MP4 ready.';
+  return blob;
+ }
+ try{
+  if(statusEl)statusEl.textContent='Loading MP4 converter (one-time, needed for this browser)…';
+  const ff=await getFFmpeg(msg=>{if(statusEl)statusEl.textContent='Converting to MP4… '+msg});
+  await ff.writeFile('in.webm',new Uint8Array(await blob.arrayBuffer()));
+  if(statusEl)statusEl.textContent='Converting to MP4… this can take a moment';
+  // crf 16 + preset fast keeps quality visually close to the source instead
+  // of introducing a second lossy pass of noticeable compression artifacts
+  await ff.exec(['-i','in.webm','-c:v','libx264','-preset','fast','-crf','16','-pix_fmt','yuv420p','-movflags','+faststart','-c:a','aac','-b:a','192k','out.mp4']);
+  const data=await ff.readFile('out.mp4');
+  await ff.deleteFile('in.webm').catch(()=>{});
+  await ff.deleteFile('out.mp4').catch(()=>{});
+  return new Blob([data.buffer],{type:'video/mp4'});
+ }catch(err){
+  console.error('ffmpeg transcode failed, falling back to original file:',err);
+  if(statusEl)statusEl.textContent='MP4 encoder unavailable — downloading original file instead.';
+  return blob;
+ }
+}
+function triggerDownload(blob,filenameBase){
+ const a=document.createElement('a');
+ const url=URL.createObjectURL(blob);
+ a.href=url;
+ const ext=blob.type.includes('mp4')?'mp4':'webm';
+ a.download=filenameBase+'.'+ext;
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+$('downloadVideo').onclick=async()=>{
+ if(!exportBlob||!file)return;
+ $('downloadVideo').disabled=true;
+ const base=file.name.replace(/\.[^.]+$/,'')+'_edited';
+ const prevStatus=$('exportStatus').textContent;
+ const mp4=await transcodeToMp4(exportBlob,$('exportStatus'));
+ triggerDownload(mp4,base);
+ $('exportStatus').textContent='Download ready ('+(mp4.type.includes('mp4')?'MP4':'WebM')+').';
+ $('downloadVideo').disabled=false;
+}
+$('goGeo').onclick=()=>{$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
+$('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview()}
+$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
+$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
+
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','gTitle','gDetails','logoX','logoY','logoSize']){
+ $(id).oninput=()=>{state[id]=+$(id).value;$(id+'Val').textContent=$(id).value+'%';drawGeoPreview()}
+}
+function drawGeoPreview(){
+ if(!video.videoWidth)return;
+ const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
+ gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
+ if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
+ if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
+}
+let exporting=false;
+// Prefer the frame-accurate WebCodecs pipeline (correct speed, no dropped
+// frames, no realtime-capture stutter). Only falls back to the real-time
+// screen-capture method on browsers without WebCodecs support (e.g. Safari).
+async function runExport(){
+ exporting=true;
+ try{
+  if(window.VideoEncoder && window.AudioEncoder && window.Mp4Muxer){
+   try{ await exportVideoFrameAccurate(); return; }
+   catch(err){ console.warn('Frame-accurate export failed, falling back to realtime capture:',err); }
+  }
+  await exportVideo();
+ }finally{
+  exporting=false;
+ }
+}
+$('exportGeo').onclick=async()=>{
+ if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}
+ $('exportGeo').disabled=true;
+ $('downloadGeo').disabled=true;
+ $('geoStatus').textContent='Rendering GeoTagged Video…';
+ try{
+   await runExport();
+   if(exportBlob){
+     $('downloadGeo').disabled=false;
+     $('geoStatus').textContent='GeoTagged video rendered successfully. Download button is ready.';
+   }else{
+     $('geoStatus').textContent='Could not render the GeoTagged video.';
+   }
+ }catch(err){
+   console.error(err);
+   $('geoStatus').textContent='GeoTagged video export failed: '+(err.message||err);
+ }finally{
+   $('exportGeo').disabled=false;
+ }
+}
+$('downloadGeo').onclick=async()=>{
+ if(!exportBlob||!file)return;
+ $('downloadGeo').disabled=true;
+ const base=file.name.replace(/\.[^.]+$/,'')+'_geotag';
+ const mp4=await transcodeToMp4(exportBlob,$('geoStatus'));
+ triggerDownload(mp4,base);
+ $('geoStatus').textContent='GeoTagged video ready ('+(mp4.type.includes('mp4')?'MP4':'WebM')+').';
+ $('downloadGeo').disabled=false;
+};
+
+video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
+setInterval(()=>{if(!exporting&&video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
+</script>
 </body>
 </html>

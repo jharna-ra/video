@@ -473,6 +473,18 @@ function roundRectTopOnly(ctx,x,y,w,h,r){
   ctx.lineTo(x+w,y+h);
   ctx.closePath();
 }
+// Rounds only the top-left corner — used to line the map's clip up exactly
+// with the stamp's own top-left curve (all other edges stay square).
+function roundRectTopLeftOnly(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w,y);
+  ctx.lineTo(x+w,y+h);
+  ctx.lineTo(x,y+h);
+  ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
 async function buildTimeline(){
   if(!duration||!video.videoWidth)return;
   timelineFrames=[];timelineReady=false;drawTimeline();
@@ -627,16 +639,34 @@ function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
 async function makeMap(lat,lon){
+ // CartoDB Voyager tiles, fetched at @2x (retina) resolution: each tile is
+ // 512px of real image data but still placed into the usual 256-unit grid
+ // slot, so it's supersampled down onto the canvas instead of a blurry 1:1
+ // stretch — this is what removes the softness/blur from plain OSM tiles.
  const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
+ const servers=['a','b','c','d'];
  const c=document.createElement('canvas');c.width=size;c.height=size;const cctx=c.getContext('2d');
+ cctx.imageSmoothingEnabled=true;cctx.imageSmoothingQuality='high';
  cctx.clearRect(0,0,size,size);
+ let tileIdx=0;
  for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
   const im=new Image();im.crossOrigin='anonymous';
-  const url=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
-  await new Promise(res=>{im.onload=()=>{cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};im.onerror=()=>res();im.src=url});
+  const s=servers[tileIdx++%servers.length];
+  const url=`https://${s}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${cx+dx}/${cy+dy}@2x.png`;
+  const fallbackUrl=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
+  await new Promise(res=>{
+   im.onload=()=>{cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};
+   im.onerror=()=>{
+    const im2=new Image();im2.crossOrigin='anonymous';
+    im2.onload=()=>{cctx.drawImage(im2,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};
+    im2.onerror=()=>res();
+    im2.src=fallbackUrl;
+   };
+   im.src=url;
+  });
  }
  cctx.fillStyle='#e53935';cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
- cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);cctx.fillStyle='#333';cctx.font='12px Arial';cctx.fillText('© OpenStreetMap contributors',12,size-14);
+ cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,190,20);cctx.fillStyle='#333';cctx.font='12px Arial';cctx.fillText('© OpenStreetMap © CARTO',12,size-14);
  return c;
 }
 
@@ -661,10 +691,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   roundRectTopOnly(baseCtx,x,y,stampW,stampH,radius);
   baseCtx.fill();
 
-  // Map: no artificial grey border/padding. It fills the left portion of the stamp.
-  const mapX=x+pad;
-  const mapY=y+pad;
-  const mapH=Math.max(30,stampH-pad*2);
+  // Map: flush to the stamp's own left/top/bottom edges, sharing the same
+  // corner radius as the stamp so its rounded corner lines up exactly
+  // (no visible seam or gap at the top).
+  const mapX=x;
+  const mapY=y;
+  const mapH=stampH;
 
   // Camera badge is reserved on the far right.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
@@ -687,9 +719,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Clip exactly to the map rectangle so no grey canvas margin is visible.
-    roundRect(baseCtx,mapX,mapY,mapW,mapH,Math.max(3,Math.min(8,stampH*.018)));
+    // Clip using the SAME top-left radius as the stamp itself so the map's
+    // rounded corner traces the exact same curve as the black box behind it.
+    roundRectTopLeftOnly(baseCtx,mapX,mapY,mapW,mapH,radius);
     baseCtx.clip();
+    baseCtx.imageSmoothingEnabled=true;
+    baseCtx.imageSmoothingQuality='high';
     baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
     baseCtx.restore();
   }

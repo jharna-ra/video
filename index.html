@@ -702,12 +702,10 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Use the stamp's own corner radius where it fits, but never exceed what
-    // the map's own (much smaller) rectangle can support — a radius bigger
-    // than half the map's width/height produces an invalid, self-intersecting
-    // path (this was the cause of the diagonal wedge cutting into the map).
-    const mapRadius=Math.max(0,Math.min(radius,mapW/2,mapH/2));
-    roundRectTopLeftOnly(baseCtx,mapX,mapY,mapW,mapH,mapRadius);
+    // Plain rectangle, no corner rounding at all — this guarantees the map
+    // is flush against the top, left, and bottom edges with no gap.
+    baseCtx.beginPath();
+    baseCtx.rect(mapX,mapY,mapW,mapH);
     baseCtx.clip();
     baseCtx.imageSmoothingEnabled=true;
     baseCtx.imageSmoothingQuality='high';

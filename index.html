@@ -175,6 +175,7 @@ input[type=range]{width:100%}
 <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
 <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
 <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="10" max="60" value="30">
+<div class="sliderTop"><span>Map height (protrusion)</span><b id="gMapHVal">22%</b></div><input id="gMapH" type="range" min="0" max="60" value="22">
 <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
 <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
 </div>
@@ -221,7 +222,7 @@ let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gMapH:22,gTitle:100,gDetails:100,
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -674,11 +675,11 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   roundRectTopOnly(baseCtx,x,y,stampW,stampH,radius);
   baseCtx.fill();
 
-  // Map: stays a plain flat rectangle (no rounded corners), but extends
-  // upward past the top of the black bar so it floats above it like a card.
-  // The bar underneath keeps its own rounded top-left/top-right corners —
-  // they're simply hidden wherever the map sits on top of them.
-  const mapProtrude=Math.round(stampH*.22);
+  // Map: extends upward past the top of the black bar so it floats above
+  // it like a card. How far it protrudes is controlled by the "Map height"
+  // slider. The bar underneath keeps its own rounded top-left/top-right
+  // corners — they're simply hidden wherever the map sits on top of them.
+  const mapProtrude=Math.round(stampH*(state.gMapH/100));
   const mapX=x;
   const mapY=Math.max(0,y-mapProtrude);
   const mapH=H-mapY;
@@ -704,10 +705,11 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Plain rectangle, no corner rounding at all — this guarantees the map
-    // is flush against the top, left, and bottom edges with no gap.
-    baseCtx.beginPath();
-    baseCtx.rect(mapX,mapY,mapW,mapH);
+    // Top-left corner rounded to match the geotag's own corner radius —
+    // clamped so it never exceeds what the map's own rectangle can support
+    // (a radius bigger than half its width/height breaks the curve).
+    const mapRadius=Math.max(0,Math.min(radius,mapW/2,mapH/2));
+    roundRectTopLeftOnly(baseCtx,mapX,mapY,mapW,mapH,mapRadius);
     baseCtx.clip();
     baseCtx.imageSmoothingEnabled=true;
     baseCtx.imageSmoothingQuality='high';
@@ -1259,7 +1261,7 @@ $('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection')
 $('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
 $('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
-for(const id of ['gOpacity','gMapO','gHeight','gMapW','gTitle','gDetails','logoX','logoY','logoSize']){
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','gMapH','gTitle','gDetails','logoX','logoY','logoSize']){
  $(id).oninput=()=>{state[id]=+$(id).value;$(id+'Val').textContent=$(id).value+'%';drawGeoPreview()}
 }
 function drawGeoPreview(){

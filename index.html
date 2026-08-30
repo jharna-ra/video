@@ -639,34 +639,17 @@ function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
 async function makeMap(lat,lon){
- // CartoDB Voyager tiles, fetched at @2x (retina) resolution: each tile is
- // 512px of real image data but still placed into the usual 256-unit grid
- // slot, so it's supersampled down onto the canvas instead of a blurry 1:1
- // stretch — this is what removes the softness/blur from plain OSM tiles.
  const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
- const servers=['a','b','c','d'];
  const c=document.createElement('canvas');c.width=size;c.height=size;const cctx=c.getContext('2d');
  cctx.imageSmoothingEnabled=true;cctx.imageSmoothingQuality='high';
  cctx.clearRect(0,0,size,size);
- let tileIdx=0;
  for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
   const im=new Image();im.crossOrigin='anonymous';
-  const s=servers[tileIdx++%servers.length];
-  const url=`https://${s}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${cx+dx}/${cy+dy}@2x.png`;
-  const fallbackUrl=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
-  await new Promise(res=>{
-   im.onload=()=>{cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};
-   im.onerror=()=>{
-    const im2=new Image();im2.crossOrigin='anonymous';
-    im2.onload=()=>{cctx.drawImage(im2,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};
-    im2.onerror=()=>res();
-    im2.src=fallbackUrl;
-   };
-   im.src=url;
-  });
+  const url=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
+  await new Promise(res=>{im.onload=()=>{cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};im.onerror=()=>res();im.src=url});
  }
  cctx.fillStyle='#e53935';cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
- cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,190,20);cctx.fillStyle='#333';cctx.font='12px Arial';cctx.fillText('© OpenStreetMap © CARTO',12,size-14);
+ cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);cctx.fillStyle='#333';cctx.font='12px Arial';cctx.fillText('© OpenStreetMap contributors',12,size-14);
  return c;
 }
 
@@ -719,9 +702,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Clip using the SAME top-left radius as the stamp itself so the map's
-    // rounded corner traces the exact same curve as the black box behind it.
-    roundRectTopLeftOnly(baseCtx,mapX,mapY,mapW,mapH,radius);
+    // Use the stamp's own corner radius where it fits, but never exceed what
+    // the map's own (much smaller) rectangle can support — a radius bigger
+    // than half the map's width/height produces an invalid, self-intersecting
+    // path (this was the cause of the diagonal wedge cutting into the map).
+    const mapRadius=Math.max(0,Math.min(radius,mapW/2,mapH/2));
+    roundRectTopLeftOnly(baseCtx,mapX,mapY,mapW,mapH,mapRadius);
     baseCtx.clip();
     baseCtx.imageSmoothingEnabled=true;
     baseCtx.imageSmoothingQuality='high';

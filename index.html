@@ -41,7 +41,7 @@ input[type=range]{width:100%}
 .tabs{display:flex;gap:8px;margin-bottom:14px}.tabs button.active{background:#1769e0}
 #geoSection{display:none}
 .badge{display:inline-block;padding:4px 7px;border-radius:6px;background:#24313d;color:#9fb0be;font-size:11px}
-#mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px}
+#mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px;cursor:crosshair;touch-action:none}
 #logoCanvas{display:none}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
 @media(max-width:640px){
@@ -190,6 +190,7 @@ input[type=range]{width:100%}
 <div id="runningCoords" class="status">Running Lat —° Long —°</div>
 </div>
 <canvas id="mapPreview"></canvas>
+<div class="small">On the video preview, drag the map to move it. Drag the bottom-right corner to change its width and height. The map position/size are saved in the export.</div>
 </div>
 
 <div class="section">
@@ -206,7 +207,8 @@ input[type=range]{width:100%}
 <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
 <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
 <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-<div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="10" max="60" value="30">
+<div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
+<div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
 <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
 <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
 </div>
@@ -254,7 +256,7 @@ let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:30,mapH:35,
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -691,13 +693,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const stampGap=Math.max(12,Math.round(stampH*.045));
 
   // -------------------------- MAP BLOCK --------------------------
-  // Map is completely independent from the stamp's text/logo layout.
-  // Its height is exactly the stamp height, and its bottom touches
-  // the stamp top with ZERO gap.
-  const mapX=0;
-  const mapH=stampH;
-  const mapY=stampY;
-  const mapW=stampW*state.gMapW/100;
+  // The map has its OWN position and size. It can be dragged and resized
+  // directly on the video preview without changing the stamp block.
+  const mapX=clamp(W*state.mapX/100,0,Math.max(0,W-20));
+  const mapY=clamp(H*state.mapY/100,0,Math.max(0,H-20));
+  const mapW=clamp(W*state.mapW/100,20,W-mapX);
+  const mapH=clamp(H*state.mapH/100,20,H-mapY);
 
   // Draw STAMP block first.
   baseCtx.save();
@@ -733,9 +734,9 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   );
   const logoLeft=logoCenterX-logoSize/2;
 
-  // Text is positioned in the STAMP area to the RIGHT of the MAP.
-  // Map and stamp share the same height, but the map occupies only the left portion.
-  const textX=mapX+mapW+stampGap;
+  // STAMP text is independent from the map. The map can be moved/resized
+  // without changing the title/details position.
+  const textX=stampX+stampW*.255;
   const textRight=logoLeft-stampGap;
   const maxW=Math.max(150,textRight-textX);
   const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
@@ -773,6 +774,20 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.globalAlpha=stampOpacity;
   drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
   baseCtx.restore();
+
+  // Preview-only map controls. They are never rendered into the exported video.
+  if(baseCtx===gctx && mapImg){
+    baseCtx.save();
+    baseCtx.strokeStyle='rgba(255,255,255,.95)';
+    baseCtx.lineWidth=Math.max(1,2*W/geo.width);
+    baseCtx.setLineDash([6,4]);
+    baseCtx.strokeRect(mapX,mapY,mapW,mapH);
+    baseCtx.setLineDash([]);
+    const hs=Math.max(8,12*W/geo.width);
+    baseCtx.fillStyle='rgba(255,255,255,.95)';
+    baseCtx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
+    baseCtx.restore();
+  }
 }
 
 function prepareOutput(){
@@ -1233,13 +1248,56 @@ $('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection')
 $('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
 $('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
-for(const id of ['gOpacity','gMapO','gHeight','gMapW','gTitle','gDetails','logoX','logoY','logoSize']){
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
  $(id).oninput=()=>{
    state[id]=+$(id).value;
+   if(id==='gMapW') state.mapW=+$(id).value;
+   if(id==='mapH') state.mapH=+$(id).value;
    $(id+'Val').textContent=$(id).value+'%';
    drawGeoPreview();
  }
 }
+let mapDrag=null;
+function getMapRectOnPreview(){
+ if(!geo.width||!geo.height)return null;
+ const W=geo.width,H=geo.height;
+ const mx=clamp(W*state.mapX/100,0,Math.max(0,W-20));
+ const my=clamp(H*state.mapY/100,0,Math.max(0,H-20));
+ const mw=clamp(W*state.mapW/100,20,W-mx);
+ const mh=clamp(H*state.mapH/100,20,H-my);
+ return {x:mx,y:my,w:mw,h:mh,W,H};
+}
+function mapPointerPos(e){
+ const r=geo.getBoundingClientRect();
+ return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};
+}
+geo.addEventListener('pointerdown',e=>{
+ if(!mapImg||!geo.width)return;
+ const r=getMapRectOnPreview(); if(!r)return;
+ const p=mapPointerPos(e); const hs=Math.max(10,16*geo.width/Math.max(1,geo.getBoundingClientRect().width));
+ const resize=Math.abs(p.x-(r.x+r.w))<=hs && Math.abs(p.y-(r.y+r.h))<=hs;
+ if(resize || (p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h)){
+   e.preventDefault(); geo.setPointerCapture(e.pointerId);
+   mapDrag={mode:resize?'resize':'move',startX:p.x,startY:p.y,x:r.x,y:r.y,w:r.w,h:r.h,W:r.W,H:r.H};
+ }
+});
+geo.addEventListener('pointermove',e=>{
+ if(!mapDrag)return;
+ const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
+ if(mapDrag.mode==='move'){
+   state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
+   state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
+ }else{
+   state.mapW=clamp((mapDrag.w+dx)/mapDrag.W*100,5,100-state.mapX);
+   state.mapH=clamp((mapDrag.h+dy)/mapDrag.H*100,5,100-state.mapY);
+   $('gMapW').value=Math.round(state.mapW); $('gMapWVal').textContent=Math.round(state.mapW)+'%';
+   $('mapH').value=Math.round(state.mapH); $('mapHVal').textContent=Math.round(state.mapH)+'%';
+ }
+ drawGeoPreview();
+});
+function endMapDrag(){mapDrag=null;}
+geo.addEventListener('pointerup',endMapDrag); geo.addEventListener('pointercancel',endMapDrag); geo.addEventListener('pointerleave',()=>{if(mapDrag)endMapDrag();});
+
 function drawGeoPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);

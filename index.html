@@ -678,7 +678,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const mapOpacity=clamp(state.gMapO/100,0,1);
   const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
   const margin=0;
-  const x=0, y=H-stampH;
+  const x=0, y=Math.round(H-stampH);
   const stampW=W;
   const radius=Math.max(18,Math.round(stampH*.14));
   const pad=Math.max(5,Math.round(stampH*.022));
@@ -688,9 +688,11 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   // There is NO vertical gap: the map starts at the exact top edge of the stamp
   // and ends at the exact bottom edge of the stamp. The stamp itself is not moved
   // or resized by the map.
+  // Snap the map to the exact same pixel boundary as the stamp.
+  // A tiny 1px overlap removes any anti-alias/alignment line that can appear between them.
   const mapX=x;
-  const mapY=y;
-  const mapH=stampH;
+  const mapY=Math.max(0,y-1);
+  const mapH=Math.min(H-mapY,Math.round(stampH)+1);
   const requestedMapW=stampW*state.gMapW/100;
 
   // Draw the stamp background first.

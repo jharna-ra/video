@@ -252,6 +252,7 @@ let file=null, videoURL=null, duration=0, playing=false;
 let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
+let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
 let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
@@ -616,7 +617,9 @@ async function findLocation(){
   const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
   lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
   if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
-  mapImg=await makeMap(lat,lon);drawGeoPreview();
+  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
+  mapImg=await makeMap(lat,lon);
+  loadRealGPSRoute();drawGeoPreview();
  }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
 }
 $('findLocation').onclick=findLocation;
@@ -644,9 +647,69 @@ function readRunningCoords(){
   return [startLat,startLon].every(Number.isFinite);
 }
 
-// Creates a GPS-like track instead of a straight Start -> End interpolation.
-// The path has gradual acceleration/deceleration, small heading changes and
-// several intermediate points, while still ending exactly at the chosen End.
+// Build a route from real roads using OpenStreetMap's public OSRM routing
+// service. The GeoTag then follows the returned road geometry instead of
+// drawing an artificial straight line between two coordinates.
+async function loadRealGPSRoute(){
+  if(!readRunningCoords()) return;
+  if(!Number.isFinite(endLat)||!Number.isFinite(endLon)) return;
+  const key=[startLat,startLon,endLat,endLon].map(v=>v.toFixed(6)).join(',');
+  if(key===gpsRouteKey || gpsRouteLoading) return;
+  gpsRouteLoading=true;
+  $('runningCoords').textContent='Loading real road route…';
+  try{
+    const url='https://router.project-osrm.org/route/v1/driving/'+
+      `${startLon},${startLat};${endLon},${endLat}`+
+      '?overview=full&geometries=geojson&steps=false';
+    const r=await fetch(url,{headers:{Accept:'application/json'}});
+    if(!r.ok) throw Error('Route request failed');
+    const j=await r.json();
+    if(j.code!=='Ok'||!j.routes?.[0]?.geometry?.coordinates?.length) throw Error('No route');
+
+    gpsRoute=j.routes[0].geometry.coordinates.map(([lo,la])=>({lat:la,lon:lo}));
+    gpsRouteDistances=[0];
+    for(let i=1;i<gpsRoute.length;i++){
+      gpsRouteDistances[i]=gpsRouteDistances[i-1]+gpsDistanceMeters(
+        gpsRoute[i-1].lat,gpsRoute[i-1].lon,gpsRoute[i].lat,gpsRoute[i].lon
+      );
+    }
+    gpsRouteTotal=gpsRouteDistances[gpsRouteDistances.length-1]||0;
+    gpsRouteKey=key;
+    $('runningCoords').textContent='Real road GPS route loaded';
+    drawGeoPreview();
+  }catch(e){
+    gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;gpsRouteKey='';
+    $('runningCoords').textContent='Road route unavailable — using smooth GPS movement';
+    drawGeoPreview();
+  }finally{gpsRouteLoading=false;}
+}
+
+function gpsDistanceMeters(aLat,aLon,bLat,bLon){
+  const R=6371000, p1=aLat*Math.PI/180, p2=bLat*Math.PI/180;
+  const dp=(bLat-aLat)*Math.PI/180, dl=(bLon-aLon)*Math.PI/180;
+  const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+
+function getRoutePoint(progress){
+  if(!gpsRoute.length) return null;
+  if(progress<=0) return gpsRoute[0];
+  if(progress>=1) return gpsRoute[gpsRoute.length-1];
+  const target=progress*gpsRouteTotal;
+  let lo=0,hi=gpsRouteDistances.length-1;
+  while(lo<hi){
+    const mid=(lo+hi)>>1;
+    if(gpsRouteDistances[mid]<target) lo=mid+1; else hi=mid;
+  }
+  const i=Math.max(1,lo), a=gpsRoute[i-1], b=gpsRoute[i];
+  const span=Math.max(0.000001,gpsRouteDistances[i]-gpsRouteDistances[i-1]);
+  const t=(target-gpsRouteDistances[i-1])/span;
+  return {lat:a.lat+(b.lat-a.lat)*t,lon:a.lon+(b.lon-a.lon)*t};
+}
+
+// If a road route is available, use it. Otherwise use a gentle curved
+// fallback so the coordinates still move naturally when the routing service
+// is temporarily unavailable.
 function getRunningCoords(seconds){
   const trimStart=+$('trimStart').value||0;
   const trimEnd=+$('trimEnd').value||duration;
@@ -654,61 +717,28 @@ function getRunningCoords(seconds){
   const p=clamp(seconds/length,0,1);
   if(!readRunningCoords()) return {lat,lon};
 
-  let eLat=endLat, eLon=endLon;
-  const sameEnd=!Number.isFinite(eLat)||!Number.isFinite(eLon)||
-    (Math.abs(eLat-startLat)<0.0000001 && Math.abs(eLon-startLon)<0.0000001);
-
-  // If no different End is supplied, create a short forward GPS track.
-  if(sameEnd){
-    const metersPerSecond=1.25;
-    const meters=metersPerSecond*length;
-    const latDelta=meters/111320;
-    const cosLat=Math.max(0.2,Math.cos(startLat*Math.PI/180));
-    const lonDelta=meters/(111320*cosLat);
-    eLat=startLat+latDelta;
-    eLon=startLon+lonDelta;
+  if(Number.isFinite(endLat)&&Number.isFinite(endLon)&&gpsRoute.length){
+    // Ease only very slightly; most of the movement follows actual road
+    // distance, so turns and changing directions remain visible.
+    const q=clamp(p*0.985 + 0.015*p*p,0,1);
+    return getRoutePoint(q);
   }
 
-  const cosLat=Math.max(0.2,Math.cos(startLat*Math.PI/180));
-  const latMeters=(eLat-startLat)*111320;
-  const lonMeters=(eLon-startLon)*111320*cosLat;
-  const distance=Math.hypot(latMeters,lonMeters);
-
-  // Local east/north coordinates. The perpendicular offset creates gentle
-  // road-like bends instead of an artificial straight line.
-  const nx=distance>0?lonMeters/distance:1;
-  const ny=distance>0?latMeters/distance:0;
-  const px=-ny, py=nx;
-  const bend=Math.min(35,Math.max(2,distance*.08));
-
-  const points=[
-    [0,0],
-    [latMeters*.16 + py*bend*.55, lonMeters*.16 + px*bend*.55],
-    [latMeters*.38 - py*bend*.85, lonMeters*.38 - px*bend*.85],
-    [latMeters*.62 + py*bend*.70, lonMeters*.62 + px*bend*.70],
-    [latMeters*.83 - py*bend*.40, lonMeters*.83 - px*bend*.40],
-    [latMeters,lonMeters]
-  ];
-
-  // Variable-speed progress: slower at the beginning/end and slightly
-  // changing through the middle, like ordinary GPS movement.
-  let q=p;
-  q=q*q*(3-2*q);
-  q += Math.sin(q*Math.PI*2.4)*0.018*q*(1-q);
-  q=clamp(q,0,1);
-
-  const scaled=q*(points.length-1);
-  const i=Math.min(points.length-2,Math.floor(scaled));
-  const t=scaled-i;
-  const smooth=t*t*(3-2*t);
-  const a=points[i], b=points[i+1];
-  const north=a[0]+(b[0]-a[0])*smooth;
-  const east=a[1]+(b[1]-a[1])*smooth;
-
-  return {
-    lat:startLat+north/111320,
-    lon:startLon+east/(111320*cosLat)
-  };
+  let eLat=endLat, eLon=endLon;
+  if(!Number.isFinite(eLat)||!Number.isFinite(eLon)){
+    const meters=Math.max(10,1.25*length);
+    const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
+    eLat=startLat+meters/111320;
+    eLon=startLon+meters/(111320*cosLat);
+  }
+  const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
+  const north=(eLat-startLat)*111320, east=(eLon-startLon)*111320*cosLat;
+  const d=Math.hypot(north,east)||1, nx=east/d, ny=north/d, px=-ny, py=nx;
+  const bend=Math.min(12,Math.max(0.5,d*.025));
+  const q=p*p*(3-2*p);
+  const curve=Math.sin(Math.PI*q)*bend;
+  return {lat:startLat+(north*q+py*curve)/111320,
+          lon:startLon+(east*q+px*curve)/(111320*cosLat)};
 }
 function updateRunningCoords(seconds){
   const c=getRunningCoords(seconds);
@@ -717,7 +747,7 @@ function updateRunningCoords(seconds){
 }
 $('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat').value=lat.toFixed(6); $('startLon').value=lon.toFixed(6); if(!$('endLat').value)$('endLat').value=lat.toFixed(6); if(!$('endLon').value)$('endLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
 $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
-['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();}));
+['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
 
 function drawGeoFrame(baseCtx,W,H,seconds){
   // ================================================================

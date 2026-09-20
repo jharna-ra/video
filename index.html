@@ -643,6 +643,10 @@ function readRunningCoords(){
   endLat=parseFloat($('endLat').value); endLon=parseFloat($('endLon').value);
   return [startLat,startLon].every(Number.isFinite);
 }
+
+// Creates a GPS-like track instead of a straight Start -> End interpolation.
+// The path has gradual acceleration/deceleration, small heading changes and
+// several intermediate points, while still ending exactly at the chosen End.
 function getRunningCoords(seconds){
   const trimStart=+$('trimStart').value||0;
   const trimEnd=+$('trimEnd').value||duration;
@@ -651,18 +655,60 @@ function getRunningCoords(seconds){
   if(!readRunningCoords()) return {lat,lon};
 
   let eLat=endLat, eLon=endLon;
-  if(!Number.isFinite(eLat) || !Number.isFinite(eLon) ||
-     (Math.abs(eLat-startLat)<0.0000001 && Math.abs(eLon-startLon)<0.0000001)){
-    const totalSeconds=Math.max(1,length);
-    const metersPerSecond=1.2;
-    const meters=metersPerSecond*totalSeconds;
+  const sameEnd=!Number.isFinite(eLat)||!Number.isFinite(eLon)||
+    (Math.abs(eLat-startLat)<0.0000001 && Math.abs(eLon-startLon)<0.0000001);
+
+  // If no different End is supplied, create a short forward GPS track.
+  if(sameEnd){
+    const metersPerSecond=1.25;
+    const meters=metersPerSecond*length;
     const latDelta=meters/111320;
     const cosLat=Math.max(0.2,Math.cos(startLat*Math.PI/180));
     const lonDelta=meters/(111320*cosLat);
     eLat=startLat+latDelta;
     eLon=startLon+lonDelta;
   }
-  return {lat:startLat+(eLat-startLat)*p,lon:startLon+(eLon-startLon)*p};
+
+  const cosLat=Math.max(0.2,Math.cos(startLat*Math.PI/180));
+  const latMeters=(eLat-startLat)*111320;
+  const lonMeters=(eLon-startLon)*111320*cosLat;
+  const distance=Math.hypot(latMeters,lonMeters);
+
+  // Local east/north coordinates. The perpendicular offset creates gentle
+  // road-like bends instead of an artificial straight line.
+  const nx=distance>0?lonMeters/distance:1;
+  const ny=distance>0?latMeters/distance:0;
+  const px=-ny, py=nx;
+  const bend=Math.min(35,Math.max(2,distance*.08));
+
+  const points=[
+    [0,0],
+    [latMeters*.16 + py*bend*.55, lonMeters*.16 + px*bend*.55],
+    [latMeters*.38 - py*bend*.85, lonMeters*.38 - px*bend*.85],
+    [latMeters*.62 + py*bend*.70, lonMeters*.62 + px*bend*.70],
+    [latMeters*.83 - py*bend*.40, lonMeters*.83 - px*bend*.40],
+    [latMeters,lonMeters]
+  ];
+
+  // Variable-speed progress: slower at the beginning/end and slightly
+  // changing through the middle, like ordinary GPS movement.
+  let q=p;
+  q=q*q*(3-2*q);
+  q += Math.sin(q*Math.PI*2.4)*0.018*q*(1-q);
+  q=clamp(q,0,1);
+
+  const scaled=q*(points.length-1);
+  const i=Math.min(points.length-2,Math.floor(scaled));
+  const t=scaled-i;
+  const smooth=t*t*(3-2*t);
+  const a=points[i], b=points[i+1];
+  const north=a[0]+(b[0]-a[0])*smooth;
+  const east=a[1]+(b[1]-a[1])*smooth;
+
+  return {
+    lat:startLat+north/111320,
+    lon:startLon+east/(111320*cosLat)
+  };
 }
 function updateRunningCoords(seconds){
   const c=getRunningCoords(seconds);

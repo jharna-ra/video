@@ -672,61 +672,71 @@ $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').va
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();}));
 
 function drawGeoFrame(baseCtx,W,H,seconds){
-  baseCtx.save();
-
+  // ================================================================
+  // GEO OVERLAY = TWO COMPLETELY INDEPENDENT BLOCKS
+  // 1) MAP BLOCK: its own position, width and height.
+  // 2) STAMP BLOCK: its own position, width and height, text and logo.
+  // The ONLY relationship is that the map bottom touches the stamp top.
+  // ================================================================
   const stampOpacity=clamp(state.gOpacity/100,0,1);
   const mapOpacity=clamp(state.gMapO/100,0,1);
+
+  // ------------------------- STAMP BLOCK -------------------------
   const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  const margin=0;
-  const x=0, y=Math.round(H-stampH);
+  const stampX=0;
+  const stampY=Math.round(H-stampH);
   const stampW=W;
-  const radius=Math.max(18,Math.round(stampH*.14));
-  const pad=Math.max(5,Math.round(stampH*.022));
-  const gap=Math.max(12,Math.round(stampH*.045));
+  const stampRadius=Math.max(18,Math.round(stampH*.14));
+  const stampPad=Math.max(5,Math.round(stampH*.022));
+  const stampGap=Math.max(12,Math.round(stampH*.045));
 
-  // MAP IS A SEPARATE BLOCK DIRECTLY ABOVE THE STAMP.
-  // The stamp keeps its exact original position and size.
-  // The map has exactly the same height as the stamp and its bottom edge
-  // touches the stamp's top edge with ZERO gap.
-  const mapX=x;
-  const mapY=y-stampH;
+  // -------------------------- MAP BLOCK --------------------------
+  // Map is completely independent from the stamp's text/logo layout.
+  // Its height is exactly the stamp height, and its bottom touches
+  // the stamp top with ZERO gap.
+  const mapX=0;
   const mapH=stampH;
-  const requestedMapW=stampW*state.gMapW/100;
+  const mapY=Math.round(stampY-mapH);
+  const mapW=stampW*state.gMapW/100;
 
-  // Draw the stamp background first.
-  baseCtx.globalAlpha=stampOpacity;
-  baseCtx.fillStyle='rgba(0,0,0,.76)';
-  roundRectCorners(baseCtx,x,y,stampW,stampH,radius,radius,0,0);
-  baseCtx.fill();
-
-  // Draw the map ABOVE the stamp. It never occupies the title/text area.
-  // Its bottom edge is exactly the stamp's top edge, so there is no gap.
+  // Draw MAP block only.
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=mapOpacity;
     baseCtx.beginPath();
-    baseCtx.rect(mapX,mapY,requestedMapW,mapH);
+    baseCtx.rect(mapX,mapY,mapW,mapH);
     baseCtx.clip();
-    baseCtx.drawImage(mapImg,mapX,mapY,requestedMapW,mapH);
+    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
     baseCtx.restore();
   }
 
+  // Draw STAMP block only.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='rgba(0,0,0,.76)';
+  roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
+  baseCtx.fill();
+  baseCtx.restore();
+
+  // Everything below belongs ONLY to the STAMP block.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
   const logoCenterX=clamp(
     W*state.logoX/100,
-    x+stampW*.72+logoSize/2,
-    x+stampW-logoSize/2-pad
+    stampX+stampW*.72+logoSize/2,
+    stampX+stampW-logoSize/2-stampPad
   );
   const logoCenterY=clamp(
-    y+stampH*(state.logoY/100),
-    y+logoSize/2+pad,
-    y+stampH-logoSize/2-pad
+    stampY+stampH*(state.logoY/100),
+    stampY+logoSize/2+stampPad,
+    stampY+stampH-logoSize/2-stampPad
   );
   const logoLeft=logoCenterX-logoSize/2;
-  const mapW=stampW*state.gMapW/100;
-  const tx=mapX+mapW+gap;
-  const textRight=logoLeft-gap;
-  const maxW=Math.max(150,textRight-tx);
+
+  // Text is positioned from the STAMP block itself.
+  // It is deliberately NOT positioned from mapX/mapW/mapY/mapH.
+  const textX=stampX+stampPad;
+  const textRight=logoLeft-stampGap;
+  const maxW=Math.max(150,textRight-textX);
   const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
   const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
   const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
@@ -736,6 +746,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   updateRunningCoords(seconds);
   const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
 
+  // STAMP TEXT BLOCK ONLY.
   baseCtx.save();
   baseCtx.globalAlpha=stampOpacity;
   baseCtx.fillStyle='#fff';
@@ -745,21 +756,21 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 
   baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
   const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
-  let yy=y+pad+titleSize;
-  titleLines.forEach(line=>{baseCtx.fillText(line,tx,yy);yy+=titleSize*1.02});
+  let yy=stampY+stampPad+titleSize;
+  titleLines.forEach(line=>{baseCtx.fillText(line,textX,yy);yy+=titleSize*1.02});
 
   baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
   const lineGap=Math.max(3,detailSize*.25);
   const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
-  addressLines.forEach(line=>{if(yy<=y+stampH-pad)baseCtx.fillText(line,tx,yy);yy+=detailSize+lineGap});
-  if(yy<=y+stampH-pad){baseCtx.fillText(coordText,tx,yy);yy+=detailSize+lineGap*1.05;}
-  if(yy<=y+stampH-pad)baseCtx.fillText(dateTime,tx,yy);
+  addressLines.forEach(line=>{if(yy<=stampY+stampH-stampPad)baseCtx.fillText(line,textX,yy);yy+=detailSize+lineGap});
+  if(yy<=stampY+stampH-stampPad){baseCtx.fillText(coordText,textX,yy);yy+=detailSize+lineGap*1.05;}
+  if(yy<=stampY+stampH-stampPad)baseCtx.fillText(dateTime,textX,yy);
   baseCtx.restore();
 
+  // STAMP LOGO BLOCK ONLY.
   baseCtx.save();
   baseCtx.globalAlpha=stampOpacity;
   drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
-  baseCtx.restore();
   baseCtx.restore();
 }
 

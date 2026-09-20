@@ -1059,7 +1059,7 @@ function drawExportFrame(elapsedOverride){
       w:whiteRect.w/r.w*outputW,
       h:whiteRect.h/r.h*outputH
     };
-    removeWhiteFromCanvas(wctx,outputW,outputH,rectOnOutput);
+    removeWhiteFromCanvasFast(wctx,outputW,outputH,rectOnOutput);
   }
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
@@ -1141,7 +1141,7 @@ async function exportVideoFrameAccurate(){
   videoEncoder.configure({
     codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps,
     hardwareAcceleration,
-    latencyMode:'quality',
+    latencyMode:'realtime',
     // Keep the encoder's track timeline zero-based.
     firstTimestampBehavior:'offset'
   });
@@ -1178,7 +1178,7 @@ async function exportVideoFrameAccurate(){
       if(elapsed>=length-0.01){finish();return}
       drawExportFrame(elapsed);
       const vf=new VideoFrame(work,{timestamp:Math.round(elapsed*1e6)});
-      videoEncoder.encode(vf,{keyFrame:frameIndex%(fps*2)===0});
+      videoEncoder.encode(vf,{keyFrame:frameIndex%(fps*4)===0});
       vf.close();
       frameIndex++;
       if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(99,Math.round(elapsed/length*100))+'%';
@@ -1221,7 +1221,7 @@ async function exportVideoFrameAccurate(){
 
   muxer.finalize();
   exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
-  $('exportStatus').textContent='Video rendered — frame-accurate MP4, no lag. Download button is ready.';
+  $('exportStatus').textContent='Video rendered — fast MP4 export complete. Download button is ready.';
   $('downloadVideo').disabled=false;
 }
 

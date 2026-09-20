@@ -21,8 +21,8 @@ button.secondary{background:#293643}button.danger{background:#b63b3b}button:disa
 .sliderTop{display:flex;justify-content:space-between;font-size:12px;color:#cbd4dc}.sliderTop b{color:#6fb1ff}
 input[type=range]{width:100%}
 .status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
-.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-#viewCanvas{max-width:100%;max-height:72vh;display:block}
+.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
+#viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
@@ -44,9 +44,26 @@ input[type=range]{width:100%}
 #mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px}
 #logoCanvas{display:none}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
+@media(max-width:640px){
+  .wrap{padding:10px}
+  header{padding:12px 14px}
+  header h1{font-size:17px}
+  header p{font-size:12px}
+  .card{padding:10px}
+  .row,.row3{grid-template-columns:1fr}
+  button{width:100%;margin:5px 0 0;padding:12px;font-size:14px}
+  .row button,.row3 button{width:100%}
+  .tabs{flex-wrap:wrap}
+  .tabs button{flex:1 1 45%}
+  input[type=range]{height:28px}
+  .stage{min-height:220px}
+  #viewCanvas{max-height:50vh}
+  .queue{gap:5px}
+  #timelineWrap{padding:8px 30px 9px}
+  .timelineArrow{width:26px;height:36px;top:50px;font-size:20px;line-height:32px}
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
 </head>
 <body>
 <header>
@@ -97,13 +114,13 @@ input[type=range]{width:100%}
 <button id="removeMode" class="secondary">Select White Text Area</button>
 <button id="removeWhite" disabled>Remove White Text</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
-<label>White detection sensitivity <b id="whiteVal">165</b></label>
-<input id="whiteThreshold" type="range" min="110" max="245" value="165">
+<label>White detection sensitivity <b id="whiteVal">115</b></label>
+<input id="whiteThreshold" type="range" min="80" max="245" value="115">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
-<label>Strong inpaint passes <b id="inpaintPassVal">5</b></label>
+<label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
 <input id="inpaintPasses" type="range" min="1" max="8" value="5">
-<div class="small">Strong mode detects bright/white text including anti-aliased edges, expands the mask, and repeatedly fills the selected text area from surrounding pixels on every video frame.</div>
+<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get cloned over with real neighbouring pixels, so nothing else is blurred.</div>
 </div>
 
 <div class="section">
@@ -157,6 +174,21 @@ input[type=range]{width:100%}
 <textarea id="gAddress">Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India</textarea>
 <button id="findLocation">📍 Find Location</button>
 <div id="gCoords" class="status">Enter a location and press Find Location.</div>
+<div class="section" style="border-top:1px solid #263440;margin-top:10px;padding-top:10px">
+<h3>Running Latitude / Longitude</h3>
+<div class="small">Set the starting and ending GPS coordinates. The GeoTag will smoothly update latitude and longitude as the video plays/exports.</div>
+<div class="row">
+<div><label>Start Latitude</label><input id="startLat" type="number" step="0.000001" placeholder="34.014362"></div>
+<div><label>Start Longitude</label><input id="startLon" type="number" step="0.000001" placeholder="74.592252"></div>
+</div>
+<div class="row">
+<div><label>End Latitude</label><input id="endLat" type="number" step="0.000001" placeholder="34.020000"></div>
+<div><label>End Longitude</label><input id="endLon" type="number" step="0.000001" placeholder="74.610000"></div>
+</div>
+<button id="useCurrentAsStart" class="secondary">Use Found Location as Start</button>
+<button id="useCurrentAsEnd" class="secondary">Use Found Location as End</button>
+<div id="runningCoords" class="status">Running Lat —° Long —°</div>
+</div>
 <canvas id="mapPreview"></canvas>
 </div>
 
@@ -175,7 +207,6 @@ input[type=range]{width:100%}
 <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
 <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
 <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="10" max="60" value="30">
-<div class="sliderTop"><span>Map height (protrusion)</span><b id="gMapHVal">22%</b></div><input id="gMapH" type="range" min="0" max="60" value="22">
 <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
 <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
 </div>
@@ -218,11 +249,12 @@ const stage=$('stage'), selBox=$('selection');
 let file=null, videoURL=null, duration=0, playing=false;
 let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
+let startLat=null, startLon=null, endLat=null, endLon=null;
 let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gMapH:22,gTitle:100,gDetails:100,
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -256,10 +288,20 @@ function drawBase(ctx2,W,H){
 function isWhite(data,i,t){
  const r=data[i],g=data[i+1],b=data[i+2];
  const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
- const neutral=(mx-mn)<=105;
+ // Neutral check keeps this from flagging saturated bright colors (yellow
+ // vests, orange signage) while still catching real white/light-gray text,
+ // including the slightly off-white/gray tint video compression adds.
+ const neutral=(mx-mn)<=95;
  const brightness=(r+g+b)/3;
- return neutral && (mx>=t || brightness>=t);
+ return neutral && (mx>=t || brightness>=t-15);
 }
+// Only the exact text pixels (plus a small anti-aliasing margin) are ever
+// touched. Every pixel outside that mask is copied through completely
+// unchanged, so nothing outside the letters is blurred. Each masked pixel is
+// replaced with the average of the nearest REAL (non-text) pixel found in
+// each of the 4 directions — a clean clone-fill, not a repeated diffusion
+// blur — so the text is fully covered by its neighbouring pixels rather than
+// smeared into a soft patch.
 function removeWhiteFromCanvas(ctx2,W,H,rect){
  if(!rect)return;
  const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
@@ -269,67 +311,40 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
  const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
  const W2=x1-x0,H2=y1-y0,N=W2*H2;
  const mask=new Uint8Array(N);
- // Detect white text plus anti-aliased gray/white edge pixels.
  for(let y=0;y<H2;y++){
    for(let x=0;x<W2;x++){
      const p=y*W2+x,i=p*4;
      if(isWhite(d,i,t)) mask[p]=1;
    }
  }
- // Expand the mask by a few pixels so faint anti-aliased text edges are removed too.
+ // Small margin around each detected text pixel to fully cover anti-aliased
+ // edges — this does NOT grow into the whole selection box, only right
+ // around the actual letters. "Edge expand" slider controls this.
+ const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
  const expanded=new Uint8Array(mask);
  for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
    const p=y*W2+x; if(mask[p]){
-     for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+     for(let dy=-grow;dy<=grow;dy++) for(let dx=-grow;dx<=grow;dx++){
+       if(dx*dx+dy*dy>grow*grow+1)continue;
        const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
      }
    }
  }
- let cur=new Uint8ClampedArray(d);
- const passes=Math.max(1,+$('inpaintPasses').value||5);
- // Iterative boundary inpainting: each pass grows real surrounding pixels into the mask.
- for(let pass=0;pass<passes;pass++){
-   const next=new Uint8ClampedArray(cur);
-   let changed=false;
-   for(let y=0;y<H2;y++){
-     for(let x=0;x<W2;x++){
-       const p=y*W2+x; if(!expanded[p]) continue;
-       let sr=0,sg=0,sb=0,sw=0;
-       for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++){
-         if(dx===0&&dy===0)continue;
-         const xx=x+dx,yy=y+dy;
-         if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
-         const q=yy*W2+xx;
-         // Prefer pixels outside the original/expanded text mask; after each pass newly filled pixels can help.
-         if(expanded[q] && pass<passes-1) continue;
-         const dist=Math.sqrt(dx*dx+dy*dy);
-         const w=1/(dist+0.5);
-         const j=q*4; sr+=cur[j]*w;sg+=cur[j+1]*w;sb+=cur[j+2]*w;sw+=w;
-       }
-       if(sw){
-         const i=p*4,a=strength;
-         next[i]=cur[i]*(1-a)+(sr/sw)*a;
-         next[i+1]=cur[i+1]*(1-a)+(sg/sw)*a;
-         next[i+2]=cur[i+2]*(1-a)+(sb/sw)*a;
-         changed=true;
-       }
-     }
-   }
-   cur=next; if(!changed)break;
- }
- // Final smoothing/coverage pass over the detected mask, using a larger neighborhood for strong removal.
- const out=new Uint8ClampedArray(cur);
+ const out=new Uint8ClampedArray(d);
+ const maxSearch=60;
  for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x;if(!expanded[p])continue;
-   let sr=0,sg=0,sb=0,sw=0;
-   for(let dy=-6;dy<=6;dy++) for(let dx=-6;dx<=6;dx++){
-     if(dx===0&&dy===0)continue;
-     const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
-     const q=yy*W2+xx;if(expanded[q])continue;
-     const dist=Math.sqrt(dx*dx+dy*dy),w=1/(dist+1);
-     const j=q*4;sr+=cur[j]*w;sg+=cur[j+1]*w;sb+=cur[j+2]*w;sw+=w;
+   const p=y*W2+x; if(!expanded[p])continue;
+   let sr=0,sg=0,sb=0,n=0;
+   for(let k=1;k<=maxSearch;k++){const xx=x-k;if(xx<0)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const xx=x+k;if(xx>=W2)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const yy=y-k;if(yy<0)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const yy=y+k;if(yy>=H2)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   if(n){
+     const i=p*4,a=strength;
+     out[i]=d[i]*(1-a)+(sr/n)*a;
+     out[i+1]=d[i+1]*(1-a)+(sg/n)*a;
+     out[i+2]=d[i+2]*(1-a)+(sb/n)*a;
    }
-   if(sw){const i=p*4;out[i]=cur[i]*(1-strength)+(sr/sw)*strength;out[i+1]=cur[i+1]*(1-strength)+(sg/sw)*strength;out[i+2]=cur[i+2]*(1-strength)+(sb/sw)*strength;}
  }
  ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
 }
@@ -342,12 +357,15 @@ function drawPreview(){
  vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
  if(whiteRect){
    const wr=whiteRect;
-   const sx2=wr.x/r.w,sy2=wr.y/r.h,sw=wr.w/r.w,sh=wr.h/r.h;
-   const temp=document.createElement('canvas');temp.width=view.width;temp.height=view.height;
-   const tc=temp.getContext('2d',{willReadFrequently:true});
-   tc.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
-   removeWhiteFromCanvas(tc,view.width,view.height,{x:sx2*view.width,y:sy2*view.height,w:sw*view.width,h:sh*view.height});
-   vctx.clearRect(0,0,view.width,view.height);vctx.drawImage(temp,0,0);
+   // Use the same fast directional-search removal that export uses, so the
+   // live preview matches the actual output and doesn't stall playback with
+   // the much heavier multi-pass inpaint on every single frame.
+   removeWhiteFromCanvas(vctx,view.width,view.height,{
+     x:wr.x/r.w*view.width,
+     y:wr.y/r.h*view.height,
+     w:wr.w/r.w*view.width,
+     h:wr.h/r.h*view.height
+   });
  }
 }
 function updateSelectionBox(){
@@ -459,32 +477,21 @@ function drawTimeline(){
   $('timelineCurrentLabel').textContent=timelineFmt(cur);
   $('timelineEndLabel').textContent=timelineFmt(end);
 }
+function roundRectCorners(ctx,x,y,w,h,tl,tr,br,bl){
+  ctx.beginPath();
+  ctx.moveTo(x+tl,y);
+  ctx.lineTo(x+w-tr,y);
+  ctx.arcTo(x+w,y,x+w,y+tr,tr);
+  ctx.lineTo(x+w,y+h-br);
+  ctx.arcTo(x+w,y+h,x+w-br,y+h,br);
+  ctx.lineTo(x+bl,y+h);
+  ctx.arcTo(x,y+h,x,y+h-bl,bl);
+  ctx.lineTo(x,y+tl);
+  ctx.arcTo(x,y,x+tl,y,tl);
+  ctx.closePath();
+}
 function roundRect(ctx,x,y,w,h,r){
   ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
-}
-// Same as roundRect but only the top-left/top-right corners are rounded —
-// the bottom edge is a straight/square line all the way across.
-function roundRectTopOnly(ctx,x,y,w,h,r){
-  ctx.beginPath();
-  ctx.moveTo(x,y+h);
-  ctx.lineTo(x,y+r);
-  ctx.arcTo(x,y,x+r,y,r);
-  ctx.lineTo(x+w-r,y);
-  ctx.arcTo(x+w,y,x+w,y+r,r);
-  ctx.lineTo(x+w,y+h);
-  ctx.closePath();
-}
-// Rounds only the top-left corner — used to line the map's clip up exactly
-// with the stamp's own top-left curve (all other edges stay square).
-function roundRectTopLeftOnly(ctx,x,y,w,h,r){
-  ctx.beginPath();
-  ctx.moveTo(x+r,y);
-  ctx.lineTo(x+w,y);
-  ctx.lineTo(x+w,y+h);
-  ctx.lineTo(x,y+h);
-  ctx.lineTo(x,y+r);
-  ctx.arcTo(x,y,x+r,y,r);
-  ctx.closePath();
 }
 async function buildTimeline(){
   if(!duration||!video.videoWidth)return;
@@ -551,7 +558,7 @@ video.addEventListener('loadedmetadata',()=>{
  $('durationBadge').textContent=fmt(duration)+' s';
  $('trimStart').value='0';$('trimEnd').value=fmt(duration);
  $('trimRange').max=duration; $('trimRange').value=0;
- resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext'].forEach(x=>$(x).disabled=false);
+ resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
  $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
  buildTimeline();
 });
@@ -631,6 +638,8 @@ async function findLocation(){
   const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
   const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
   lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
+  if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
+  if(!$('endLat').value){$('endLat').value=lat.toFixed(6);$('endLon').value=lon.toFixed(6);}
   mapImg=await makeMap(lat,lon);drawGeoPreview();
  }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
 }
@@ -642,7 +651,6 @@ function tileXY(lat,lon,z){
 async function makeMap(lat,lon){
  const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
  const c=document.createElement('canvas');c.width=size;c.height=size;const cctx=c.getContext('2d');
- cctx.imageSmoothingEnabled=true;cctx.imageSmoothingQuality='high';
  cctx.clearRect(0,0,size,size);
  for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
   const im=new Image();im.crossOrigin='anonymous';
@@ -654,6 +662,26 @@ async function makeMap(lat,lon){
  return c;
 }
 
+function readRunningCoords(){
+  startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
+  endLat=parseFloat($('endLat').value); endLon=parseFloat($('endLon').value);
+  return [startLat,startLon,endLat,endLon].every(Number.isFinite);
+}
+function getRunningCoords(seconds){
+  const length=Math.max(0.001,(+$('trimEnd').value||duration)-($('trimStart').value||0));
+  const p=clamp(seconds/length,0,1);
+  if(!readRunningCoords()) return {lat,lon};
+  return {lat:startLat+(endLat-startLat)*p,lon:startLon+(endLon-startLon)*p};
+}
+function updateRunningCoords(seconds){
+  const c=getRunningCoords(seconds);
+  if(c.lat!=null&&c.lon!=null) $('runningCoords').textContent=`Running Lat ${c.lat.toFixed(6)}°  Long ${c.lon.toFixed(6)}°`;
+  return c;
+}
+$('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat').value=lat.toFixed(6); $('startLon').value=lon.toFixed(6); if(!$('endLat').value)$('endLat').value=lat.toFixed(6); if(!$('endLon').value)$('endLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
+$('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
+['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();}));
+
 function drawGeoFrame(baseCtx,W,H,seconds){
   // GeoTag layout matched to the user's second reference image:
   // compact rounded dark strip, map flush-left, compact text, small camera badge at right.
@@ -662,7 +690,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const stampOpacity=clamp(state.gOpacity/100,0,1);
   const mapOpacity=clamp(state.gMapO/100,0,1);
   const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  const margin=0;
+  const margin=Math.max(3,Math.round(H*.012));
   const x=margin, y=H-stampH;
   const stampW=W-margin*2;
   const radius=Math.max(18,Math.round(stampH*.14));
@@ -672,17 +700,14 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   // Main rounded dark translucent stamp.
   baseCtx.globalAlpha=stampOpacity;
   baseCtx.fillStyle='rgba(0,0,0,.76)';
-  roundRectTopOnly(baseCtx,x,y,stampW,stampH,radius);
+  roundRectCorners(baseCtx,x,y,stampW,stampH,radius,radius,0,0);
   baseCtx.fill();
 
-  // Map: extends upward past the top of the black bar so it floats above
-  // it like a card. How far it protrudes is controlled by the "Map height"
-  // slider. The bar underneath keeps its own rounded top-left/top-right
-  // corners — they're simply hidden wherever the map sits on top of them.
-  const mapProtrude=Math.round(stampH*(state.gMapH/100));
+  // Map: flush against the left, top, and bottom edges of the stamp —
+  // no bottom margin, so no empty strip shows below the map tile.
   const mapX=x;
-  const mapY=Math.max(0,y-mapProtrude);
-  const mapH=H-mapY;
+  const mapY=y;
+  const mapH=stampH;
 
   // Camera badge is reserved on the far right.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
@@ -705,14 +730,11 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Top-left corner rounded to match the geotag's own corner radius —
-    // clamped so it never exceeds what the map's own rectangle can support
-    // (a radius bigger than half its width/height breaks the curve).
-    const mapRadius=Math.max(0,Math.min(radius,mapW/2,mapH/2));
-    roundRectTopLeftOnly(baseCtx,mapX,mapY,mapW,mapH,mapRadius);
+    // Clip to the map rectangle, rounding only the left corners to match
+    // the stamp's own rounded corners (the right edge is interior, so it
+    // stays square). No inset — the map runs flush top-to-bottom.
+    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,radius,0,0,0);
     baseCtx.clip();
-    baseCtx.imageSmoothingEnabled=true;
-    baseCtx.imageSmoothingQuality='high';
     baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
     baseCtx.restore();
   }
@@ -725,7 +747,9 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
   const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
   const address=$('gAddress').value.trim();
-  const coordText=`Lat ${lat==null?'—':lat.toFixed(6)}°  Long ${lon==null?'—':lon.toFixed(6)}°`;
+  const running=getRunningCoords(seconds);
+  const coordText=`Lat ${running.lat==null?'—':running.lat.toFixed(6)}°  Long ${running.lon==null?'—':running.lon.toFixed(6)}°`;
+  updateRunningCoords(seconds);
   const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
 
   baseCtx.save();
@@ -757,7 +781,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 }
 
 function prepareOutput(){
- const r=sourceRect();outputW=Math.max(2,Math.round(r.w));outputH=Math.max(2,Math.round(r.h));
+ const r=sourceRect();
+ // H.264 (and YUV 4:2:0 in general) requires even width/height — an odd
+ // dimension here can make the encoder silently produce a corrupt file
+ // that looks fine in the app but won't open anywhere else.
+ outputW=Math.max(2,Math.round(r.w/2)*2);
+ outputH=Math.max(2,Math.round(r.h/2)*2);
  work.width=outputW;work.height=outputH;
 }
 // Fast video-only white-text removal.
@@ -921,12 +950,21 @@ function drawVideoFastGPU(r){
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();
   wctx.clearRect(0,0,outputW,outputH);
+  // Draw the plain frame, then run the real directional-search inpaint (the
+  // same quality-focused CPU algorithm used elsewhere) over the selected
+  // white-text region. The previous GPU shader here only blended each
+  // masked pixel with its immediate 1px neighbours, which barely erases
+  // anything thicker than a hairline of text — this is the actual fix for
+  // "white text removal isn't working" in exported video.
   wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
   if(whiteRect){
-    const sx=outputW/r.w, sy=outputH/r.h;
-    removeWhiteFromCanvasExport(wctx,outputW,outputH,{
-      x:whiteRect.x*sx, y:whiteRect.y*sy, w:whiteRect.w*sx, h:whiteRect.h*sy
-    });
+    const rectOnOutput={
+      x:whiteRect.x/r.w*outputW,
+      y:whiteRect.y/r.h*outputH,
+      w:whiteRect.w/r.w*outputW,
+      h:whiteRect.h/r.h*outputH
+    };
+    removeWhiteFromCanvas(wctx,outputW,outputH,rectOnOutput);
   }
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
@@ -959,13 +997,22 @@ function seekVideo(target){
 
 async function pickVideoCodec(width,height,fps){
   const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
+  // Prefer a hardware-accelerated encoder wherever possible — software H.264
+  // encoding can be many times slower, especially at higher resolutions,
+  // which is the main cause of exports feeling slow.
+  for(const codec of candidates){
+    try{
+      const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps,hardwareAcceleration:'prefer-hardware'});
+      if(support&&support.supported)return {codec,hardwareAcceleration:'prefer-hardware'};
+    }catch(e){}
+  }
   for(const codec of candidates){
     try{
       const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps});
-      if(support&&support.supported)return codec;
+      if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
     }catch(e){}
   }
-  return 'avc1.42e01f';
+  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
 }
 
 // Frame-accurate export: every frame is drawn, then encoded with an exact
@@ -983,18 +1030,24 @@ async function exportVideoFrameAccurate(){
   prepareOutput();
   video.pause();
 
-  // Best-effort audio: decode the original file's audio track fully, then
-  // we'll slice out just [start,end] below. If this fails (e.g. no audio
-  // track), export continues silently rather than failing.
-  let audioBuffer=null;
-  try{
-    const arr=await file.arrayBuffer();
-    const actx=new (window.AudioContext||window.webkitAudioContext)();
-    audioBuffer=await actx.decodeAudioData(arr);
-  }catch(e){console.warn('No usable audio track for export',e)}
-  const hasAudio=!!audioBuffer;
+  // Best-effort audio: decode the original file's audio track, then slice
+  // out just [start,end] later. decodeAudioData can't partially-decode a
+  // byte range, so this always reads the whole source file — but we kick it
+  // off immediately and let it run in the BACKGROUND while codec setup and
+  // the (much longer) frame-rendering loop below proceed, instead of making
+  // the whole export wait on it up front. We only block on it right before
+  // it's actually needed for muxer/audio-track setup.
+  const audioPromise=(async()=>{
+    try{
+      const arr=await file.arrayBuffer();
+      const actx=new (window.AudioContext||window.webkitAudioContext)();
+      return await actx.decodeAudioData(arr);
+    }catch(e){console.warn('No usable audio track for export',e);return null}
+  })();
 
-  const codec=await pickVideoCodec(outputW,outputH,fps);
+  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
+  const audioBuffer=await audioPromise;
+  const hasAudio=!!audioBuffer;
   const muxer=new Mp4Muxer.Muxer({
     target:new Mp4Muxer.ArrayBufferTarget(),
     fastStart:'in-memory',
@@ -1002,11 +1055,12 @@ async function exportVideoFrameAccurate(){
     audio:hasAudio?{codec:'aac',numberOfChannels:audioBuffer.numberOfChannels,sampleRate:audioBuffer.sampleRate}:undefined,
   });
 
+  let encoderFailed=null;
   const videoEncoder=new VideoEncoder({
     output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
-    error:e=>console.error('video encoder error',e)
+    error:e=>{console.error('video encoder error',e);encoderFailed=e}
   });
-  videoEncoder.configure({codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps});
+  videoEncoder.configure({codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps,hardwareAcceleration});
 
   $('exportStatus').textContent='Rendering video… 0%';
 
@@ -1015,6 +1069,7 @@ async function exportVideoFrameAccurate(){
   video.muted=true; // we mux audio separately below; muting avoids audio glitches at fast playback
   video.playbackRate=1;
 
+  const hasRVFC=typeof video.requestVideoFrameCallback==='function';
   let frameIndex=0;
   await new Promise((resolve,reject)=>{
     let finished=false;
@@ -1022,6 +1077,10 @@ async function exportVideoFrameAccurate(){
       if(finished)return; finished=true;
       try{video.pause()}catch(e){}
       resolve();
+    };
+    const scheduleNext=()=>{
+      if(hasRVFC)video.requestVideoFrameCallback(onFrame);
+      else requestAnimationFrame(()=>onFrame(performance.now(),null));
     };
     const onFrame=(now,metadata)=>{
       if(finished)return;
@@ -1033,10 +1092,10 @@ async function exportVideoFrameAccurate(){
       vf.close();
       frameIndex++;
       if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(99,Math.round(elapsed/length*100))+'%';
-      video.requestVideoFrameCallback(onFrame);
+      scheduleNext();
     };
     video.addEventListener('ended',finish,{once:true});
-    video.requestVideoFrameCallback(onFrame);
+    scheduleNext();
     video.play().catch(reject);
   });
 
@@ -1044,6 +1103,7 @@ async function exportVideoFrameAccurate(){
   video.muted=wasMuted;
   await videoEncoder.flush();
   videoEncoder.close();
+  if(encoderFailed)throw new Error('Video encoder failed: '+(encoderFailed.message||encoderFailed));
 
   if(hasAudio){
     const sr=audioBuffer.sampleRate, ch=audioBuffer.numberOfChannels;
@@ -1161,7 +1221,7 @@ async function exportVideo(){
   let mime='';
   for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
   if(!mime)throw new Error('This Chrome cannot record video.');
-  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(24000000,Math.max(6000000,outputW*outputH*6)),audioBitsPerSecond:128000});
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
   const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
   const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
   let stopped=false,frameId=null,raf=0;
@@ -1186,74 +1246,52 @@ async function exportVideo(){
   $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
   $('downloadVideo').disabled=false;
 }
-// ---------- ffmpeg.wasm: reliable, universally-playable MP4 output ----------
-let ffmpegInstance=null, ffmpegLoading=null;
-async function getFFmpeg(onLog){
- if(ffmpegInstance)return ffmpegInstance;
- if(!ffmpegLoading){
-  ffmpegLoading=(async()=>{
-   const {FFmpeg}=window.FFmpegWASM;
-   const ff=new FFmpeg();
-   if(onLog)ff.on('log',({message})=>onLog(message));
-   await ff.load({
-    coreURL:'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-    wasmURL:'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
-   });
-   ffmpegInstance=ff;
-   return ff;
-  })();
- }
- return ffmpegLoading;
-}
-// Transcodes any recorded blob (webm/mp4) into a clean H.264/AAC MP4 via ffmpeg.wasm,
-// which fixes container/codec quirks from MediaRecorder and guarantees the file
-// downloads and plays everywhere (phones, WhatsApp, editors, etc).
-// Only re-encodes when actually needed (webm from browsers without native MP4
-// recording support). If the recorder already produced MP4/H.264, we hand that
-// back untouched — re-encoding an already-compressed video degrades quality
-// (visible pixelation/blockiness) and costs a lot of time for no benefit.
-async function transcodeToMp4(blob,statusEl){
- if(blob.type.includes('mp4')){
-  if(statusEl)statusEl.textContent='MP4 ready.';
-  return blob;
- }
- try{
-  if(statusEl)statusEl.textContent='Loading MP4 converter (one-time, needed for this browser)…';
-  const ff=await getFFmpeg(msg=>{if(statusEl)statusEl.textContent='Converting to MP4… '+msg});
-  await ff.writeFile('in.webm',new Uint8Array(await blob.arrayBuffer()));
-  if(statusEl)statusEl.textContent='Converting to MP4… this can take a moment';
-  // crf 16 + preset fast keeps quality visually close to the source instead
-  // of introducing a second lossy pass of noticeable compression artifacts
-  await ff.exec(['-i','in.webm','-c:v','libx264','-preset','fast','-crf','16','-pix_fmt','yuv420p','-movflags','+faststart','-c:a','aac','-b:a','192k','out.mp4']);
-  const data=await ff.readFile('out.mp4');
-  await ff.deleteFile('in.webm').catch(()=>{});
-  await ff.deleteFile('out.mp4').catch(()=>{});
-  return new Blob([data.buffer],{type:'video/mp4'});
- }catch(err){
-  console.error('ffmpeg transcode failed, falling back to original file:',err);
-  if(statusEl)statusEl.textContent='MP4 encoder unavailable — downloading original file instead.';
-  return blob;
- }
-}
-function triggerDownload(blob,filenameBase){
- const a=document.createElement('a');
- const url=URL.createObjectURL(blob);
- a.href=url;
- const ext=blob.type.includes('mp4')?'mp4':'webm';
- a.download=filenameBase+'.'+ext;
- document.body.appendChild(a);
- a.click();
- a.remove();
- setTimeout(()=>URL.revokeObjectURL(url),3000);
+// Picks the best available export path so the downloaded file actually
+// plays everywhere. WebCodecs + mp4-muxer produces a real, standards
+// compliant .mp4 (plays in Windows Media Player, VLC, phones, WhatsApp,
+// etc). If the browser doesn't support WebCodecs (e.g. Firefox, older
+// Safari), we fall back to MediaRecorder, which may only be able to
+// produce .webm on some browsers — .webm needs VLC or a browser to open,
+// since Windows Media Player cannot play it.
+async function doExport(){
+  const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
+  if(hasWebCodecs){
+    try{
+      await exportVideoFrameAccurate();
+      return;
+    }catch(err){
+      console.warn('Frame-accurate MP4 export failed, falling back to recorder export.',err);
+    }
+  }
+  await exportVideo();
+  if(exportBlob && exportBlob.type.includes('webm')){
+    const statusEl = ($('geoSection').style.display!=='none') ? $('geoStatus') : $('exportStatus');
+    const reason = (typeof window.isSecureContext!=='undefined' && !window.isSecureContext)
+      ? ' Reason: this page isn\'t served over HTTPS or localhost, so Chrome disables the MP4 encoder (WebCodecs) — deploy this file to a host like Vercel, or run it via a local server, to get real MP4 output.'
+      : ' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
+    statusEl.textContent += reason;
+  }
 }
 $('downloadVideo').onclick=async()=>{
- if(!exportBlob||!file)return;
+ if(!file)return;
  $('downloadVideo').disabled=true;
- const base=file.name.replace(/\.[^.]+$/,'')+'_edited';
  const prevStatus=$('exportStatus').textContent;
- const mp4=await transcodeToMp4(exportBlob,$('exportStatus'));
- triggerDownload(mp4,base);
- $('exportStatus').textContent='Download ready ('+(mp4.type.includes('mp4')?'MP4':'WebM')+').';
+ try{
+   // Renders the current trim + crop + white-text-removal (and geotag, if a
+   // location has already been found on the GeoTag tab) straight to a
+   // downloadable file, without requiring the user to visit the GeoTag tab.
+   await doExport();
+ }catch(err){
+   console.error(err);
+   $('exportStatus').textContent='Export failed: '+(err.message||err);
+   $('downloadVideo').disabled=false;
+   return;
+ }
+ if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
+ const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
+ const base=file.name.replace(/\.[^.]+$/,'');
+ const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
+ const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+tag+'.'+ext; a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
  $('downloadVideo').disabled=false;
 }
 $('goGeo').onclick=()=>{$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
@@ -1261,7 +1299,7 @@ $('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection')
 $('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
 $('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
-for(const id of ['gOpacity','gMapO','gHeight','gMapW','gMapH','gTitle','gDetails','logoX','logoY','logoSize']){
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','gTitle','gDetails','logoX','logoY','logoSize']){
  $(id).oninput=()=>{state[id]=+$(id).value;$(id+'Val').textContent=$(id).value+'%';drawGeoPreview()}
 }
 function drawGeoPreview(){
@@ -1271,29 +1309,13 @@ function drawGeoPreview(){
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
-let exporting=false;
-// Prefer the frame-accurate WebCodecs pipeline (correct speed, no dropped
-// frames, no realtime-capture stutter). Only falls back to the real-time
-// screen-capture method on browsers without WebCodecs support (e.g. Safari).
-async function runExport(){
- exporting=true;
- try{
-  if(window.VideoEncoder && window.AudioEncoder && window.Mp4Muxer){
-   try{ await exportVideoFrameAccurate(); return; }
-   catch(err){ console.warn('Frame-accurate export failed, falling back to realtime capture:',err); }
-  }
-  await exportVideo();
- }finally{
-  exporting=false;
- }
-}
 $('exportGeo').onclick=async()=>{
  if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}
  $('exportGeo').disabled=true;
  $('downloadGeo').disabled=true;
  $('geoStatus').textContent='Rendering GeoTagged Video…';
  try{
-   await runExport();
+   await doExport();
    if(exportBlob){
      $('downloadGeo').disabled=false;
      $('geoStatus').textContent='GeoTagged video rendered successfully. Download button is ready.';
@@ -1307,18 +1329,21 @@ $('exportGeo').onclick=async()=>{
    $('exportGeo').disabled=false;
  }
 }
-$('downloadGeo').onclick=async()=>{
+$('downloadGeo').onclick=()=>{
  if(!exportBlob||!file)return;
- $('downloadGeo').disabled=true;
- const base=file.name.replace(/\.[^.]+$/,'')+'_geotag';
- const mp4=await transcodeToMp4(exportBlob,$('geoStatus'));
- triggerDownload(mp4,base);
- $('geoStatus').textContent='GeoTagged video ready ('+(mp4.type.includes('mp4')?'MP4':'WebM')+').';
- $('downloadGeo').disabled=false;
+ const a=document.createElement('a');
+ const url=URL.createObjectURL(exportBlob);
+ a.href=url;
+ const base=file.name.replace(/\.[^.]+$/,'');
+ const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+'_geotag.'+ext;
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),3000);
 };
 
 video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
-setInterval(()=>{if(!exporting&&video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
+setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
 </script>
 </body>
 </html>

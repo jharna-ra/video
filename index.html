@@ -245,7 +245,10 @@ input[type=range]{width:100%}
 const $=id=>document.getElementById(id);
 const video=$('video'), view=$('viewCanvas'), vctx=view.getContext('2d',{willReadFrequently:true});
 const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true});
-const geo=$('geoCanvas'), gctx=geo.getContext('2d');
+const geo=$('geoCanvas'), gctx=geo.getContext('2d',{willReadFrequently:true});
+// The export/white-text-removal canvas is read repeatedly with getImageData.
+// Keep this context explicitly optimized for readback-heavy processing.
+if(!wctx) throw new Error('Export canvas context unavailable');
 const stage=$('stage'), selBox=$('selection');
 
 let file=null, videoURL=null, duration=0, playing=false;
@@ -1167,7 +1170,7 @@ async function exportVideoFrameAccurate(){
       if(hasRVFC)video.requestVideoFrameCallback(onFrame);
       else requestAnimationFrame(()=>onFrame(performance.now(),null));
     };
-    const onFrame=(now,metadata)=>{
+    const onFrame=async(now,metadata)=>{
       if(finished)return;
       const mediaTime=(metadata&&metadata.mediaTime!=null?metadata.mediaTime:video.currentTime);
       // Normalize against the first frame actually received. This prevents
@@ -1181,7 +1184,16 @@ async function exportVideoFrameAccurate(){
       videoEncoder.encode(vf,{keyFrame:frameIndex%(fps*4)===0});
       vf.close();
       frameIndex++;
-      if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(99,Math.round(elapsed/length*100))+'%';
+      // Apply back-pressure so Chrome does not accumulate an unbounded
+      // hardware-encoder queue. This also gives the encoder time to drain
+      // instead of hitting QuotaExceededError.
+      if(videoEncoder.encodeQueueSize>4){
+        while(videoEncoder.encodeQueueSize>2 && !encoderFailed){
+          await new Promise(r=>setTimeout(r,0));
+        }
+        if(encoderFailed){ finish(); return; }
+      }
+      if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(90,Math.round(elapsed/length*90))+'%';
       scheduleNext();
     };
     video.addEventListener('ended',finish,{once:true});
@@ -1191,11 +1203,13 @@ async function exportVideoFrameAccurate(){
 
   video.playbackRate=1;
   video.muted=wasMuted;
+  $('exportStatus').textContent='Finishing video encoding… 92%';
   await videoEncoder.flush();
   videoEncoder.close();
   if(encoderFailed)throw new Error('Video encoder failed: '+(encoderFailed.message||encoderFailed));
 
   if(hasAudio){
+    $('exportStatus').textContent='Encoding audio… 94%';
     const sr=audioBuffer.sampleRate, ch=audioBuffer.numberOfChannels;
     const s0=Math.floor(start*sr), s1=Math.min(audioBuffer.length,Math.floor(end*sr));
     const audioEncoder=new AudioEncoder({
@@ -1203,7 +1217,8 @@ async function exportVideoFrameAccurate(){
       error:e=>console.error('audio encoder error',e)
     });
     audioEncoder.configure({codec:'mp4a.40.2',sampleRate:sr,numberOfChannels:ch,bitrate:128000});
-    const chunkSize=1024;
+    const chunkSize=8192;
+    const totalSamples=Math.max(1,s1-s0);
     for(let s=s0;s<s1;s+=chunkSize){
       const n=Math.min(chunkSize,s1-s);
       const interleaved=new Float32Array(n*ch);
@@ -1214,14 +1229,19 @@ async function exportVideoFrameAccurate(){
       const audioData=new AudioData({format:'f32',sampleRate:sr,numberOfFrames:n,numberOfChannels:ch,timestamp:Math.round((s-s0)/sr*1e6),data:interleaved});
       audioEncoder.encode(audioData);
       audioData.close();
+      if(((s-s0)/totalSamples)>0.02 && Math.floor((s-s0)/totalSamples*10)!==Math.floor((s-s0-n)/totalSamples*10)){
+        $('exportStatus').textContent='Encoding audio… '+Math.min(99,94+Math.round((s-s0)/totalSamples*5))+'%';
+      }
     }
+    $('exportStatus').textContent='Finishing audio… 99%';
     await audioEncoder.flush();
     audioEncoder.close();
   }
 
+  $('exportStatus').textContent='Finalizing MP4…';
   muxer.finalize();
   exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
-  $('exportStatus').textContent='Video rendered — fast MP4 export complete. Download button is ready.';
+  $('exportStatus').textContent='Video rendered — 100% complete. Download button is ready.';
   $('downloadVideo').disabled=false;
 }
 

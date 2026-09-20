@@ -725,15 +725,11 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   roundRectCorners(baseCtx,x,y,stampW,stampH,radius,radius,0,0);
   baseCtx.fill();
 
-  // The stamp is NEVER resized by the map. The map is simply placed ON TOP
-  // of the existing stamp. Map Height is measured from the VIDEO height,
-  // so its size stays proportional to the actual video dimensions.
-  // The map starts at the stamp's top edge, so there is no extra stamp area above it.
+  // Map height is locked to the stamp height — the map fills the stamp
+  // completely (top to bottom), so there's never a bare/grey strip of the
+  // stamp showing above or below the map image.
   const mapX=x;
-  const requestedMapH=H*(clamp(state.gMapH,5,100)/100);
-  const mapH=Math.min(stampH,requestedMapH);
-  // Put the map directly ON the existing stamp from its top edge.
-  // This prevents a second/extra dark stamp area from appearing above the map.
+  const mapH=stampH;
   const mapY=y;
 
   // Camera badge is reserved on the far right.
@@ -757,12 +753,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Clip to the map rectangle, rounding only the left corners to match
-    // the stamp's own rounded corners (the right edge is interior, so it
-    // stays square). No inset — the map runs flush top-to-bottom.
-    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,radius,0,0,0);
+    // Clip to the map rectangle, rounding the left corners (top and bottom)
+    // to match the stamp's own rounded top corners — since the map now
+    // spans the full stamp height, its bottom-left corner sits on the
+    // stamp's bottom-left, so round that corner too.
+    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,radius,0,0,radius);
     baseCtx.clip();
-    // The map remains inside the existing stamp; changing this slider only changes the map height.
     baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
     baseCtx.restore();
   }

@@ -717,28 +717,65 @@ function getRunningCoords(seconds){
   const p=clamp(seconds/length,0,1);
   if(!readRunningCoords()) return {lat,lon};
 
-  if(Number.isFinite(endLat)&&Number.isFinite(endLon)&&gpsRoute.length){
-    // Ease only very slightly; most of the movement follows actual road
-    // distance, so turns and changing directions remain visible.
-    const q=clamp(p*0.985 + 0.015*p*p,0,1);
-    return getRoutePoint(q);
+  // GPS-style wandering path. The coordinate does NOT move in a straight
+  // line. It makes small, smooth changes and comes back exactly to the
+  // starting point at the middle of the video, then starts wandering again.
+  // The seed keeps the path stable during preview/export instead of changing
+  // randomly on every frame.
+  const seed=(startLat*1000003+startLon*9176+(endLat||0)*37+(endLon||0)*13);
+  const rand=(n)=>{
+    const x=Math.sin(seed+n*12.9898)*43758.5453;
+    return x-Math.floor(x);
+  };
+
+  const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
+  const mToLat=m=>m/111320;
+  const mToLon=m=>m/(111320*cosLat);
+
+  // Keep the movement believable: tens of metres rather than huge jumps.
+  const radius=Math.max(18,Math.min(90,25+length*0.7));
+  const points=[];
+  for(let i=0;i<13;i++){
+    const q=i/12;
+    if(i===0||i===12){ points.push({x:0,y:0}); continue; }
+    const angle=rand(i)*Math.PI*2;
+    const r=radius*(0.35+rand(i+30)*0.65);
+    points.push({x:Math.cos(angle)*r,y:Math.sin(angle)*r});
   }
 
-  let eLat=endLat, eLon=endLon;
-  if(!Number.isFinite(eLat)||!Number.isFinite(eLon)){
-    const meters=Math.max(10,1.25*length);
-    const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
-    eLat=startLat+meters/111320;
-    eLon=startLon+meters/(111320*cosLat);
+  function wander(q){
+    q=clamp(q,0,1);
+    const pos=q*12;
+    const i=Math.min(11,Math.floor(pos));
+    const t=pos-i;
+    const ease=t*t*(3-2*t);
+    const a=points[i], b=points[i+1];
+    return {x:a.x+(b.x-a.x)*ease,y:a.y+(b.y-a.y)*ease};
   }
-  const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
-  const north=(eLat-startLat)*111320, east=(eLon-startLon)*111320*cosLat;
-  const d=Math.hypot(north,east)||1, nx=east/d, ny=north/d, px=-ny, py=nx;
-  const bend=Math.min(12,Math.max(0.5,d*.025));
-  const q=p*p*(3-2*p);
-  const curve=Math.sin(Math.PI*q)*bend;
-  return {lat:startLat+(north*q+py*curve)/111320,
-          lon:startLon+(east*q+px*curve)/(111320*cosLat)};
+
+  // First half: wander away and return exactly to the start.
+  if(p<=0.5){
+    const w=wander(p*2);
+    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
+  }
+
+  // Second half: start again from the exact starting coordinate and wander
+  // toward the requested end coordinate (if supplied).
+  const q=(p-0.5)*2;
+  const w=wander(q);
+  const hasEnd=Number.isFinite(endLat)&&Number.isFinite(endLon)&&
+               (Math.abs(endLat-startLat)>0.0000001||Math.abs(endLon-startLon)>0.0000001);
+  if(!hasEnd){
+    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
+  }
+
+  const endNorth=(endLat-startLat)*111320;
+  const endEast=(endLon-startLon)*111320*cosLat;
+  const routeWeight=q*q*(3-2*q);
+  return {
+    lat:startLat+mToLat(w.y*(1-routeWeight)+endNorth*routeWeight),
+    lon:startLon+mToLon(w.x*(1-routeWeight)+endEast*routeWeight)
+  };
 }
 function updateRunningCoords(seconds){
   const c=getRunningCoords(seconds);

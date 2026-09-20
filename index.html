@@ -728,11 +728,13 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   // The stamp is NEVER resized by the map. The map is simply placed ON TOP
   // of the existing stamp. Map Height is measured from the VIDEO height,
   // so its size stays proportional to the actual video dimensions.
-  // It is clipped to the stamp so it can never extend outside the GeoTag.
+  // The map starts at the stamp's top edge, so there is no extra stamp area above it.
   const mapX=x;
   const requestedMapH=H*(clamp(state.gMapH,5,100)/100);
   const mapH=Math.min(stampH,requestedMapH);
-  const mapY=y+stampH-mapH;
+  // Put the map directly ON the existing stamp from its top edge.
+  // This prevents a second/extra dark stamp area from appearing above the map.
+  const mapY=y;
 
   // Camera badge is reserved on the far right.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));

@@ -683,9 +683,10 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 
   // ------------------------- STAMP BLOCK -------------------------
   const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  const stampX=0;
+  const mapW=W*state.gMapW/100;
+  const stampX=Math.round(mapW);
   const stampY=Math.round(H-stampH);
-  const stampW=W;
+  const stampW=Math.max(1,W-stampX);
   const stampRadius=Math.max(18,Math.round(stampH*.14));
   const stampPad=Math.max(5,Math.round(stampH*.022));
   const stampGap=Math.max(12,Math.round(stampH*.045));
@@ -696,8 +697,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   // the stamp top with ZERO gap.
   const mapX=0;
   const mapH=stampH;
-  const mapY=Math.round(stampY-mapH);
-  const mapW=stampW*state.gMapW/100;
+  const mapY=stampY;
 
   // Draw MAP block only.
   if(mapImg){

@@ -1134,9 +1134,14 @@ async function exportVideoFrameAccurate(){
   });
 
   let encoderFailed=null;
+  let rejectEncoding=null;
   const videoEncoder=new VideoEncoder({
     output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
-    error:e=>{console.error('video encoder error',e);encoderFailed=e}
+    error:e=>{
+      console.error('video encoder error',e);
+      encoderFailed=e;
+      if(rejectEncoding) rejectEncoding(e);
+    }
   });
   // WebCodecs requires the first encoded video timestamp to be 0.
   // Some browsers report requestVideoFrameCallback mediaTime relative to the
@@ -1160,6 +1165,7 @@ async function exportVideoFrameAccurate(){
   let frameIndex=0;
   let firstFrameTimestamp=null;
   await new Promise((resolve,reject)=>{
+    rejectEncoding=reject;
     let finished=false;
     const finish=()=>{
       if(finished)return; finished=true;
@@ -1191,7 +1197,7 @@ async function exportVideoFrameAccurate(){
         while(videoEncoder.encodeQueueSize>2 && !encoderFailed){
           await new Promise(r=>setTimeout(r,0));
         }
-        if(encoderFailed){ finish(); return; }
+        if(encoderFailed){ reject(encoderFailed); return; }
       }
       if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(90,Math.round(elapsed/length*90))+'%';
       scheduleNext();
@@ -1204,7 +1210,14 @@ async function exportVideoFrameAccurate(){
   video.playbackRate=1;
   video.muted=wasMuted;
   $('exportStatus').textContent='Finishing video encoding… 92%';
-  await videoEncoder.flush();
+  // Chrome can leave flush() waiting when a hardware codec has been
+  // reclaimed. Do not let the export appear frozen forever; the caller
+  // will switch to the stable recorder fallback.
+  await Promise.race([
+    videoEncoder.flush(),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out; switching to stable export.')),15000))
+  ]);
+  rejectEncoding=null;
   videoEncoder.close();
   if(encoderFailed)throw new Error('Video encoder failed: '+(encoderFailed.message||encoderFailed));
 

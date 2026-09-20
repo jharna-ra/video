@@ -296,13 +296,6 @@ function isWhite(data,i,t){
  const brightness=(r+g+b)/3;
  return neutral && (mx>=t || brightness>=t-15);
 }
-// Only the exact text pixels (plus a small anti-aliasing margin) are ever
-// touched. Every pixel outside that mask is copied through completely
-// unchanged, so nothing outside the letters is blurred. Each masked pixel is
-// replaced with the average of the nearest REAL (non-text) pixel found in
-// each of the 4 directions — a clean clone-fill, not a repeated diffusion
-// blur — so the text is fully covered by its neighbouring pixels rather than
-// smeared into a soft patch.
 function removeWhiteFromCanvas(ctx2,W,H,rect){
  if(!rect)return;
  const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
@@ -318,9 +311,6 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
      if(isWhite(d,i,t)) mask[p]=1;
    }
  }
- // Small margin around each detected text pixel to fully cover anti-aliased
- // edges — this does NOT grow into the whole selection box, only right
- // around the actual letters. "Edge expand" slider controls this.
  const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
  const expanded=new Uint8Array(mask);
  for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
@@ -358,9 +348,6 @@ function drawPreview(){
  vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
  if(whiteRect){
    const wr=whiteRect;
-   // Use the same fast directional-search removal that export uses, so the
-   // live preview matches the actual output and doesn't stall playback with
-   // the much heavier multi-pass inpaint on every single frame.
    removeWhiteFromCanvas(vctx,view.width,view.height,{
      x:wr.x/r.w*view.width,
      y:wr.y/r.h*view.height,
@@ -417,13 +404,11 @@ function drawTimeline(){
   ctx.fillStyle='#05090d';ctx.fillRect(0,0,W,H);
   const top=27, thumbH=76, frames=timelineFrames;
 
-  // Gallery-style thumbnail strip.
   if(frames.length){
     const fw=W/frames.length;
     frames.forEach((im,i)=>{
       const x=i*fw;
       ctx.drawImage(im,x,top,Math.ceil(fw)+1,thumbH);
-      // Small separator between thumbnails.
       ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(x+fw-1,top,1,thumbH);
     });
   }else{
@@ -437,23 +422,19 @@ function drawTimeline(){
   const cur=clamp(video.currentTime||0,0,duration);
   const xS=start/duration*W,xE=end/duration*W,xC=cur/duration*W;
 
-  // Darken the portions outside the selected gallery range.
   ctx.fillStyle='rgba(0,0,0,.68)';
   if(xS>0)ctx.fillRect(0,top,xS,thumbH);
   if(xE<W)ctx.fillRect(xE,top,W-xE,thumbH);
 
-  // Yellow selected range, matching common gallery trim UIs.
   ctx.strokeStyle='#ffd400';ctx.lineWidth=4;
   ctx.strokeRect(Math.max(1,xS),top+1,Math.max(2,xE-xS-2),thumbH-2);
 
-  // Tall yellow trim handles with center grip.
   [xS,xE].forEach(x=>{
     ctx.fillStyle='#ffd400';ctx.fillRect(x-5,top-6,10,thumbH+12);
     ctx.fillStyle='#222';ctx.fillRect(x-2,top+24,4,28);
     ctx.beginPath();ctx.moveTo(x-5,top-9);ctx.lineTo(x+5,top-9);ctx.lineTo(x,top-3);ctx.closePath();ctx.fillStyle='#ffd400';ctx.fill();
   });
 
-  // Time ticks above the thumbnails.
   ctx.font='10px Arial';ctx.textAlign='center';
   const tickCount=Math.min(12,Math.max(5,Math.ceil(duration/5)+1));
   for(let i=0;i<tickCount;i++){
@@ -464,11 +445,9 @@ function drawTimeline(){
   }
   ctx.textAlign='start';
 
-  // Current blue playhead.
   ctx.strokeStyle='#1597ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(xC,17);ctx.lineTo(xC,H-8);ctx.stroke();
   ctx.fillStyle='#1597ff';ctx.beginPath();ctx.moveTo(xC-7,17);ctx.lineTo(xC+7,17);ctx.lineTo(xC,25);ctx.closePath();ctx.fill();
 
-  // Current time bubble.
   const label=timelineFmt(cur);ctx.font='bold 12px Arial';const tw=ctx.measureText(label).width+16;
   const bx=clamp(xC-tw/2,2,W-tw-2);ctx.fillStyle='#253542';
   roundRect(ctx,bx,0,tw,18,4);ctx.fill();
@@ -597,7 +576,6 @@ function wrapText(ctx,text,max,font,maxLines=3){
  if(line&&lines.length<maxLines)lines.push(line);return lines;
 }
 function drawLogo(ctx,x,y,size){
-  // Clean camera badge inspired by the reference photo.
   ctx.save();
   ctx.translate(x,y);
   const r=Math.max(8,size*.18);
@@ -606,20 +584,17 @@ function drawLogo(ctx,x,y,size){
   ctx.roundRect(-size/2,-size/2,size,size,r);
   ctx.fill();
 
-  // White camera body.
   const bodyW=size*.68, bodyH=size*.40, bodyX=-bodyW/2, bodyY=-bodyH/2+size*.035;
   ctx.fillStyle='#fff';
   ctx.beginPath();
   ctx.roundRect(bodyX,bodyY,bodyW,bodyH,Math.max(3,size*.025));
   ctx.fill();
 
-  // Camera top bump.
   const bumpW=size*.25, bumpH=size*.10;
   ctx.beginPath();
   ctx.roundRect(-bumpW*.42,bodyY-bumpH*.72,bumpW,bumpH,Math.max(2,size*.015));
   ctx.fill();
 
-  // Blue lens with white ring.
   ctx.fillStyle='#149bd3';
   ctx.beginPath();
   ctx.arc(0,bodyY+bodyH/2,size*.145,0,Math.PI*2);
@@ -639,8 +614,6 @@ async function findLocation(){
   const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
   const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
   lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
-  // Use the found point as the starting coordinate. If End is left blank,
-  // getRunningCoords() automatically creates a small moving path for the video.
   if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
   mapImg=await makeMap(lat,lon);drawGeoPreview();
  }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
@@ -676,10 +649,6 @@ function getRunningCoords(seconds){
   const p=clamp(seconds/length,0,1);
   if(!readRunningCoords()) return {lat,lon};
 
-  // If the user has not supplied a different end point, automatically create
-  // a small moving GPS path. This makes the latitude/longitude visibly change
-  // throughout the video instead of staying fixed at the Find Location point.
-  // The movement is a generated overlay, not real GPS metadata from the video.
   let eLat=endLat, eLon=endLon;
   if(!Number.isFinite(eLat) || !Number.isFinite(eLon) ||
      (Math.abs(eLat-startLat)<0.0000001 && Math.abs(eLon-startLon)<0.0000001)){
@@ -704,14 +673,11 @@ $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').va
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();}));
 
 function drawGeoFrame(baseCtx,W,H,seconds){
-  // GeoTag layout matched to the user's second reference image:
-  // compact rounded dark strip, map flush-left, compact text, small camera badge at right.
   baseCtx.save();
 
   const stampOpacity=clamp(state.gOpacity/100,0,1);
   const mapOpacity=clamp(state.gMapO/100,0,1);
   const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  // Full-width GeoTag: no left or right outer margins.
   const margin=0;
   const x=0, y=H-stampH;
   const stampW=W;
@@ -719,7 +685,6 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const pad=Math.max(5,Math.round(stampH*.022));
   const gap=Math.max(12,Math.round(stampH*.045));
 
-  // Main rounded dark translucent stamp.
   baseCtx.globalAlpha=stampOpacity;
   baseCtx.fillStyle='rgba(0,0,0,.76)';
   roundRectCorners(baseCtx,x,y,stampW,stampH,radius,radius,0,0);
@@ -732,7 +697,6 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const mapH=stampH;
   const mapY=y;
 
-  // Camera badge is reserved on the far right.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
   const logoCenterX=clamp(
     W*state.logoX/100,
@@ -753,17 +717,14 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Clip to the map rectangle, rounding the left corners (top and bottom)
-    // to match the stamp's own rounded top corners — since the map now
-    // spans the full stamp height, its bottom-left corner sits on the
-    // stamp's bottom-left, so round that corner too.
-    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,radius,0,0,radius);
+    // Flat corners on the map — a straight edge can never visually
+    // mismatch the stamp's own rounded corner curve.
+    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,0,0,0,0);
     baseCtx.clip();
     baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
     baseCtx.restore();
   }
 
-  // Text area.
   const tx=mapX+mapW+gap;
   const textRight=logoLeft-gap;
   const maxW=Math.max(150,textRight-tx);
@@ -796,7 +757,6 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(yy<=y+stampH-pad)baseCtx.fillText(dateTime,tx,yy);
   baseCtx.restore();
 
-  // Small, clean blue camera badge on the right.
   baseCtx.save();
   baseCtx.globalAlpha=stampOpacity;
   drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
@@ -806,20 +766,10 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 
 function prepareOutput(){
  const r=sourceRect();
- // H.264 (and YUV 4:2:0 in general) requires even width/height — an odd
- // dimension here can make the encoder silently produce a corrupt file
- // that looks fine in the app but won't open anywhere else.
  outputW=Math.max(2,Math.round(r.w/2)*2);
  outputH=Math.max(2,Math.round(r.h/2)*2);
  work.width=outputW;work.height=outputH;
 }
-// Fast video-only white-text removal.
-// The editor preview keeps the strong multi-pass remover, while export uses
-// a lightweight two-pass method so the video clock stays normal.
-// Export remover: thorough enough to fully cover thick text (wide directional
-// search + mask dilation for anti-aliased edges), but cheap per pixel (a
-// single directional fill, not repeated multi-pass diffusion) so it can run
-// on hundreds of video frames without taking forever.
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){
   if(!rect)return;
   const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
@@ -839,7 +789,6 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
       if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
     }
   }
-  // Dilate 2px to catch anti-aliased text edges.
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
     const p=y*rw+x;
     if(mask[p]){
@@ -850,8 +799,6 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
     }
   }
 
-  // Search far enough to get through even thick text/logos, but this is
-  // O(area * search), not O(area * search^2) like a kernel pass.
   const maxSearch=Math.min(50,Math.max(24,Math.round(Math.max(rw,rh)/2)));
   const filled=new Uint8ClampedArray(d);
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
@@ -865,7 +812,6 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
     if(n){const i=p*4;filled[i]=d[i]*(1-strength)+(sr/n)*strength;filled[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;filled[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
   }
 
-  // One cheap 3x3 smoothing pass over just the mask area to soften seams.
   const out=new Uint8ClampedArray(filled);
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
     const p=y*rw+x; if(!expanded[p])continue;
@@ -888,10 +834,6 @@ function removeWhiteFromCanvasFast(ctx2,W,H,rect){
   const rw=x1-x0, rh=y1-y0;
   if(rw<2||rh<2)return;
 
-  // Fast VIDEO inpaint: no blur. Detect bright neutral pixels, expand the
-  // mask by 1px, then replace masked pixels with nearby real pixels from the
-  // same row/column. This keeps edges sharp and is much faster than the
-  // strong multi-pass editor inpaint.
   const img=ctx2.getImageData(x0,y0,rw,rh);
   const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
   const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
@@ -913,21 +855,17 @@ function removeWhiteFromCanvasFast(ctx2,W,H,rect){
     }
   }
 
-  // For each masked pixel, find the nearest clean pixel horizontally and
-  // vertically. Average those real pixels. No artificial blur is introduced.
   const out=new Uint8ClampedArray(d);
   const maxSearch=10;
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
     const p=y*rw+x;
     if(!expanded[p])continue;
     let sr=0,sg=0,sb=0,n=0;
-    // left/right
     for(let k=1;k<=maxSearch;k++){
       const lx=x-k,rx=x+k;
       if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
       if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
     }
-    // top/bottom
     for(let k=1;k<=maxSearch;k++){
       const ty=y-k,by=y+k;
       if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
@@ -974,12 +912,6 @@ function drawVideoFastGPU(r){
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();
   wctx.clearRect(0,0,outputW,outputH);
-  // Draw the plain frame, then run the real directional-search inpaint (the
-  // same quality-focused CPU algorithm used elsewhere) over the selected
-  // white-text region. The previous GPU shader here only blended each
-  // masked pixel with its immediate 1px neighbours, which barely erases
-  // anything thicker than a hairline of text — this is the actual fix for
-  // "white text removal isn't working" in exported video.
   wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
   if(whiteRect){
     const rectOnOutput={
@@ -1006,24 +938,16 @@ function seekVideo(target){
       resolve();
     };
     const onSeeked=()=>{
-      // Wait two animation frames after 'seeked' so the newly decoded frame
-      // is actually painted before we read it with drawImage — some
-      // browsers fire 'seeked' slightly before the frame is ready.
       requestAnimationFrame(()=>requestAnimationFrame(finish));
     };
     video.addEventListener('seeked',onSeeked,{once:true});
     video.currentTime=t;
-    // Last-resort safety net only (real seeks normally finish well before
-    // this) — long enough to never race ahead of a real seek.
     setTimeout(finish,2000);
   });
 }
 
 async function pickVideoCodec(width,height,fps){
   const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
-  // Prefer a hardware-accelerated encoder wherever possible — software H.264
-  // encoding can be many times slower, especially at higher resolutions,
-  // which is the main cause of exports feeling slow.
   for(const codec of candidates){
     try{
       const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps,hardwareAcceleration:'prefer-hardware'});
@@ -1039,11 +963,6 @@ async function pickVideoCodec(width,height,fps){
   return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
 }
 
-// Frame-accurate export: every frame is drawn, then encoded with an exact
-// timestamp via WebCodecs. Nothing here depends on the video actually
-// playing in real time, so a slow frame just makes export take longer —
-// it can never cause stutter/duplicated frames in the output, unlike
-// screen-recording a canvas with MediaRecorder.
 async function exportVideoFrameAccurate(){
   const start=clamp(+$('trimStart').value||0,0,duration);
   const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
@@ -1054,13 +973,6 @@ async function exportVideoFrameAccurate(){
   prepareOutput();
   video.pause();
 
-  // Best-effort audio: decode the original file's audio track, then slice
-  // out just [start,end] later. decodeAudioData can't partially-decode a
-  // byte range, so this always reads the whole source file — but we kick it
-  // off immediately and let it run in the BACKGROUND while codec setup and
-  // the (much longer) frame-rendering loop below proceed, instead of making
-  // the whole export wait on it up front. We only block on it right before
-  // it's actually needed for muxer/audio-track setup.
   const audioPromise=(async()=>{
     try{
       const arr=await file.arrayBuffer();
@@ -1090,7 +1002,7 @@ async function exportVideoFrameAccurate(){
 
   await seekVideo(start);
   const wasMuted=video.muted;
-  video.muted=true; // we mux audio separately below; muting avoids audio glitches at fast playback
+  video.muted=true;
   video.playbackRate=1;
 
   const hasRVFC=typeof video.requestVideoFrameCallback==='function';
@@ -1159,9 +1071,6 @@ async function exportVideoFrameAccurate(){
   $('downloadVideo').disabled=false;
 }
 
-// Fallback for browsers without WebCodecs (e.g. Safari, Firefox): real-time
-// canvas capture. This can still stutter on slow devices — Chrome or Edge
-// (desktop or Android) will use the frame-accurate path above instead.
 async function exportVideoRealtimeFallback(){
   const start=clamp(+$('trimStart').value||0,0,duration);
   const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
@@ -1270,13 +1179,6 @@ async function exportVideo(){
   $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
   $('downloadVideo').disabled=false;
 }
-// Picks the best available export path so the downloaded file actually
-// plays everywhere. WebCodecs + mp4-muxer produces a real, standards
-// compliant .mp4 (plays in Windows Media Player, VLC, phones, WhatsApp,
-// etc). If the browser doesn't support WebCodecs (e.g. Firefox, older
-// Safari), we fall back to MediaRecorder, which may only be able to
-// produce .webm on some browsers — .webm needs VLC or a browser to open,
-// since Windows Media Player cannot play it.
 async function doExport(){
   const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
   if(hasWebCodecs){
@@ -1301,9 +1203,6 @@ $('downloadVideo').onclick=async()=>{
  $('downloadVideo').disabled=true;
  const prevStatus=$('exportStatus').textContent;
  try{
-   // Renders the current trim + crop + white-text-removal (and geotag, if a
-   // location has already been found on the GeoTag tab) straight to a
-   // downloadable file, without requiring the user to visit the GeoTag tab.
    await doExport();
  }catch(err){
    console.error(err);

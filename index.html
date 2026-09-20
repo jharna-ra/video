@@ -1135,7 +1135,16 @@ async function exportVideoFrameAccurate(){
     output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
     error:e=>{console.error('video encoder error',e);encoderFailed=e}
   });
-  videoEncoder.configure({codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps,hardwareAcceleration});
+  // WebCodecs requires the first encoded video timestamp to be 0.
+  // Some browsers report requestVideoFrameCallback mediaTime relative to the
+  // document/media track, so explicitly offset the encoder timeline.
+  videoEncoder.configure({
+    codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps,
+    hardwareAcceleration,
+    latencyMode:'quality',
+    // Keep the encoder's track timeline zero-based.
+    firstTimestampBehavior:'offset'
+  });
 
   $('exportStatus').textContent='Rendering video… 0%';
 
@@ -1146,6 +1155,7 @@ async function exportVideoFrameAccurate(){
 
   const hasRVFC=typeof video.requestVideoFrameCallback==='function';
   let frameIndex=0;
+  let firstFrameTimestamp=null;
   await new Promise((resolve,reject)=>{
     let finished=false;
     const finish=()=>{
@@ -1159,7 +1169,12 @@ async function exportVideoFrameAccurate(){
     };
     const onFrame=(now,metadata)=>{
       if(finished)return;
-      const elapsed=Math.max(0,(metadata&&metadata.mediaTime!=null?metadata.mediaTime:video.currentTime)-start);
+      const mediaTime=(metadata&&metadata.mediaTime!=null?metadata.mediaTime:video.currentTime);
+      // Normalize against the first frame actually received. This prevents
+      // a browser/document-relative media timestamp from becoming the first
+      // non-zero timestamp in the MP4 track.
+      if(firstFrameTimestamp===null) firstFrameTimestamp=mediaTime;
+      const elapsed=Math.max(0,mediaTime-firstFrameTimestamp);
       if(elapsed>=length-0.01){finish();return}
       drawExportFrame(elapsed);
       const vf=new VideoFrame(work,{timestamp:Math.round(elapsed*1e6)});

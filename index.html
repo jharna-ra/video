@@ -207,7 +207,7 @@ input[type=range]{width:100%}
 <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
 <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
 <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="10" max="60" value="30">
-<div class="sliderTop"><span>Map height (of Stamp Height)</span><b id="gMapHVal">100%</b></div><input id="gMapH" type="range" min="20" max="100" value="100" step="1">
+<div class="sliderTop"><span>Map height</span><b id="gMapHVal">100%</b></div><input id="gMapH" type="range" min="10" max="100" value="100" step="1">
 <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
 <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
 </div>
@@ -729,8 +729,11 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   // 100% = exactly the same pixel height as the GeoTag stamp (no top/bottom gap).
   // Lower values intentionally make the map shorter than the stamp.
   const mapX=x;
-  const mapH=stampH*(clamp(state.gMapH,20,100)/100);
-  const mapY=y+(stampH-mapH)/2;
+  // Map height is selectable and is always measured from the REAL rendered
+  // stamp height. The map is bottom-aligned to the stamp, like the reference
+  // image, so changing Map Height only changes its top edge.
+  const mapH=stampH*(clamp(state.gMapH,10,100)/100);
+  const mapY=y+stampH-mapH;
 
   // Camera badge is reserved on the far right.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));

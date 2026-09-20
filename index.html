@@ -684,35 +684,25 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const pad=Math.max(5,Math.round(stampH*.022));
   const gap=Math.max(12,Math.round(stampH*.045));
 
-  // MAP HEIGHT IS EXACTLY THE SAME AS THE STAMP HEIGHT.
-  // The map sits inside the stamp on the left, with the text/logo on the right.
+  // MAP FILLS THE STAMP HEIGHT EXACTLY.
+  // There is NO vertical gap: the map starts at the exact top edge of the stamp
+  // and ends at the exact bottom edge of the stamp. The stamp itself is not moved
+  // or resized by the map.
   const mapX=x;
   const mapY=y;
   const mapH=stampH;
+  const requestedMapW=stampW*state.gMapW/100;
 
-  if(mapImg){
-    baseCtx.save();
-    baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    const requestedMapW=stampW*state.gMapW/100;
-    baseCtx.beginPath();
-    baseCtx.rect(mapX,mapY,requestedMapW,mapH);
-    baseCtx.clip();
-    baseCtx.drawImage(mapImg,mapX,mapY,requestedMapW,mapH);
-    baseCtx.restore();
-  }
-
-  // Draw the stamp itself once. The map uses exactly the same height as it.
+  // Draw the stamp background first.
   baseCtx.globalAlpha=stampOpacity;
   baseCtx.fillStyle='rgba(0,0,0,.76)';
   roundRectCorners(baseCtx,x,y,stampW,stampH,radius,radius,0,0);
-  // The map must remain visible, so the stamp background is drawn first.
-  // Redraw the map after the background below.
   baseCtx.fill();
 
+  // Put the map directly on the stamp with ZERO top/bottom offset.
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    const requestedMapW=stampW*state.gMapW/100;
     baseCtx.beginPath();
     baseCtx.rect(mapX,mapY,requestedMapW,mapH);
     baseCtx.clip();

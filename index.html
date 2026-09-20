@@ -683,10 +683,9 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 
   // ------------------------- STAMP BLOCK -------------------------
   const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  const mapW=W*state.gMapW/100;
-  const stampX=Math.round(mapW);
+  const stampX=0;
   const stampY=Math.round(H-stampH);
-  const stampW=Math.max(1,W-stampX);
+  const stampW=W;
   const stampRadius=Math.max(18,Math.round(stampH*.14));
   const stampPad=Math.max(5,Math.round(stampH*.022));
   const stampGap=Math.max(12,Math.round(stampH*.045));
@@ -698,25 +697,27 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const mapX=0;
   const mapH=stampH;
   const mapY=stampY;
+  const mapW=stampW*state.gMapW/100;
 
-  // Draw MAP block only.
-  if(mapImg){
-    baseCtx.save();
-    baseCtx.globalAlpha=mapOpacity;
-    baseCtx.beginPath();
-    baseCtx.rect(mapX,mapY,mapW,mapH);
-    baseCtx.clip();
-    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
-    baseCtx.restore();
-  }
-
-  // Draw STAMP block only.
+  // Draw STAMP block first.
   baseCtx.save();
   baseCtx.globalAlpha=stampOpacity;
   baseCtx.fillStyle='rgba(0,0,0,.76)';
   roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
   baseCtx.fill();
   baseCtx.restore();
+
+  // Draw MAP block on the LEFT side of the STAMP, at the EXACT same Y.
+  // The map and stamp have the same height and share the same top/bottom edges.
+  if(mapImg){
+    baseCtx.save();
+    baseCtx.globalAlpha=stampOpacity*mapOpacity;
+    baseCtx.beginPath();
+    baseCtx.rect(mapX,mapY,mapW,mapH);
+    baseCtx.clip();
+    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
+    baseCtx.restore();
+  }
 
   // Everything below belongs ONLY to the STAMP block.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
@@ -732,9 +733,9 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   );
   const logoLeft=logoCenterX-logoSize/2;
 
-  // Text is positioned from the STAMP block itself.
-  // It is deliberately NOT positioned from mapX/mapW/mapY/mapH.
-  const textX=stampX+stampPad;
+  // Text is positioned in the STAMP area to the RIGHT of the MAP.
+  // Map and stamp share the same height, but the map occupies only the left portion.
+  const textX=mapX+mapW+stampGap;
   const textRight=logoLeft-stampGap;
   const maxW=Math.max(150,textRight-textX);
   const titleSize=Math.max(15,stampH*.105*state.gTitle/100);

@@ -1092,148 +1092,77 @@ function removeWhiteFromCanvasFast(ctx2,W,H,rect){
 
 let fastGL=null;
 function initFastGL(){
-  if(fastGL)return fastGL;
+  if(fastGL && fastGL.c.width===outputW && fastGL.c.height===outputH)return fastGL;
+  fastGL=null;
   const c=document.createElement('canvas');
   c.width=outputW;c.height=outputH;
   const gl=c.getContext('webgl',{premultipliedAlpha:false,antialias:false,preserveDrawingBuffer:false});
   if(!gl)return null;
   const vs=`attribute vec2 p; varying vec2 uv; void main(){uv=(p+1.0)*0.5; gl_Position=vec4(p,0.,1.);}`;
-  const fs=`precision highp float;
-  varying vec2 uv;
-  uniform sampler2D tex;
-  uniform vec4 rr;
-  uniform vec4 src;
-  uniform float th;
-  uniform float strength;
-  uniform float grow;
-  uniform vec2 px;
-
-  vec2 toTex(vec2 o){
-    return vec2(src.x + o.x*src.z, 1.0 - (src.y + o.y*src.w));
-  }
-  vec3 sampleRGB(vec2 o){return texture2D(tex,toTex(o)).rgb;}
-  bool isWhite(vec3 c){
-    float mx=max(c.r,max(c.g,c.b));
-    float mn=min(c.r,min(c.g,c.b));
-    float brightness=(c.r+c.g+c.b)/3.0;
-    float neutral=95.0/255.0;
-    return (mx-mn)<=neutral && (mx>=th || brightness>=th-15.0/255.0);
-  }
+  const fs=`precision mediump float; varying vec2 uv; uniform sampler2D tex; uniform vec4 rr; uniform float th; uniform float strength; uniform vec2 px;
+  bool white(vec3 c){float mx=max(c.r,max(c.g,c.b));float mn=min(c.r,min(c.g,c.b));float bright=(c.r+c.g+c.b)/3.0;return mx>=th && bright>=th && (mx-mn)<=0.45;}
   void main(){
-    vec3 base=sampleRGB(uv);
-    vec4 c=vec4(base,1.0);
+    vec4 c=texture2D(tex,uv);
     bool inside=uv.x>=rr.x&&uv.x<=rr.z&&uv.y>=rr.y&&uv.y<=rr.w;
-    if(inside && isWhite(base)){
-      vec3 sum=vec3(0.0);
-      float n=0.0;
-      // Search outward for nearby non-white background pixels.
-      // Fixed loop bounds keep this compatible with WebGL 1.
-      for(int k=1;k<=16;k++){
-        float d=float(k)*grow;
-        vec3 l=sampleRGB(uv+vec2(-px.x*d,0.0));
-        vec3 r=sampleRGB(uv+vec2(px.x*d,0.0));
-        vec3 u=sampleRGB(uv+vec2(0.0,-px.y*d));
-        vec3 v=sampleRGB(uv+vec2(0.0,px.y*d));
-        if(!isWhite(l)){sum+=l;n+=1.0;}
-        if(!isWhite(r)){sum+=r;n+=1.0;}
-        if(!isWhite(u)){sum+=u;n+=1.0;}
-        if(!isWhite(v)){sum+=v;n+=1.0;}
-        if(n>=4.0)break;
-      }
-      if(n>0.0)c.rgb=mix(base,sum/n,strength);
+    if(inside && white(c.rgb)){
+      vec3 s=vec3(0.0);float n=0.0;
+      vec3 a=texture2D(tex,uv+vec2(-px.x,0.)).rgb;if(!white(a)){s+=a;n+=1.0;}
+      vec3 b=texture2D(tex,uv+vec2(px.x,0.)).rgb;if(!white(b)){s+=b;n+=1.0;}
+      vec3 d=texture2D(tex,uv+vec2(0.,-px.y)).rgb;if(!white(d)){s+=d;n+=1.0;}
+      vec3 e=texture2D(tex,uv+vec2(0.,px.y)).rgb;if(!white(e)){s+=e;n+=1.0;}
+      vec3 q=texture2D(tex,uv+vec2(-px.x,-px.y)).rgb;if(!white(q)){s+=q;n+=1.0;}
+      vec3 r=texture2D(tex,uv+vec2(px.x,-px.y)).rgb;if(!white(r)){s+=r;n+=1.0;}
+      vec3 t=texture2D(tex,uv+vec2(-px.x,px.y)).rgb;if(!white(t)){s+=t;n+=1.0;}
+      vec3 u=texture2D(tex,uv+vec2(px.x,px.y)).rgb;if(!white(u)){s+=u;n+=1.0;}
+      if(n>0.0)c.rgb=mix(c.rgb,s/n,strength);
     }
     gl_FragColor=c;
   }`;
-  function sh(type,srcCode){
-    const s=gl.createShader(type);gl.shaderSource(s,srcCode);gl.compileShader(s);
-    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){console.warn('WebGL shader error',gl.getShaderInfoLog(s));gl.deleteShader(s);return null}
-    return s;
-  }
-  const vsh=sh(gl.VERTEX_SHADER,vs), fsh=sh(gl.FRAGMENT_SHADER,fs);
-  if(!vsh||!fsh)return null;
-  const pr=gl.createProgram();gl.attachShader(pr,vsh);gl.attachShader(pr,fsh);gl.linkProgram(pr);
-  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){console.warn('WebGL program error',gl.getProgramInfoLog(pr));return null}
-  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  function sh(type,src){const shd=gl.createShader(type);gl.shaderSource(shd,src);gl.compileShader(shd);return shd}
+  const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){return null}
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   const pos=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
-  fastGL={gl,c,pr,tex,
-    rr:gl.getUniformLocation(pr,'rr'),src:gl.getUniformLocation(pr,'src'),
-    th:gl.getUniformLocation(pr,'th'),strength:gl.getUniformLocation(pr,'strength'),
-    grow:gl.getUniformLocation(pr,'grow'),px:gl.getUniformLocation(pr,'px')};
+  fastGL={gl,c,pr,tex,rr:gl.getUniformLocation(pr,'rr'),th:gl.getUniformLocation(pr,'th'),strength:gl.getUniformLocation(pr,'strength'),px:gl.getUniformLocation(pr,'px')};
   return fastGL;
 }
-function drawVideoFastGPU(r){
+function drawWhiteRemovalGPU(rect){
   const g=initFastGL(); if(!g)return false;
   const {gl,c,pr,tex}=g;
   gl.viewport(0,0,outputW,outputH);gl.useProgram(pr);
   gl.bindTexture(gl.TEXTURE_2D,tex);
-  // Do NOT flip the uploaded video. The shader converts the crop's top-left
-  // coordinates into WebGL's texture coordinates itself.
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
-
-  const threshold=(+$('whiteThreshold').value||115)/255;
-  const strength=(+$('removeOpacity').value||100)/100;
-  const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
-  gl.uniform1f(g.th,threshold);
-  gl.uniform1f(g.strength,strength);
-  gl.uniform1f(g.grow,grow);
-  gl.uniform2f(g.px,1/Math.max(1,video.videoWidth),1/Math.max(1,video.videoHeight));
-
-  // sourceRect() can represent a crop. Render exactly that crop to the
-  // output, while keeping whiteRect coordinates relative to the crop.
-  gl.uniform4f(g.src,
-    r.x/Math.max(1,video.videoWidth),
-    r.y/Math.max(1,video.videoHeight),
-    r.w/Math.max(1,video.videoWidth),
-    r.h/Math.max(1,video.videoHeight)
-  );
-
-  if(whiteRect){
-    const x=clamp(whiteRect.x/r.w,0,1);
-    const y=clamp(whiteRect.y/r.h,0,1);
-    const w=clamp(whiteRect.w/r.w,0,1-x);
-    const h=clamp(whiteRect.h/r.h,0,1-y);
-    gl.uniform4f(g.rr,x,y,x+w,y+h);
-  }else gl.uniform4f(g.rr,0,0,0,0);
-
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,work);
+  gl.uniform1f(g.th,(+$('whiteThreshold').value||115)/255);
+  gl.uniform1f(g.strength,(+$('removeOpacity').value||100)/100);
+  gl.uniform2f(g.px,1/outputW,1/outputH);
+  const x=rect.x/outputW, y=rect.y/outputH, w=rect.w/outputW, h=rect.h/outputH;
+  gl.uniform4f(g.rr,x,1-(y+h),x+w,1-y);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-  return c;
+  wctx.clearRect(0,0,outputW,outputH);
+  wctx.drawImage(c,0,0,outputW,outputH);
+  return true;
 }
 
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();
-
-  // Fast path: do the white-text removal on the GPU instead of reading and
-  // rewriting thousands of pixels on the CPU for every frame. This is the
-  // main reason exports were taking a long time / appearing stuck at 30-90%.
-  let fastCanvas=null;
-  if(whiteRect){
-    try{ fastCanvas=drawVideoFastGPU(r); }catch(e){ fastCanvas=null; }
-  }
-
   wctx.clearRect(0,0,outputW,outputH);
-  if(fastCanvas){
-    wctx.drawImage(fastCanvas,0,0,outputW,outputH);
-  }else{
-    wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
-    // Only use the slower CPU algorithm when WebGL is unavailable.
-    if(whiteRect){
-      const rectOnOutput={
-        x:whiteRect.x/r.w*outputW,
-        y:whiteRect.y/r.h*outputH,
-        w:whiteRect.w/r.w*outputW,
-        h:whiteRect.h/r.h*outputH
-      };
+  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+  if(whiteRect){
+    const rectOnOutput={
+      x:whiteRect.x/r.w*outputW,
+      y:whiteRect.y/r.h*outputH,
+      w:whiteRect.w/r.w*outputW,
+      h:whiteRect.h/r.h*outputH
+    };
+    // GPU path keeps white-text removal on every frame without the expensive
+    // per-pixel JavaScript search. If WebGL is unavailable, keep the original
+    // CPU remover so the feature is never lost.
+    if(!drawWhiteRemovalGPU(rectOnOutput)){
       removeWhiteFromCanvasFast(wctx,outputW,outputH,rectOnOutput);
     }
   }
-
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
     drawGeoFrame(wctx,outputW,outputH,elapsed);
@@ -1358,7 +1287,7 @@ async function exportVideoFrameAccurate(){
 
     restoreMute=video.muted;
     video.muted=true;
-    video.playbackRate=4;
+    video.playbackRate=4; // temporary source decoding speed; encoded timestamps remain normal-speed
 
     const hasRVFC=typeof video.requestVideoFrameCallback==='function';
     let frameIndex=0;

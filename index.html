@@ -43,33 +43,49 @@ input[type=range]{width:100%}
 .badge{display:inline-block;padding:4px 7px;border-radius:6px;background:#24313d;color:#9fb0be;font-size:11px}
 #mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px;cursor:crosshair;touch-action:none}
 #logoCanvas{display:none}
-/* GeoTag layout: video first, compact controls underneath. No thick side panel. */
-#geoSection .grid{display:grid;grid-template-columns:1fr;gap:12px;align-items:start}
-#geoSection main.card{order:1;min-width:0}
-#geoSection aside.card{order:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:14px;row-gap:0;align-content:start;width:100%;min-width:0}
-#geoSection aside.card>h2,#geoSection aside.card>#geoCounter,#geoSection aside.card>.section:first-of-type,#geoSection aside.card>#geoStatus{grid-column:1 / -1}
-#geoSection aside.card>.section{margin-top:8px;padding-top:8px}
-#geoSection #mapPreview{height:95px;margin-top:6px}
-#geoSection textarea{min-height:48px}
-#geoSection label{margin:4px 0 2px}
-#geoSection .small{font-size:11px;line-height:1.25}
-#geoSection .status{padding:6px;margin-top:6px}
-#geoSection .row{gap:6px}
-#geoSection button{padding:7px 9px;margin-top:3px}
-#geoSection .stage{min-height:0;height:calc(100vh - 260px);max-height:620px;display:flex;align-items:center;justify-content:center;overflow:hidden}
-#geoSection #geoCanvas{max-width:100%;max-height:100%;width:auto;height:auto;display:block}
-#geoSection .section:first-of-type{grid-column:1 / -1}
+/* GeoTag layout: preview first, overlay/logo directly underneath, compact controls */
+#geoSection .geoPage{display:flex;flex-direction:column;gap:12px;width:100%;}
+#geoSection .geoPreviewCard{width:100%;padding:12px;}
+#geoSection .geoPreviewHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;}
+#geoSection .geoPreviewHead h2{margin:0 0 5px;}
+#geoSection .geoPreviewHint{font-size:11px;color:#8fa0ad;text-align:right;max-width:480px;}
+#geoSection .geoPreviewCard .stage{height:calc(100vh - 390px);min-height:330px;max-height:620px;}
+#geoSection #geoCanvas{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+#geoSection .geoOptionGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
+#geoSection .geoOptionCard{min-width:0;padding:12px;}
+#geoSection .geoOptionCard h3{margin-bottom:10px;}
+#geoSection .geoOptionCard .sliderTop{margin-top:7px;}
+#geoSection .geoOptionCard input[type=range]{margin:0 0 2px;}
+#geoSection .geoInfoGrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:12px;align-items:start;}
+#geoSection .geoFields3{display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;}
+#geoSection .geoInfoGrid .card{min-width:0;}
+#geoSection textarea{min-height:48px;}
+#geoSection label{margin:4px 0 2px;}
+#geoSection .small{font-size:11px;line-height:1.25;}
+#geoSection .status{padding:6px;margin-top:6px;}
+#geoSection .row{gap:6px;}
+#geoSection button{padding:7px 9px;margin-top:3px;}
+#geoSection .runningBox{border-top:1px solid #263440;margin-top:10px;padding-top:10px;}
+#geoSection .runningBox h3{margin-bottom:6px;}
+#geoSection #mapPreview{height:90px;margin-top:8px;}
+#geoSection .geoActions{border-top:1px solid #263440;margin-top:14px;padding-top:10px;}
+#geoSection .geoActions button{margin-right:4px;}
 
 @media(max-width:900px){
-  #geoSection aside.card{grid-template-columns:1fr 1fr}
-  #geoSection aside.card>.section:first-of-type{grid-column:1 / -1}
-  #geoSection .stage{height:calc(100vh - 300px);min-height:300px}
+  #geoSection .geoOptionGrid{grid-template-columns:1fr 1fr;}
+  #geoSection .geoInfoGrid{grid-template-columns:1fr;}
+  #geoSection .geoFields3{grid-template-columns:1fr 1fr;}
+  #geoSection .geoFields3>div:last-child{grid-column:1 / -1;}
+  #geoSection .geoPreviewCard .stage{height:calc(100vh - 360px);min-height:280px;}
 }
 
 @media(max-width:640px){
-  #geoSection aside.card{grid-template-columns:1fr}
-  #geoSection aside.card>.section{grid-column:1 / -1}
-  #geoSection .stage{height:auto;min-height:260px}
+  #geoSection .geoOptionGrid{grid-template-columns:1fr;}
+  #geoSection .geoFields3{grid-template-columns:1fr;}
+  #geoSection .geoFields3>div:last-child{grid-column:auto;}
+  #geoSection .geoPreviewHead{align-items:flex-start;flex-direction:column;}
+  #geoSection .geoPreviewHint{text-align:left;}
+  #geoSection .geoPreviewCard .stage{height:auto;min-height:260px;}
 }
 @media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
 @media(max-width:640px){
@@ -187,81 +203,84 @@ input[type=range]{width:100%}
 </section>
 
 <section id="geoSection">
-<div class="grid">
-<aside class="card">
-<h2>GeoTag</h2>
-<div id="geoCounter" class="badge">Video not ready</div>
+  <div class="geoPage">
+    <!-- Video preview first -->
+    <main class="card geoPreviewCard">
+      <div class="geoPreviewHead">
+        <div>
+          <h2>GeoTag Preview</h2>
+          <div id="geoCounter" class="badge">Video not ready</div>
+        </div>
+        <div class="geoPreviewHint">Drag the map on the preview to move it. Drag its bottom-right corner to resize it.</div>
+      </div>
+      <div class="stage"><canvas id="geoCanvas"></canvas></div>
+      <div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
+    </main>
 
-<div class="section">
-<h3>Location</h3>
-<label>State</label>
-<input id="gState" type="text" value="Jammu and Kashmir">
-<label>District / Town</label>
-<input id="gPlace" type="text" value="Beerwah">
-<label>Address / Location — printed on video</label>
-<textarea id="gAddress">Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India</textarea>
-<button id="findLocation">📍 Find Location</button>
-<div id="gCoords" class="status">Enter a location and press Find Location.</div>
-<div class="section" style="border-top:1px solid #263440;margin-top:10px;padding-top:10px">
-<h3>Running Latitude / Longitude</h3>
-<div class="small">Latitude and longitude now move continuously while the video plays and exports. Set an End point for a specific route; if End is blank or equal to Start, a small automatic movement is generated.</div>
-<div class="row">
-<div><label>Start Latitude</label><input id="startLat" type="number" step="0.000001" placeholder="34.014362"></div>
-<div><label>Start Longitude</label><input id="startLon" type="number" step="0.000001" placeholder="74.592252"></div>
-</div>
-<div class="row">
-<div><label>End Latitude</label><input id="endLat" type="number" step="0.000001" placeholder="34.020000"></div>
-<div><label>End Longitude</label><input id="endLon" type="number" step="0.000001" placeholder="74.610000"></div>
-</div>
-<button id="useCurrentAsStart" class="secondary">Use Found Location as Start</button>
-<button id="useCurrentAsEnd" class="secondary">Use Found Location as End</button>
-<div id="runningCoords" class="status">Running Lat —° Long —°</div>
-</div>
-<canvas id="mapPreview"></canvas>
-<div class="small">On the video preview, drag the map to move it. Drag the bottom-right corner to change its width and height. The map position/size are saved in the export.</div>
-</div>
+    <!-- Overlay + logo directly below the video -->
+    <div class="geoOptionGrid">
+      <div class="card geoOptionCard">
+        <h3>Overlay</h3>
+        <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
+        <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
+        <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
+        <div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
+        <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
+        <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
+      </div>
 
-<div class="section">
-<h3>Date & Moving Time</h3>
-<div class="row">
-<div><label>Date</label><input id="gDate" type="date"></div>
-<div><label>Start Time</label><input id="gTime" type="time" step="1"></div>
-</div>
-<div class="small">During export, the displayed time advances with the video: 00:01 → 00:02 → 00:03, etc.</div>
-</div>
+      <div class="card geoOptionCard">
+        <h3>Blue Camera Logo Position</h3>
+        <div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
+        <div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
+        <div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
+      </div>
+    </div>
 
-<div class="section">
-<h3>Overlay</h3>
-<div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
-<div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
-<div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-<div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
-<div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
-<div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
-<div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
-</div>
+    <!-- Compact location/date controls below the main options -->
+    <div class="geoInfoGrid">
+      <div class="card">
+        <h3>Location</h3>
+        <div class="geoFields3">
+          <div><label>State</label><input id="gState" type="text" value="Jammu and Kashmir"></div>
+          <div><label>District / Town</label><input id="gPlace" type="text" value="Beerwah"></div>
+          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
+        </div>
+        <button id="findLocation">📍 Find Location</button>
+        <div id="gCoords" class="status">Enter a location and press Find Location.</div>
+        <div class="runningBox">
+          <h3>Running Latitude / Longitude</h3>
+          <div class="small">Latitude and longitude move continuously while the video plays and exports.</div>
+          <div class="row">
+            <div><label>Start Latitude</label><input id="startLat" type="number" step="0.000001" placeholder="34.014362"></div>
+            <div><label>Start Longitude</label><input id="startLon" type="number" step="0.000001" placeholder="74.592252"></div>
+            <div><label>End Latitude</label><input id="endLat" type="number" step="0.000001" placeholder="34.020000"></div>
+            <div><label>End Longitude</label><input id="endLon" type="number" step="0.000001" placeholder="74.610000"></div>
+          </div>
+          <button id="useCurrentAsStart" class="secondary">Use Found Location as Start</button>
+          <button id="useCurrentAsEnd" class="secondary">Use Found Location as End</button>
+          <div id="runningCoords" class="status">Running Lat —° Long —°</div>
+        </div>
+        <canvas id="mapPreview"></canvas>
+      </div>
 
-<div class="section">
-<h3>Blue Camera Logo Position</h3>
-<div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
-<div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
-<div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
-</div>
-
-<div class="section">
-<button id="backEdit" class="secondary">← Back</button>
-<button id="exportGeo">⬇ Render GeoTagged Video</button>
-<button id="downloadGeo" disabled>⬇ Download GeoTagged Video</button>
-</div>
-<div id="geoStatus" class="status">Find a location, then export.</div>
-</aside>
-
-<main class="card">
-<h2>GeoTag Preview</h2>
-<div class="stage"><canvas id="geoCanvas"></canvas></div>
-<div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
-</main>
-</div>
+      <div class="card geoDateCard">
+        <h3>Date &amp; Moving Time</h3>
+        <div class="row">
+          <div><label>Date</label><input id="gDate" type="date"></div>
+          <div><label>Start Time</label><input id="gTime" type="time" step="1"></div>
+        </div>
+        <div class="small">During export, the displayed time advances with the video.</div>
+        <div class="geoActions">
+          <button id="backEdit" class="secondary">← Back</button>
+          <button id="exportGeo">⬇ Render GeoTagged Video</button>
+          <button id="downloadGeo" disabled>⬇ Download GeoTagged Video</button>
+        </div>
+        <div id="geoStatus" class="status">Find a location, then export.</div>
+      </div>
+    </div>
+  </div>
 </section>
 </div>
 

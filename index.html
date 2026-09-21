@@ -1125,17 +1125,32 @@ function drawVideoFastGPU(r){
 
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();
-  wctx.clearRect(0,0,outputW,outputH);
-  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+
+  // Fast path: do the white-text removal on the GPU instead of reading and
+  // rewriting thousands of pixels on the CPU for every frame. This is the
+  // main reason exports were taking a long time / appearing stuck at 30-90%.
+  let fastCanvas=null;
   if(whiteRect){
-    const rectOnOutput={
-      x:whiteRect.x/r.w*outputW,
-      y:whiteRect.y/r.h*outputH,
-      w:whiteRect.w/r.w*outputW,
-      h:whiteRect.h/r.h*outputH
-    };
-    removeWhiteFromCanvasFast(wctx,outputW,outputH,rectOnOutput);
+    try{ fastCanvas=drawVideoFastGPU(r); }catch(e){ fastCanvas=null; }
   }
+
+  wctx.clearRect(0,0,outputW,outputH);
+  if(fastCanvas){
+    wctx.drawImage(fastCanvas,0,0,outputW,outputH);
+  }else{
+    wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+    // Only use the slower CPU algorithm when WebGL is unavailable.
+    if(whiteRect){
+      const rectOnOutput={
+        x:whiteRect.x/r.w*outputW,
+        y:whiteRect.y/r.h*outputH,
+        w:whiteRect.w/r.w*outputW,
+        h:whiteRect.h/r.h*outputH
+      };
+      removeWhiteFromCanvasFast(wctx,outputW,outputH,rectOnOutput);
+    }
+  }
+
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
     drawGeoFrame(wctx,outputW,outputH,elapsed);
@@ -1161,22 +1176,22 @@ function seekVideo(target){
 }
 
 async function pickVideoCodec(width,height,fps){
-  // For offline export, prefer a stable software/no-preference encoder.
-  // Hardware H.264 encoders can stop draining their queue on some systems.
   const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
+  // Hardware first: much faster on most modern Chrome/Windows systems.
   for(const codec of candidates){
     try{
       const support=await VideoEncoder.isConfigSupported({
-        codec,width,height,bitrate:10_000_000,framerate:fps,
-        hardwareAcceleration:'no-preference'
+        codec,width,height,bitrate:8_000_000,framerate:fps,
+        hardwareAcceleration:'prefer-hardware'
       });
-      if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
+      if(support&&support.supported)return {codec,hardwareAcceleration:'prefer-hardware'};
     }catch(e){}
   }
   for(const codec of candidates){
     try{
       const support=await VideoEncoder.isConfigSupported({
-        codec,width,height,bitrate:10_000_000,framerate:fps
+        codec,width,height,bitrate:8_000_000,framerate:fps,
+        hardwareAcceleration:'no-preference'
       });
       if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
     }catch(e){}
@@ -1247,7 +1262,7 @@ async function exportVideoFrameAccurate(){
       codec,
       width:outputW,
       height:outputH,
-      bitrate:10_000_000,
+      bitrate:8_000_000,
       framerate:fps,
       hardwareAcceleration,
       // Do not use latencyMode:'realtime' for an offline export.

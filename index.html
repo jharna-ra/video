@@ -1045,50 +1045,48 @@ function removeWhiteFromCanvasFast(ctx2,W,H,rect){
   const rw=x1-x0, rh=y1-y0;
   if(rw<2||rh<2)return;
 
+  // Fast single-pass inpaint. This deliberately avoids the old 10–50 pixel
+  // searches for every white pixel, which made long exports extremely slow.
   const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
-  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
-  for(let y=0;y<rh;y++){
-    for(let x=0;x<rw;x++){
-      const p=y*rw+x,i=p*4;
-      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
-      const neutral=(mx-mn)<=115;
-      const bright=(rr+gg+bb)/3;
-      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
-    }
-  }
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x;
-    if(!mask[p])continue;
-    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-      const xx=x+dx,yy=y+dy;
-      if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
-    }
+  const d=img.data;
+  const threshold=+$('whiteThreshold').value||115;
+  const strength=(+$('removeOpacity').value||100)/100;
+  const N=rw*rh;
+  const mask=new Uint8Array(N);
+
+  for(let p=0,i=0;p<N;p++,i+=4){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+    if(mx>=threshold && (r+g+b)/3>=threshold && (mx-mn)<=115) mask[p]=1;
   }
 
-  // Preserve the entire original frame. Only the selected white-text pixels
-  // should be modified; leaving the rest of this array at zero makes the
-  // exported video transparent/white outside the edited region.
   const out=new Uint8ClampedArray(d);
-  const maxSearch=10;
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x;
-    if(!expanded[p])continue;
-    let sr=0,sg=0,sb=0,n=0;
-    for(let k=1;k<=maxSearch;k++){
-      const lx=x-k,rx=x+k;
-      if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-      if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+  for(let y=0;y<rh;y++){
+    for(let x=0;x<rw;x++){
+      const p=y*rw+x;
+      if(!mask[p])continue;
+      let sr=0,sg=0,sb=0,n=0;
+      // Immediate neighbours only: much faster and keeps the operation local.
+      const add=(q)=>{
+        if(q>=0 && q<N && !mask[q]){
+          const j=q*4; sr+=d[j]; sg+=d[j+1]; sb+=d[j+2]; n++;
+        }
+      };
+      if(x>0)add(p-1); if(x+1<rw)add(p+1);
+      if(y>0)add(p-rw); if(y+1<rh)add(p+rw);
+      if(x>0&&y>0)add(p-rw-1); if(x+1<rw&&y>0)add(p-rw+1);
+      if(x>0&&y+1<rh)add(p+rw-1); if(x+1<rw&&y+1<rh)add(p+rw+1);
+      if(n){
+        const i=p*4;
+        out[i]=d[i]*(1-strength)+(sr/n)*strength;
+        out[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;
+        out[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;
+      }
     }
-    for(let k=1;k<=maxSearch;k++){
-      const ty=y-k,by=y+k;
-      if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-      if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-    }
-    if(n){const i=p*4;out[i]=d[i]*(1-strength)+(sr/n)*strength;out[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;out[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
   }
   ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
 }
+
 
 let fastGL=null;
 function initFastGL(){
@@ -1156,12 +1154,9 @@ function drawExportFrame(elapsedOverride){
       w:whiteRect.w/r.w*outputW,
       h:whiteRect.h/r.h*outputH
     };
-    // GPU path keeps white-text removal on every frame without the expensive
-    // per-pixel JavaScript search. If WebGL is unavailable, keep the original
-    // CPU remover so the feature is never lost.
-    if(!drawWhiteRemovalGPU(rectOnOutput)){
-      removeWhiteFromCanvasFast(wctx,outputW,outputH,rectOnOutput);
-    }
+    // Use the fast CPU remover for export. The previous WebGL path could
+    // produce a blank/white canvas on some Chrome/GPU combinations.
+    removeWhiteFromCanvasFast(wctx,outputW,outputH,rectOnOutput);
   }
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
@@ -1287,7 +1282,7 @@ async function exportVideoFrameAccurate(){
 
     restoreMute=video.muted;
     video.muted=true;
-    video.playbackRate=4; // temporary source decoding speed; encoded timestamps remain normal-speed
+    video.playbackRate=1; // source and exported video both remain at normal speed
 
     const hasRVFC=typeof video.requestVideoFrameCallback==='function';
     let frameIndex=0;
@@ -1353,7 +1348,7 @@ async function exportVideoFrameAccurate(){
           }
 
           drawExportFrame(clampedElapsed);
-          const timestamp=Math.round((frameIndex/fps)*1e6);
+          const timestamp=Math.max(0,Math.round((clampedElapsed)*1e6));
           const vf=new VideoFrame(work,{timestamp});
           videoEncoder.encode(vf,{keyFrame:frameIndex===0 || frameIndex%(fps*4)===0});
           vf.close();
@@ -1363,11 +1358,11 @@ async function exportVideoFrameAccurate(){
           // flush() waits for the entire encoder queue and can make the render
           // look frozen around 88–89%. Instead, briefly wait for the queue to
           // drain below a safe level, with a hard timeout.
-          if(videoEncoder.encodeQueueSize>=16){
-            $('exportStatus').textContent='Encoding video… '+Math.min(90,Math.max(1,Math.round(frameIndex/frameCount*90)))+'%';
+          if(videoEncoder.encodeQueueSize>=96){
+            $('exportStatus').textContent='Encoding video… '+Math.min(90,Math.max(1,Math.round((clampedElapsed/length)*90)))+'%';
             const queueWaitStart=performance.now();
-            while(videoEncoder.encodeQueueSize>=8 && !encoderFailed){
-              if(performance.now()-queueWaitStart>10000){
+            while(videoEncoder.encodeQueueSize>=32 && !encoderFailed){
+              if(performance.now()-queueWaitStart>3000){
                 throw new Error('Video encoder is not draining. Switching to stable export.');
               }
               await new Promise(r=>setTimeout(r,10));
@@ -1375,7 +1370,7 @@ async function exportVideoFrameAccurate(){
             if(encoderFailed)throw encoderFailed;
           }
 
-          const pct=Math.min(90,Math.max(1,Math.round(frameIndex/frameCount*90)));
+          const pct=Math.min(90,Math.max(1,Math.round((clampedElapsed/length)*90)));
           $('exportStatus').textContent='Rendering video… '+pct+'%';
           scheduleNext();
         }catch(err){

@@ -1143,10 +1143,19 @@ function drawWhiteRemovalGPU(rect){
   return true;
 }
 
+function exportNeedsFrameProcessing(){
+  // Crop/trim are represented by sourceRect()/start-end below. Only run
+  // expensive per-pixel/overlay work when the user actually enabled it.
+  return !!whiteRect || (lat!=null && lon!=null);
+}
+
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();
   wctx.clearRect(0,0,outputW,outputH);
   wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+
+  // White-text removal is completely skipped when no white-text area was
+  // selected. This avoids getImageData/putImageData on every exported frame.
   if(whiteRect){
     const rectOnOutput={
       x:whiteRect.x/r.w*outputW,
@@ -1154,10 +1163,13 @@ function drawExportFrame(elapsedOverride){
       w:whiteRect.w/r.w*outputW,
       h:whiteRect.h/r.h*outputH
     };
-    // Use the fast CPU remover for export. The previous WebGL path could
-    // produce a blank/white canvas on some Chrome/GPU combinations.
+    // Fast CPU remover; the old WebGL path could produce a blank/white
+    // export on some Chrome/GPU combinations.
     removeWhiteFromCanvasFast(wctx,outputW,outputH,rectOnOutput);
   }
+
+  // GeoTag/map/logo are skipped entirely unless a location has actually
+  // been selected. This keeps plain crop/trim exports much lighter.
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
     drawGeoFrame(wctx,outputW,outputH,elapsed);
@@ -1277,7 +1289,10 @@ async function exportVideoFrameAccurate(){
       firstTimestampBehavior:'offset'
     });
 
-    $('exportStatus').textContent='Rendering video… 0% (accelerated)';
+    const needsFrameProcessing=exportNeedsFrameProcessing();
+    $('exportStatus').textContent=needsFrameProcessing
+      ? 'Rendering selected changes… 0% (accelerated)'
+      : 'Rendering crop/trim only… 0% (accelerated)';
     await seekVideo(start);
 
     restoreMute=video.muted;
@@ -1371,7 +1386,7 @@ async function exportVideoFrameAccurate(){
           }
 
           const pct=Math.min(90,Math.max(1,Math.round((clampedElapsed/length)*90)));
-          $('exportStatus').textContent='Rendering video… '+pct+'%';
+          $('exportStatus').textContent=(needsFrameProcessing?'Rendering selected changes… ':'Rendering crop/trim only… ')+pct+'%';
           scheduleNext();
         }catch(err){
           fail(err);

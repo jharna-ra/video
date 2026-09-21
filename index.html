@@ -1353,12 +1353,12 @@ async function exportVideoFrameAccurate(){
       firstTimestampBehavior:'offset'
     });
 
-    $('exportStatus').textContent='Rendering video… 0%';
+    $('exportStatus').textContent='Rendering video… 0% (accelerated)';
     await seekVideo(start);
 
     restoreMute=video.muted;
     video.muted=true;
-    video.playbackRate=1;
+    video.playbackRate=4;
 
     const hasRVFC=typeof video.requestVideoFrameCallback==='function';
     let frameIndex=0;
@@ -1434,10 +1434,10 @@ async function exportVideoFrameAccurate(){
           // flush() waits for the entire encoder queue and can make the render
           // look frozen around 88–89%. Instead, briefly wait for the queue to
           // drain below a safe level, with a hard timeout.
-          if(videoEncoder.encodeQueueSize>=8){
+          if(videoEncoder.encodeQueueSize>=16){
             $('exportStatus').textContent='Encoding video… '+Math.min(90,Math.max(1,Math.round(frameIndex/frameCount*90)))+'%';
             const queueWaitStart=performance.now();
-            while(videoEncoder.encodeQueueSize>=4 && !encoderFailed){
+            while(videoEncoder.encodeQueueSize>=8 && !encoderFailed){
               if(performance.now()-queueWaitStart>10000){
                 throw new Error('Video encoder is not draining. Switching to stable export.');
               }

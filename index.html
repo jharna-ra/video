@@ -1066,6 +1066,9 @@ function removeWhiteFromCanvasFast(ctx2,W,H,rect){
     }
   }
 
+  // Preserve the entire original frame. Only the selected white-text pixels
+  // should be modified; leaving the rest of this array at zero makes the
+  // exported video transparent/white outside the edited region.
   const out=new Uint8ClampedArray(d);
   const maxSearch=10;
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){

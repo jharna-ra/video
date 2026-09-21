@@ -1158,16 +1158,23 @@ function seekVideo(target){
 }
 
 async function pickVideoCodec(width,height,fps){
+  // For offline export, prefer a stable software/no-preference encoder.
+  // Hardware H.264 encoders can stop draining their queue on some systems.
   const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
   for(const codec of candidates){
     try{
-      const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps,hardwareAcceleration:'prefer-hardware'});
-      if(support&&support.supported)return {codec,hardwareAcceleration:'prefer-hardware'};
+      const support=await VideoEncoder.isConfigSupported({
+        codec,width,height,bitrate:10_000_000,framerate:fps,
+        hardwareAcceleration:'no-preference'
+      });
+      if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
     }catch(e){}
   }
   for(const codec of candidates){
     try{
-      const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps});
+      const support=await VideoEncoder.isConfigSupported({
+        codec,width,height,bitrate:10_000_000,framerate:fps
+      });
       if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
     }catch(e){}
   }
@@ -1177,16 +1184,14 @@ async function pickVideoCodec(width,height,fps){
 async function exportVideoFrameAccurate(){
   const start=clamp(+$('trimStart').value||0,0,duration);
   const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=end-start;
+  const length=Math.max(0.05,end-start);
   const fps=30;
-  const frameCount=Math.max(1,Math.round(length*fps));
+  const frameCount=Math.max(1,Math.ceil(length*fps));
 
   prepareOutput();
   video.pause();
 
-  // IMPORTANT: make the map ready BEFORE frame 1 is encoded.
-  // Otherwise the export can begin while map tiles are still loading,
-  // causing the map to appear only part-way through the video.
+  // The map MUST be ready before the first exported frame.
   if(lat!=null && lon!=null && !mapImg){
     $('exportStatus').textContent='Preparing map…';
     mapImg=await makeMap(lat,lon);
@@ -1200,7 +1205,10 @@ async function exportVideoFrameAccurate(){
       const arr=await file.arrayBuffer();
       const actx=new (window.AudioContext||window.webkitAudioContext)();
       return await actx.decodeAudioData(arr);
-    }catch(e){console.warn('No usable audio track for export',e);return null}
+    }catch(e){
+      console.warn('No usable audio track for export',e);
+      return null;
+    }
   })();
 
   const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
@@ -1210,138 +1218,218 @@ async function exportVideoFrameAccurate(){
     target:new Mp4Muxer.ArrayBufferTarget(),
     fastStart:'in-memory',
     video:{codec:'avc',width:outputW,height:outputH},
-    audio:hasAudio?{codec:'aac',numberOfChannels:audioBuffer.numberOfChannels,sampleRate:audioBuffer.sampleRate}:undefined,
+    audio:hasAudio?{
+      codec:'aac',
+      numberOfChannels:audioBuffer.numberOfChannels,
+      sampleRate:audioBuffer.sampleRate
+    }:undefined,
   });
 
   let encoderFailed=null;
   let rejectEncoding=null;
-  const videoEncoder=new VideoEncoder({
-    output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
-    error:e=>{
-      console.error('video encoder error',e);
-      encoderFailed=e;
-      if(rejectEncoding) rejectEncoding(e);
-    }
-  });
-  // WebCodecs requires the first encoded video timestamp to be 0.
-  // Some browsers report requestVideoFrameCallback mediaTime relative to the
-  // document/media track, so explicitly offset the encoder timeline.
-  videoEncoder.configure({
-    codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps,
-    hardwareAcceleration,
-    latencyMode:'realtime',
-    // Keep the encoder's track timeline zero-based.
-    firstTimestampBehavior:'offset'
-  });
+  let videoEncoder=null;
+  let restoreMute=video.muted;
 
-  $('exportStatus').textContent='Rendering video… 0%';
+  try{
+    videoEncoder=new VideoEncoder({
+      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
+      error:e=>{
+        console.error('video encoder error',e);
+        encoderFailed=e;
+        if(rejectEncoding) rejectEncoding(e);
+      }
+    });
 
-  await seekVideo(start);
-  const wasMuted=video.muted;
-  video.muted=true;
-  video.playbackRate=1;
+    videoEncoder.configure({
+      codec,
+      width:outputW,
+      height:outputH,
+      bitrate:10_000_000,
+      framerate:fps,
+      hardwareAcceleration,
+      // Do not use latencyMode:'realtime' for an offline export.
+      // Offline encoding is allowed to drain the queue naturally.
+      firstTimestampBehavior:'offset'
+    });
 
-  const hasRVFC=typeof video.requestVideoFrameCallback==='function';
-  let frameIndex=0;
-  let firstFrameTimestamp=null;
-  await new Promise((resolve,reject)=>{
-    rejectEncoding=reject;
-    let finished=false;
-    const finish=()=>{
-      if(finished)return; finished=true;
-      try{video.pause()}catch(e){}
-      resolve();
-    };
-    const scheduleNext=()=>{
-      if(hasRVFC)video.requestVideoFrameCallback(onFrame);
-      else requestAnimationFrame(()=>onFrame(performance.now(),null));
-    };
-    const onFrame=async(now,metadata)=>{
-      if(finished)return;
-      const mediaTime=(metadata&&metadata.mediaTime!=null?metadata.mediaTime:video.currentTime);
-      // Normalize against the first frame actually received. This prevents
-      // a browser/document-relative media timestamp from becoming the first
-      // non-zero timestamp in the MP4 track.
-      if(firstFrameTimestamp===null) firstFrameTimestamp=mediaTime;
-      const elapsed=Math.max(0,mediaTime-firstFrameTimestamp);
-      if(elapsed>=length-0.01){finish();return}
-      drawExportFrame(elapsed);
-      const vf=new VideoFrame(work,{timestamp:Math.round(elapsed*1e6)});
-      videoEncoder.encode(vf,{keyFrame:frameIndex%(fps*4)===0});
-      vf.close();
-      frameIndex++;
-      // Apply bounded back-pressure. The old loop could wait forever when
-      // Chrome's hardware encoder stopped draining, making the progress bar
-      // appear stuck around 88–90%. If it cannot drain within a few seconds,
-      // abort this path so doExport() can use the stable recorder fallback.
-      if(videoEncoder.encodeQueueSize>4){
-        const waitStart=performance.now();
-        while(videoEncoder.encodeQueueSize>2 && !encoderFailed){
-          if(performance.now()-waitStart>5000){
-            reject(new Error('Video encoder queue stalled; switching to stable export.'));
+    $('exportStatus').textContent='Rendering video… 0%';
+    await seekVideo(start);
+
+    restoreMute=video.muted;
+    video.muted=true;
+    video.playbackRate=1;
+
+    const hasRVFC=typeof video.requestVideoFrameCallback==='function';
+    let frameIndex=0;
+    let firstFrameTimestamp=null;
+    let callbackId=null;
+    let rafId=0;
+
+    await new Promise((resolve,reject)=>{
+      rejectEncoding=reject;
+      let finished=false;
+
+      const cleanup=()=>{
+        if(callbackId!==null && video.cancelVideoFrameCallback){
+          try{video.cancelVideoFrameCallback(callbackId)}catch(e){}
+        }
+        if(rafId)cancelAnimationFrame(rafId);
+        video.removeEventListener('ended',onEnded);
+      };
+
+      const finish=()=>{
+        if(finished)return;
+        finished=true;
+        cleanup();
+        try{video.pause()}catch(e){}
+        resolve();
+      };
+
+      const fail=(err)=>{
+        if(finished)return;
+        finished=true;
+        cleanup();
+        try{video.pause()}catch(e){}
+        reject(err);
+      };
+
+      const onEnded=()=>finish();
+
+      const scheduleNext=()=>{
+        if(finished)return;
+        if(hasRVFC){
+          callbackId=video.requestVideoFrameCallback(onFrame);
+        }else{
+          rafId=requestAnimationFrame(()=>onFrame(performance.now(),null));
+        }
+      };
+
+      const onFrame=async(now,metadata)=>{
+        if(finished)return;
+        try{
+          const mediaTime=(metadata&&metadata.mediaTime!=null)
+            ?metadata.mediaTime
+            :video.currentTime;
+
+          if(firstFrameTimestamp===null)firstFrameTimestamp=mediaTime;
+          const elapsed=Math.max(0,mediaTime-firstFrameTimestamp);
+
+          // Draw one final frame before finishing.
+          const clampedElapsed=Math.min(length,elapsed);
+          if(frameIndex>=frameCount || elapsed>=length-0.005){
+            drawExportFrame(length);
+            finish();
             return;
           }
-          await new Promise(r=>setTimeout(r,10));
+
+          drawExportFrame(clampedElapsed);
+          const timestamp=Math.round((frameIndex/fps)*1e6);
+          const vf=new VideoFrame(work,{timestamp});
+          videoEncoder.encode(vf,{keyFrame:frameIndex===0 || frameIndex%(fps*4)===0});
+          vf.close();
+          frameIndex++;
+
+          // IMPORTANT: never wait forever for encodeQueueSize.
+          // When the queue gets large, flush it and continue.
+          // This is much safer than the old while(queue > 2) loop.
+          if(videoEncoder.encodeQueueSize>=8){
+            $('exportStatus').textContent='Rendering video… '+Math.min(89,Math.max(1,Math.round(frameIndex/frameCount*89)))+'%';
+            await Promise.race([
+              videoEncoder.flush(),
+              new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder stopped responding.')),8000))
+            ]);
+            if(encoderFailed)throw encoderFailed;
+          }
+
+          const pct=Math.min(89,Math.max(1,Math.round(frameIndex/frameCount*89)));
+          $('exportStatus').textContent='Rendering video… '+pct+'%';
+          scheduleNext();
+        }catch(err){
+          fail(err);
         }
-        if(encoderFailed){ reject(encoderFailed); return; }
-      }
-      if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(90,Math.round(elapsed/length*90))+'%';
+      };
+
+      video.addEventListener('ended',onEnded,{once:true});
       scheduleNext();
-    };
-    video.addEventListener('ended',finish,{once:true});
-    scheduleNext();
-    video.play().catch(reject);
-  });
-
-  video.playbackRate=1;
-  video.muted=wasMuted;
-  $('exportStatus').textContent='Finishing video encoding… 92%';
-  // Chrome can leave flush() waiting when a hardware codec has been
-  // reclaimed. Do not let the export appear frozen forever; the caller
-  // will switch to the stable recorder fallback.
-  await Promise.race([
-    videoEncoder.flush(),
-    new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out; switching to stable export.')),15000))
-  ]);
-  rejectEncoding=null;
-  videoEncoder.close();
-  if(encoderFailed)throw new Error('Video encoder failed: '+(encoderFailed.message||encoderFailed));
-
-  if(hasAudio){
-    $('exportStatus').textContent='Encoding audio… 94%';
-    const sr=audioBuffer.sampleRate, ch=audioBuffer.numberOfChannels;
-    const s0=Math.floor(start*sr), s1=Math.min(audioBuffer.length,Math.floor(end*sr));
-    const audioEncoder=new AudioEncoder({
-      output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),
-      error:e=>console.error('audio encoder error',e)
+      video.play().catch(fail);
     });
-    audioEncoder.configure({codec:'mp4a.40.2',sampleRate:sr,numberOfChannels:ch,bitrate:128000});
-    const chunkSize=8192;
-    const totalSamples=Math.max(1,s1-s0);
-    for(let s=s0;s<s1;s+=chunkSize){
-      const n=Math.min(chunkSize,s1-s);
-      const interleaved=new Float32Array(n*ch);
-      for(let c=0;c<ch;c++){
-        const data=audioBuffer.getChannelData(c);
-        for(let k=0;k<n;k++)interleaved[k*ch+c]=data[s+k];
-      }
-      const audioData=new AudioData({format:'f32',sampleRate:sr,numberOfFrames:n,numberOfChannels:ch,timestamp:Math.round((s-s0)/sr*1e6),data:interleaved});
-      audioEncoder.encode(audioData);
-      audioData.close();
-      if(((s-s0)/totalSamples)>0.02 && Math.floor((s-s0)/totalSamples*10)!==Math.floor((s-s0-n)/totalSamples*10)){
-        $('exportStatus').textContent='Encoding audio… '+Math.min(99,94+Math.round((s-s0)/totalSamples*5))+'%';
-      }
-    }
-    $('exportStatus').textContent='Finishing audio… 99%';
-    await audioEncoder.flush();
-    audioEncoder.close();
-  }
 
-  $('exportStatus').textContent='Finalizing MP4…';
-  muxer.finalize();
-  exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
-  $('exportStatus').textContent='Video rendered — 100% complete. Download button is ready.';
-  $('downloadVideo').disabled=false;
+    video.playbackRate=1;
+    video.muted=restoreMute;
+
+    if(encoderFailed)throw encoderFailed;
+
+    $('exportStatus').textContent='Finishing video encoding… 91%';
+    await Promise.race([
+      videoEncoder.flush(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out.')),15000))
+    ]);
+
+    videoEncoder.close();
+    videoEncoder=null;
+    rejectEncoding=null;
+
+    if(hasAudio){
+      $('exportStatus').textContent='Encoding audio… 94%';
+      const sr=audioBuffer.sampleRate;
+      const ch=audioBuffer.numberOfChannels;
+      const s0=Math.floor(start*sr);
+      const s1=Math.min(audioBuffer.length,Math.floor(end*sr));
+      const audioEncoder=new AudioEncoder({
+        output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),
+        error:e=>console.error('audio encoder error',e)
+      });
+      audioEncoder.configure({
+        codec:'mp4a.40.2',
+        sampleRate:sr,
+        numberOfChannels:ch,
+        bitrate:128000
+      });
+
+      const chunkSize=8192;
+      const totalSamples=Math.max(1,s1-s0);
+      for(let s=s0;s<s1;s+=chunkSize){
+        const n=Math.min(chunkSize,s1-s);
+        const interleaved=new Float32Array(n*ch);
+        for(let c=0;c<ch;c++){
+          const data=audioBuffer.getChannelData(c);
+          for(let k=0;k<n;k++)interleaved[k*ch+c]=data[s+k];
+        }
+        const audioData=new AudioData({
+          format:'f32',
+          sampleRate:sr,
+          numberOfFrames:n,
+          numberOfChannels:ch,
+          timestamp:Math.round((s-s0)/sr*1e6),
+          data:interleaved
+        });
+        audioEncoder.encode(audioData);
+        audioData.close();
+        const pct=94+Math.round(((s-s0)/totalSamples)*5);
+        $('exportStatus').textContent='Encoding audio… '+Math.min(98,pct)+'%';
+      }
+
+      $('exportStatus').textContent='Finishing audio… 99%';
+      await Promise.race([
+        audioEncoder.flush(),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out.')),15000))
+      ]);
+      audioEncoder.close();
+    }
+
+    $('exportStatus').textContent='Finalizing MP4…';
+    muxer.finalize();
+    exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
+    $('exportStatus').textContent='Video rendered — 100% complete. Download button is ready.';
+    $('downloadVideo').disabled=false;
+  }finally{
+    rejectEncoding=null;
+    video.muted=restoreMute;
+    video.playbackRate=1;
+    if(videoEncoder){
+      try{videoEncoder.close()}catch(e){}
+    }
+  }
 }
 
 async function exportVideoRealtimeFallback(){

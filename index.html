@@ -258,18 +258,21 @@ input[type=range]{width:100%}
     </div>
 
     <div class="card ocrCard">
-      <h3>Detect &amp; Replace Existing Video Text</h3>
-      <div class="small">Scan the current video frame with OCR. Uncheck text you do not want to replace, then edit the replacement text. The original detected white/light text is removed during export and the replacement is drawn at the detected position.</div>
+      <h3>Replace GeoTag Text</h3>
+      <div class="small">Click Find Location first. Then draw one rectangle around the GeoTag text you want to replace. The scanner reads only that area. The replacement is automatically taken from the location returned by Find Location — you do not type replacement text.</div>
       <div class="ocrScanBox">
-        <button id="ocrScan">🔎 Detect Text in Current Frame</button>
-        <button id="ocrClear" class="secondary">Clear Detected Text</button>
+        <button id="textAreaMode">▣ Select Text Area</button>
+        <button id="ocrScan" disabled>🔎 Scan Selected Area</button>
+        <button id="ocrClear" class="secondary">Clear</button>
       </div>
-      <div class="ocrToolbar">
-        <button id="ocrSelectAll" class="secondary">Select All</button>
-        <button id="ocrSelectNone" class="secondary">Select None</button>
-        <span id="ocrStatus" class="small">No OCR scan yet.</span>
+      <div id="ocrStatus" class="small" style="margin-top:8px">Find a location first, then draw a rectangle around the GeoTag text.</div>
+      <div class="ocrList" id="ocrList">
+        <div class="ocrEmpty">No text area selected.</div>
       </div>
-      <div id="ocrList" class="ocrList"><div class="ocrEmpty">No detected text yet. Put the video on a clear frame containing the GeoTag and scan it.</div></div>
+      <div style="margin-top:9px;padding:9px;border:1px solid #293744;border-radius:8px;background:#0d151d">
+        <div style="font-size:11px;color:#7f909e">Replacement from Find Location</div>
+        <div id="foundLocationText" style="margin-top:4px;font-weight:700">No location found yet.</div>
+      </div>
       <div class="sliderTop" style="margin-top:9px"><span>Replacement text size</span><b id="ocrSizeVal">100%</b></div>
       <input id="ocrSize" type="range" min="60" max="160" value="100">
       <div class="sliderTop"><span>Replacement text thickness</span><b id="ocrWeightVal">700</b></div>
@@ -337,13 +340,14 @@ if(!wctx) throw new Error('Export canvas context unavailable');
 const stage=$('stage'), selBox=$('selection');
 
 let file=null, videoURL=null, duration=0, playing=false;
-let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
+let crop=null, cropMode=false, whiteRect=null, removeMode=false, textRect=null, textAreaMode=false, selecting=false, sx=0, sy=0;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
 let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 let ocrItems=[]; let ocrWorker=null; let ocrScanning=false;
+let foundLocationText='';
 
 const state={
  gMapO:100,gMapW:28,mapX:0,mapY:70,mapW:28,mapH:30,
@@ -455,7 +459,7 @@ function updateSelectionBox(){
  if(!selecting && !whiteRect && !crop)return;
  const r=sourceRect();
  const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- let q=whiteRect||crop;
+ let q=textRect||whiteRect||crop;
  if(!q){selBox.style.display='none';return}
  const x=C.left-R.left+q.x/r.w*C.width;
  const y=C.top-R.top+q.y/r.h*C.height;
@@ -467,7 +471,7 @@ function pointerPos(e){
  return {x:clamp((e.clientX-R.left)/R.width*r.w,0,r.w),y:clamp((e.clientY-R.top)/R.height*r.h,0,r.h)}
 }
 view.addEventListener('pointerdown',e=>{
- if(!cropMode&&!removeMode)return;
+ if(!cropMode&&!removeMode&&!textAreaMode)return;
  selecting=true;view.setPointerCapture(e.pointerId);
  const p=pointerPos(e);sx=p.x;sy=p.y;selBox.style.display='block';
 });
@@ -486,6 +490,13 @@ view.addEventListener('pointerup',e=>{
  if(q.w<5||q.h<5){return}
  if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
  if(removeMode){whiteRect={...q};$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
+ if(textAreaMode){
+   textRect={...q};
+   ocrItems=[];
+   $('ocrScan').disabled=false;
+   $('ocrStatus').textContent='Text area selected. Click Scan Selected Area.';
+   $('ocrList').innerHTML='<div class="ocrEmpty">Ready to scan the selected area.</div>';
+ }
  updateSelectionBox();
 });
 
@@ -708,12 +719,16 @@ async function findLocation(){
  try{
   const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
   const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
-  lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
+  lat=+j[0].lat;lon=+j[0].lon;
+  foundLocationText=(j[0].display_name||[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ')).trim();
+  if($('gAddress'))$('gAddress').value=foundLocationText;
+  if($('foundLocationText'))$('foundLocationText').textContent=foundLocationText;
+  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
   if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
   gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
   mapImg=await makeMap(lat,lon);
   loadRealGPSRoute();drawGeoPreview();
- }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
+ }catch(e){lat=lon=null;mapImg=null;foundLocationText='';if($('foundLocationText'))$('foundLocationText').textContent='No location found.';$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
 }
 $('findLocation').onclick=findLocation;
 
@@ -1179,10 +1194,10 @@ function drawOCRReplacements(ctx2,W,H,srcRect,preview=false){
   ctx2.save();
   ctx2.fillStyle='#fff';
   ctx2.textBaseline='middle';
-  ctx2.shadowColor='rgba(0,0,0,.65)';
-  ctx2.shadowBlur=2;
-  ctx2.shadowOffsetX=1;
-  ctx2.shadowOffsetY=1;
+  ctx2.shadowColor='rgba(0,0,0,.45)';
+  ctx2.shadowBlur=1.2;
+  ctx2.shadowOffsetX=.6;
+  ctx2.shadowOffsetY=.6;
   for(const r of rects){
     const text=r.item.replacement.trim();
     if(!text)continue;
@@ -1227,50 +1242,90 @@ function groupOCRWords(words,videoW,videoH){
 
 function renderOCRList(){
   const box=$('ocrList');
-  if(!ocrItems.length){box.innerHTML='<div class="ocrEmpty">No detected text yet.</div>';return;}
+  if(!ocrItems.length){
+    box.innerHTML='<div class="ocrEmpty">No detected text yet.</div>';
+    return;
+  }
   box.innerHTML='';
   ocrItems.forEach((item,i)=>{
     const row=document.createElement('div');row.className='ocrItem';
     const cb=document.createElement('input');cb.type='checkbox';cb.checked=item.enabled;cb.title='Replace this detected text';
     cb.onchange=()=>{item.enabled=cb.checked;drawGeoPreview()};
-    const orig=document.createElement('input');orig.type='text';orig.value=item.text;orig.readOnly=true;orig.title='Detected text';
-    const rep=document.createElement('input');rep.type='text';rep.value=item.replacement;rep.placeholder='Replacement text';rep.title='Replacement text';
-    rep.oninput=()=>{item.replacement=rep.value;drawGeoPreview()};
-    const meta=document.createElement('div');meta.className='ocrMeta';meta.textContent=`Detected ${i+1} • ${item.confidence}% confidence • x:${Math.round(item.bbox.x)} y:${Math.round(item.bbox.y)} w:${Math.round(item.bbox.w)} h:${Math.round(item.bbox.h)}`;
-    row.append(cb,orig,rep,meta);box.appendChild(row);
+    const orig=document.createElement('div');orig.textContent=`Detected: ${item.text}`;orig.title=item.text;
+    const repl=document.createElement('div');repl.textContent=`→ Location: ${item.replacement}`;repl.title=item.replacement;
+    const meta=document.createElement('div');meta.className='ocrMeta';
+    meta.textContent=`Selected area • ${item.confidence}% scan confidence • x:${Math.round(item.bbox.x)} y:${Math.round(item.bbox.y)} w:${Math.round(item.bbox.w)} h:${Math.round(item.bbox.h)}`;
+    row.append(cb,orig,repl,meta);box.appendChild(row);
   });
 }
 
 async function scanOCR(){
   if(ocrScanning||!video.videoWidth)return;
-  if(typeof Tesseract==='undefined'){$('ocrStatus').textContent='OCR library could not load. Connect to the internet and reload.';return}
-  ocrScanning=true;$('ocrScan').disabled=true;$('ocrStatus').textContent='Preparing OCR…';
+  if(!textRect){$('ocrStatus').textContent='Find a location first, then draw a rectangle around the GeoTag text.';return}
+  if(typeof Tesseract==='undefined'){$('ocrStatus').textContent='Text scanner could not load. Connect to the internet and reload.';return}
+  ocrScanning=true;$('ocrScan').disabled=true;$('ocrStatus').textContent='Scanning selected area…';
   try{
-    const c=document.createElement('canvas');c.width=video.videoWidth;c.height=video.videoHeight;
+    const tr=textRect;
+    const c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(tr.w));c.height=Math.max(1,Math.round(tr.h));
     const cctx=c.getContext('2d',{willReadFrequently:true});
-    cctx.drawImage(video,0,0,c.width,c.height);
+    cctx.drawImage(video,tr.x,tr.y,tr.w,tr.h,0,0,c.width,c.height);
     if(!ocrWorker)ocrWorker=await Tesseract.createWorker('eng',1,{logger:m=>{
-      if(m&&m.status){const pct=m.progress!=null?` ${Math.round(m.progress*100)}%`:'';$('ocrStatus').textContent='OCR: '+m.status+pct;}
+      if(m&&m.status){const pct=m.progress!=null?` ${Math.round(m.progress*100)}%`:'';$('ocrStatus').textContent='Scanning: '+m.status+pct;}
     }});
     const result=await ocrWorker.recognize(c);
     const words=result?.data?.words||[];
-    ocrItems=groupOCRWords(words,video.videoWidth,video.videoHeight);
-    // GeoTag text is commonly near the bottom/right. Keep everything selectable,
-    // but mark likely GeoTag lines first so the user can immediately replace them.
-    const likely=ocrItems.filter(x=>x.bbox.y>video.videoHeight*.45 && x.bbox.x>video.videoWidth*.45);
-    ocrItems.forEach(x=>x.enabled=likely.length?likely.includes(x):true);
-    renderOCRList();drawGeoPreview();
-    $('ocrStatus').textContent=ocrItems.length?`Detected ${ocrItems.length} text line(s). Edit the replacement column.`:'No readable text detected. Try a clearer frame.';
+    const localItems=groupOCRWords(words,c.width,c.height);
+    if(!localItems.length){
+      ocrItems=[];
+      $('ocrList').innerHTML='<div class="ocrEmpty">No readable text found inside the selected rectangle. Try a tighter, clearer box.</div>';
+      $('ocrStatus').textContent='No text detected in the selected area.';
+      drawGeoPreview();return;
+    }
+    // Treat the selected rectangle as one editable text region.
+    const detected=localItems.map(x=>x.text.trim()).filter(Boolean).join(' ');
+    const confidence=Math.round(localItems.reduce((a,x)=>a+x.confidence,0)/localItems.length);
+    const replacement=(foundLocationText||[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ')).trim();
+    if(!replacement){
+      $('ocrStatus').textContent='Find a location first so the detected text can be replaced automatically.';
+      return;
+    }
+    ocrItems=[{
+      text:detected,
+      replacement,
+      bbox:{x:tr.x,y:tr.y,w:tr.w,h:tr.h},
+      confidence,
+      enabled:true
+    }];
+    renderOCRList();
+    $('ocrStatus').textContent=`Text area identified (${confidence}% scan confidence). It will be replaced automatically with the location found by Find Location.`;
+    drawGeoPreview();
   }catch(err){
-    console.error('OCR failed',err);$('ocrStatus').textContent='OCR failed: '+(err.message||err);
-  }finally{$('ocrScan').disabled=false;ocrScanning=false;}
+    console.error('Selected-area OCR failed',err);$('ocrStatus').textContent='Scan failed: '+(err.message||err);
+  }finally{$('ocrScan').disabled=!textRect;ocrScanning=false;}
 }
+$('textAreaMode').onclick=()=>{
+  textAreaMode=!textAreaMode;
+  cropMode=false;removeMode=false;
+  $('cropMode').textContent='Crop: OFF';
+  $('removeMode').textContent='Select White Text Area';
+  $('textAreaMode').textContent=textAreaMode?'Drawing Text Area…':'▣ Select Text Area';
+  $('ocrStatus').textContent=textAreaMode?'Drag a rectangle around the exact text to replace.':'Text-area selection mode off.';
+  if(textAreaMode){setStatus('Draw a rectangle around the text you want to replace.');}
+};
 $('ocrScan').onclick=scanOCR;
-$('ocrClear').onclick=()=>{ocrItems=[];renderOCRList();drawGeoPreview();$('ocrStatus').textContent='Detected text cleared.'};
-$('ocrSelectAll').onclick=()=>{ocrItems.forEach(x=>x.enabled=true);renderOCRList();drawGeoPreview()};
-$('ocrSelectNone').onclick=()=>{ocrItems.forEach(x=>x.enabled=false);renderOCRList();drawGeoPreview()};
+$('ocrClear').onclick=()=>{
+  ocrItems=[];textRect=null;$('ocrScan').disabled=true;
+  $('ocrList').innerHTML='<div class="ocrEmpty">No text area selected.</div>';
+  $('ocrStatus').textContent='Find a location first, then draw a rectangle around the GeoTag text.';
+  updateSelectionBox();drawGeoPreview();
+};
 $('ocrSize').oninput=()=>{$('ocrSizeVal').textContent=$('ocrSize').value+'%';drawGeoPreview()};
 $('ocrWeight').oninput=()=>{$('ocrWeightVal').textContent=$('ocrWeight').value;drawGeoPreview()};
+
+function escapeHtml(v){
+  return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+}
 
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();

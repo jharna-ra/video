@@ -24,6 +24,8 @@ input[type=range]{width:100%}
 .stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
 #viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
+#geoStage{position:relative}
+#geoTextSelection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none;z-index:20;box-sizing:border-box}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
@@ -80,6 +82,14 @@ input[type=range]{width:100%}
 #geoSection .ocrEmpty{padding:10px;color:#7f909e;background:#0d151d;border-radius:8px;}
 #geoSection .ocrScanBox{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px;}
 #geoSection .ocrScanBox button{width:100%;}
+#geoSection .inlineTextEditor{position:absolute;display:none;z-index:50;min-width:220px;max-width:420px;background:#101820;border:1px solid #4d6474;border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.45);padding:7px;}
+#geoSection .inlineTextToolbar{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
+#geoSection .inlineTextToolbar button{padding:5px 9px;min-width:32px;}
+#geoSection .inlineTextToolbar input[type=range]{width:85px;}
+#geoSection .inlineTextToolbar select{background:#0b1117;color:#fff;border:1px solid #3a4b58;border-radius:5px;padding:4px;}
+#geoSection .inlineTextInput{min-height:32px;max-height:110px;overflow:auto;background:#fff;color:#111;border-radius:6px;padding:7px;outline:none;white-space:pre-wrap;font-family:Arial,sans-serif;}
+#geoSection .inlineTextHint{font-size:10px;color:#93a3af;margin-top:4px;}
+
 @media(max-width:900px){
   #geoSection .geoOptionGrid{grid-template-columns:1fr 1fr;}
   #geoSection .geoInfoGrid{grid-template-columns:1fr;}
@@ -223,7 +233,18 @@ input[type=range]{width:100%}
         </div>
         <div class="geoPreviewHint">Drag the map to move/resize it. Drag any white GeoTag text line to move that line independently.</div>
       </div>
-      <div class="stage"><canvas id="geoCanvas"></canvas></div>
+      <div class="stage" id="geoStage"><canvas id="geoCanvas"></canvas><div id="inlineTextEditor" class="inlineTextEditor">
+  <div class="inlineTextToolbar">
+    <button id="inlineBold" type="button"><b>B</b></button>
+    <span style="font-size:10px;color:#9aa8b2">Size</span><input id="inlineSize" type="range" min="60" max="180" value="100">
+    <span id="inlineSizeVal" style="font-size:10px">100%</span>
+    <span style="font-size:10px;color:#9aa8b2">Thick</span><input id="inlineWeight" type="range" min="300" max="900" step="100" value="700">
+    <span id="inlineWeightVal" style="font-size:10px">700</span>
+    <button id="inlineDone" type="button">Enter ✓</button>
+  </div>
+  <div id="inlineTextInput" class="inlineTextInput" contenteditable="true" spellcheck="false"></div>
+  <div class="inlineTextHint">Double-click text to edit • Enter = apply • Shift+Enter = new line • Esc = cancel</div>
+</div><div id="geoTextSelection"></div></div>
       <div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
     </main>
 
@@ -346,7 +367,8 @@ let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
 let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
-let ocrItems=[]; let ocrWorker=null; let ocrScanning=false;
+let ocrItems=[]; let ocrWorker=null; let ocrScanning=false; let geoTextSelecting=false, geoTextSX=0, geoTextSY=0;
+let inlineEditingIndex=-1, inlineEditBackup=null;
 let foundLocationText='';
 
 const state={
@@ -1189,8 +1211,8 @@ function applyOCRRemoval(ctx2,W,H,srcRect){
 function drawOCRReplacements(ctx2,W,H,srcRect,preview=false){
   const rects=getOCRRectsForCanvas(srcRect,W,H);
   if(!rects.length)return;
-  const sizeScale=(+$('ocrSize').value||100)/100;
-  const weight=+$('ocrWeight').value||700;
+  const defaultSizeScale=(+$('ocrSize').value||100)/100;
+  const defaultWeight=+$('ocrWeight').value||700;
   ctx2.save();
   ctx2.fillStyle='#fff';
   ctx2.textBaseline='middle';
@@ -1201,10 +1223,15 @@ function drawOCRReplacements(ctx2,W,H,srcRect,preview=false){
   for(const r of rects){
     const text=r.item.replacement.trim();
     if(!text)continue;
+    const sizeScale=(r.item.sizeScale||defaultSizeScale);
+    const weight=(r.item.weight||defaultWeight);
     const fs=Math.max(8,r.h*0.72*sizeScale);
-    ctx2.font=`${weight} ${fs}px Arial, sans-serif`;
+    ctx2.font=`${r.item.bold?700:weight} ${fs}px Arial, sans-serif`;
     // Keep replacement at the same left edge and vertical center as detected text.
-    ctx2.fillText(text,r.x,r.y+r.h/2);
+    const parts=String(text).split(/\n/);
+    const lineH=fs*1.08;
+    const startY=r.y+r.h/2-((parts.length-1)*lineH/2);
+    parts.forEach((part,li)=>ctx2.fillText(part,r.x,startY+li*lineH));
   }
   ctx2.restore();
   if(preview){
@@ -1295,7 +1322,7 @@ async function scanOCR(){
       replacement,
       bbox:{x:tr.x,y:tr.y,w:tr.w,h:tr.h},
       confidence,
-      enabled:true
+      enabled:true, sizeScale:(+$('ocrSize').value||100)/100, weight:+$('ocrWeight').value||700, bold:false
     }];
     renderOCRList();
     $('ocrStatus').textContent=`Text area identified (${confidence}% scan confidence). It will be replaced automatically with the location found by Find Location.`;
@@ -1310,8 +1337,10 @@ $('textAreaMode').onclick=()=>{
   $('cropMode').textContent='Crop: OFF';
   $('removeMode').textContent='Select White Text Area';
   $('textAreaMode').textContent=textAreaMode?'Drawing Text Area…':'▣ Select Text Area';
-  $('ocrStatus').textContent=textAreaMode?'Drag a rectangle around the exact text to replace.':'Text-area selection mode off.';
-  if(textAreaMode){setStatus('Draw a rectangle around the text you want to replace.');}
+  $('ocrStatus').textContent=textAreaMode?'Draw a rectangle directly on the GeoTag preview around the existing text.':'Text-area selection mode off.';
+  const gs=$('geoTextSelection');
+  if(!textAreaMode){gs.style.display='none';geoTextSelecting=false;}
+  if(textAreaMode){setStatus('Draw a rectangle on the GeoTag preview around the existing text you want to replace.');drawGeoPreview();}
 };
 $('ocrScan').onclick=scanOCR;
 $('ocrClear').onclick=()=>{
@@ -1320,6 +1349,48 @@ $('ocrClear').onclick=()=>{
   $('ocrStatus').textContent='Find a location first, then draw a rectangle around the GeoTag text.';
   updateSelectionBox();drawGeoPreview();
 };
+function closeInlineEditor(apply=true){
+  const ed=$('inlineTextEditor');
+  if(inlineEditingIndex<0){ed.style.display='none';return;}
+  const item=ocrItems[inlineEditingIndex];
+  if(apply && item){
+    item.replacement=$('inlineTextInput').innerText.replace(/\r/g,'').trim();
+    item.sizeScale=(+$('inlineSize').value||100)/100;
+    item.weight=+$('inlineWeight').value||700;
+    item.bold=$('inlineBold').dataset.active==='1';
+    renderOCRList();
+    drawGeoPreview();
+  }else if(item && inlineEditBackup){
+    Object.assign(item,inlineEditBackup);
+    drawGeoPreview();
+  }
+  inlineEditingIndex=-1;inlineEditBackup=null;ed.style.display='none';
+}
+function openInlineEditor(index){
+  const item=ocrItems[index]; if(!item)return;
+  inlineEditingIndex=index;
+  inlineEditBackup={replacement:item.replacement,sizeScale:item.sizeScale,weight:item.weight,bold:item.bold};
+  $('inlineTextInput').innerText=item.replacement||'';
+  $('inlineSize').value=Math.round((item.sizeScale||1)*100);
+  $('inlineSizeVal').textContent=$('inlineSize').value+'%';
+  $('inlineWeight').value=item.weight||700;
+  $('inlineWeightVal').textContent=$('inlineWeight').value;
+  $('inlineBold').dataset.active=item.bold?'1':'0';
+  $('inlineBold').classList.toggle('active',!!item.bold);
+  const gr=$('geoStage').getBoundingClientRect(), cr=geo.getBoundingClientRect();
+  const sx=cr.left-gr.left+(item.bbox.x/geo.width)*cr.width;
+  const sy=cr.top-gr.top+(item.bbox.y/geo.height)*cr.height;
+  const ed=$('inlineTextEditor'); ed.style.display='block';
+  ed.style.left=Math.max(4,Math.min(gr.width-230,sx))+'px';
+  ed.style.top=Math.max(4,sy-94)+'px';
+  requestAnimationFrame(()=>{$('inlineTextInput').focus();document.execCommand('selectAll',false,null);});
+}
+$('inlineDone').onclick=()=>closeInlineEditor(true);
+$('inlineBold').onclick=()=>{const b=$('inlineBold');const on=b.dataset.active!=='1';b.dataset.active=on?'1':'0';b.classList.toggle('active',on);$('inlineTextInput').focus();};
+$('inlineSize').oninput=()=>{$('inlineSizeVal').textContent=$('inlineSize').value+'%';if(inlineEditingIndex>=0){ocrItems[inlineEditingIndex].sizeScale=(+$('inlineSize').value||100)/100;drawGeoPreview();}};
+$('inlineWeight').oninput=()=>{$('inlineWeightVal').textContent=$('inlineWeight').value;if(inlineEditingIndex>=0){ocrItems[inlineEditingIndex].weight=+$('inlineWeight').value||700;drawGeoPreview();}};
+$('inlineTextInput').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeInlineEditor(false);}else if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();closeInlineEditor(true);}});
+$('inlineTextInput').addEventListener('input',()=>{if(inlineEditingIndex>=0){ocrItems[inlineEditingIndex].replacement=$('inlineTextInput').innerText.replace(/\r/g,'');drawGeoPreview();}});
 $('ocrSize').oninput=()=>{$('ocrSizeVal').textContent=$('ocrSize').value+'%';drawGeoPreview()};
 $('ocrWeight').oninput=()=>{$('ocrWeightVal').textContent=$('ocrWeight').value;drawGeoPreview()};
 
@@ -1862,8 +1933,28 @@ function getTextLinesForHit(W,H){
  gctx.restore();
  return out;
 }
+geo.addEventListener('dblclick',e=>{
+  if(textAreaMode || !ocrItems.length)return;
+  const p=mapPointerPos(e);
+  for(let i=ocrItems.length-1;i>=0;i--){
+    const b=ocrItems[i].bbox;
+    if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){e.preventDefault();openInlineEditor(i);return;}
+  }
+});
 geo.addEventListener('pointerdown',e=>{
  if(!geo.width)return;
+ if(textAreaMode){
+   e.preventDefault();
+   geoTextSelecting=true;
+   geo.setPointerCapture(e.pointerId);
+   const p=mapPointerPos(e); geoTextSX=p.x; geoTextSY=p.y;
+   const box=$('geoTextSelection'),gr=$('geoStage').getBoundingClientRect(),cr=geo.getBoundingClientRect();
+   box.style.display='block';
+   box.style.left=(cr.left-gr.left+p.x*(cr.width/geo.width))+'px';
+   box.style.top=(cr.top-gr.top+p.y*(cr.height/geo.height))+'px';
+   box.style.width='0px';box.style.height='0px';
+   return;
+ }
  const p=mapPointerPos(e); const r=getMapRectOnPreview();
  const hs=Math.max(10,16*geo.width/Math.max(1,geo.getBoundingClientRect().width));
  if(mapImg && r){
@@ -1892,6 +1983,15 @@ geo.addEventListener('pointerdown',e=>{
  }
 });
 geo.addEventListener('pointermove',e=>{
+ if(geoTextSelecting){
+   const p=mapPointerPos(e);
+   const x=Math.min(geoTextSX,p.x),y=Math.min(geoTextSY,p.y),w=Math.abs(p.x-geoTextSX),h=Math.abs(p.y-geoTextSY);
+   const box=$('geoTextSelection'),gr=$('geoStage').getBoundingClientRect(),cr=geo.getBoundingClientRect();
+   box.style.left=(cr.left-gr.left+x*(cr.width/geo.width))+'px';
+   box.style.top=(cr.top-gr.top+y*(cr.height/geo.height))+'px';
+   box.style.width=(w*(cr.width/geo.width))+'px';box.style.height=(h*(cr.height/geo.height))+'px';
+   return;
+ }
  if(mapDrag){
    const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
    if(mapDrag.mode==='move'){
@@ -1920,19 +2020,41 @@ geo.addEventListener('pointermove',e=>{
    drawGeoPreview();
  }
 });
-function endGeoDrag(){mapDrag=null;textDrag=null;}
-geo.addEventListener('pointerup',endGeoDrag); geo.addEventListener('pointercancel',endGeoDrag); geo.addEventListener('pointerleave',()=>{if(mapDrag||textDrag)endGeoDrag();});
+function endGeoDrag(e){
+ if(geoTextSelecting){
+   const p=mapPointerPos(e);
+   const x=Math.min(geoTextSX,p.x),y=Math.min(geoTextSY,p.y),w=Math.abs(p.x-geoTextSX),h=Math.abs(p.y-geoTextSY);
+   geoTextSelecting=false;
+   if(w>=8&&h>=8){
+     const sr=sourceRect();
+     textRect={x:sr.x+x/geo.width*sr.w,y:sr.y+y/geo.height*sr.h,w:w/geo.width*sr.w,h:h/geo.height*sr.h};
+     $('ocrScan').disabled=false;
+     $('ocrStatus').textContent='Text area selected. Click Scan Selected Area.';
+     $('ocrList').innerHTML='<div class=\"ocrEmpty\">Ready to scan the selected area.</div>';
+   } else {
+     $('ocrStatus').textContent='Draw a larger rectangle around the text.';
+   }
+   drawGeoPreview();
+   return;
+ }
+ mapDrag=null;textDrag=null;
+}
+geo.addEventListener('pointerup',endGeoDrag); geo.addEventListener('pointercancel',e=>endGeoDrag(e)); geo.addEventListener('pointerleave',()=>{if(mapDrag||textDrag)endGeoDrag({clientX:-999999,clientY:-999999});});
 
 function drawGeoPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
- if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
- if(ocrItems.some(x=>x.enabled&&x.replacement.trim())){
-   applyOCRRemoval(gctx,geo.width,geo.height,r);
-   drawOCRReplacements(gctx,geo.width,geo.height,r,true);
+ // While selecting the source text, show the untouched video frame so the user can
+ // draw the rectangle precisely over the original GeoTag text.
+ if(!textAreaMode){
+   if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
+   if(ocrItems.some(x=>x.enabled&&x.replacement.trim())){
+     applyOCRRemoval(gctx,geo.width,geo.height,r);
+     drawOCRReplacements(gctx,geo.width,geo.height,r,true);
+   }
+   if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
  }
- if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{
  if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}

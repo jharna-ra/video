@@ -1220,31 +1220,36 @@ function drawOCRReplacements(ctx2,W,H,srcRect,preview=false){
   if(!rects.length)return;
   const defaultSizeScale=(+$('ocrSize').value||100)/100;
   const defaultWeight=+$('ocrWeight').value||700;
+  // Compact camera-style GeoTag text: never size the font from the selection
+  // rectangle, because a large selection would otherwise create giant text.
+  const baseFs=clamp(Math.min(W,H)*0.038,9,30);
   ctx2.save();
   ctx2.fillStyle='#fff';
   ctx2.textBaseline='middle';
-  ctx2.shadowColor='rgba(0,0,0,.45)';
-  ctx2.shadowBlur=1.2;
+  ctx2.textAlign='right';
+  ctx2.shadowColor='rgba(0,0,0,.48)';
+  ctx2.shadowBlur=Math.max(.8,baseFs*.08);
   ctx2.shadowOffsetX=.6;
   ctx2.shadowOffsetY=.6;
   for(const r of rects){
-    const text=r.item.replacement.trim();
+    const text=String(r.item.replacement||'').trim();
     if(!text)continue;
-    const sizeScale=(r.item.sizeScale||defaultSizeScale);
-    const weight=(r.item.weight||defaultWeight);
-    const fs=Math.max(8,r.h*0.72*sizeScale);
-    ctx2.font=`${r.item.bold?700:weight} ${fs}px Arial, sans-serif`;
-    // Keep replacement at the same left edge and vertical center as detected text.
-    const parts=String(text).split(/\n/);
-    const lineH=fs*1.08;
+    const sizeScale=clamp((r.item.sizeScale||defaultSizeScale),.4,2.2);
+    const weight=clamp(+(r.item.weight||defaultWeight),300,900);
+    const fs=clamp(baseFs*sizeScale,7,42);
+    ctx2.font=`${r.item.bold?900:weight} ${fs}px Arial, sans-serif`;
+    const parts=text.split(/\n/);
+    const lineH=fs*1.12;
     const startY=r.y+r.h/2-((parts.length-1)*lineH/2);
-    parts.forEach((part,li)=>ctx2.fillText(part,r.x,startY+li*lineH));
+    const right=r.x+r.w;
+    parts.forEach((part,li)=>ctx2.fillText(part,right,startY+li*lineH));
   }
   ctx2.restore();
   if(preview){
     ctx2.save();
-    ctx2.strokeStyle='rgba(40,150,255,.9)';
-    ctx2.lineWidth=Math.max(1,1.5*W/Math.max(1,geo.width));
+    ctx2.strokeStyle='rgba(40,150,255,.55)';
+    ctx2.lineWidth=Math.max(1,1.2*W/Math.max(1,geo.width));
+    ctx2.setLineDash([4,3]);
     for(const r of rects)ctx2.strokeRect(r.x,r.y,r.w,r.h);
     ctx2.restore();
   }
@@ -1325,22 +1330,29 @@ async function scanOCR(){
       w:Math.max(4,w.bbox.x1-w.bbox.x0+4),h:Math.max(4,w.bbox.y1-w.bbox.y0+4),
       text:w.text.trim(),confidence:Number(w.confidence??w.conf??0)
     }));
-    const detected=localItems.map(x=>x.text.trim()).filter(Boolean).join(' | ');
     const confidence=Math.round(goodWords.reduce((a,w)=>a+Number(w.confidence??w.conf??0),0)/goodWords.length);
-    const replacement=(foundLocationText||[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ')).trim();
-    if(!replacement){
-      $('ocrStatus').textContent='Scan complete, but no Find Location result is available.';
+    const place=[$('gPlace').value.trim(),$('gState').value.trim()].filter(Boolean).join(', ');
+    const address=($('gAddress').value.trim()||foundLocationText||place||'India');
+    const running=getRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));
+    const coords=`Lat ${running.lat==null?'—':running.lat.toFixed(6)}°  Long ${running.lon==null?'—':running.lon.toFixed(6)}°`;
+    const dateLine=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,Math.max(0,video.currentTime-(+$('trimStart').value||0)))}`;
+    const replacementLines=[place||foundLocationText||'India',address,coords,dateLine].filter(Boolean);
+    if(!replacementLines.length){
+      $('ocrStatus').textContent='Scan complete, but no replacement location is available.';
       return;
     }
-    // One visible replacement covers the selected GeoTag, while removal is
-    // based on every individual OCR word so no old text is left behind.
-    ocrItems=[{
-      text:detected,
+    // Every OCR word is still detected and removed individually. The visible
+    // replacement is rebuilt as compact camera-style GeoTag lines, one line
+    // per editable item, aligned to the right side of the selected area.
+    const lineCount=Math.max(1,Math.min(4,replacementLines.length));
+    const lineH=tr.h/lineCount;
+    ocrItems=replacementLines.slice(0,lineCount).map((replacement,i)=>({
+      text:(localItems[i]?.text||'Detected GeoTag line'),
       replacement,
-      bbox:{x:tr.x,y:tr.y,w:tr.w,h:tr.h},
+      bbox:{x:tr.x,y:tr.y+i*lineH,w:tr.w,h:lineH},
       confidence,
       enabled:true,sizeScale:(+$('ocrSize').value||100)/100,weight:+$('ocrWeight').value||700,bold:false
-    }];
+    }));
     // Leave selection mode automatically so the changed text becomes visible immediately.
     textAreaMode=false;geoTextSelecting=false;
     $('textAreaMode').textContent='▣ Select Text Area';
@@ -1412,8 +1424,18 @@ $('inlineSize').oninput=()=>{$('inlineSizeVal').textContent=$('inlineSize').valu
 $('inlineWeight').oninput=()=>{$('inlineWeightVal').textContent=$('inlineWeight').value;if(inlineEditingIndex>=0){ocrItems[inlineEditingIndex].weight=+$('inlineWeight').value||700;drawGeoPreview();}};
 $('inlineTextInput').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeInlineEditor(false);}else if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();closeInlineEditor(true);}});
 $('inlineTextInput').addEventListener('input',()=>{if(inlineEditingIndex>=0){ocrItems[inlineEditingIndex].replacement=$('inlineTextInput').innerText.replace(/\r/g,'');drawGeoPreview();}});
-$('ocrSize').oninput=()=>{$('ocrSizeVal').textContent=$('ocrSize').value+'%';drawGeoPreview()};
-$('ocrWeight').oninput=()=>{$('ocrWeightVal').textContent=$('ocrWeight').value;drawGeoPreview()};
+$('ocrSize').oninput=()=>{
+  $('ocrSizeVal').textContent=$('ocrSize').value+'%';
+  if(ocrItems.length)ocrItems.forEach(item=>item.sizeScale=(+$('ocrSize').value||100)/100);
+  $('gTextSize').value=$('ocrSize').value; $('gTextSizeVal').textContent=$('ocrSize').value+'%'; state.gTextSize=+$('ocrSize').value||100;
+  drawGeoPreview();
+};
+$('ocrWeight').oninput=()=>{
+  $('ocrWeightVal').textContent=$('ocrWeight').value;
+  if(ocrItems.length)ocrItems.forEach(item=>item.weight=+$('ocrWeight').value||700);
+  $('gTextWeight').value=$('ocrWeight').value; $('gTextWeightVal').textContent=$('ocrWeight').value; state.gTextWeight=+$('ocrWeight').value||700;
+  drawGeoPreview();
+};
 
 function escapeHtml(v){
   return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -1913,6 +1935,10 @@ for(const id of ['gMapO','gMapW','mapH','gTextSize','gTextWeight','gTextOpacity'
    if(id==='gTextSize') state.gTextSize=+$(id).value;
    if(id==='gTextWeight') state.gTextWeight=+$(id).value;
    if(id==='gTextOpacity') state.gTextOpacity=+$(id).value;
+   // When OCR replacement is active, keep the main GeoTag size/thickness
+   // controls connected to the visible replacement text too.
+   if(id==='gTextSize' && ocrItems.length){ ocrItems.forEach(item=>item.sizeScale=(+$(id).value||100)/100); $('ocrSize').value=$(id).value; $('ocrSizeVal').textContent=$(id).value+'%'; }
+   if(id==='gTextWeight' && ocrItems.length){ ocrItems.forEach(item=>item.weight=+$(id).value||700); $('ocrWeight').value=$(id).value; $('ocrWeightVal').textContent=$(id).value; }
    $(id+'Val').textContent=(id==='gTextWeight'?$(id).value:$(id).value+'%');
    drawGeoPreview();
  }
@@ -2050,8 +2076,10 @@ function endGeoDrag(e){
      const sr=sourceRect();
      textRect={x:sr.x+x/geo.width*sr.w,y:sr.y+y/geo.height*sr.h,w:w/geo.width*sr.w,h:h/geo.height*sr.h};
      $('ocrScan').disabled=false;
-     $('ocrStatus').textContent='Text area selected. Click Scan Selected Area.';
-     $('ocrList').innerHTML='<div class=\"ocrEmpty\">Ready to scan the selected area.</div>';
+     $('ocrStatus').textContent='Text area selected. Starting scan…';
+     $('ocrList').innerHTML='<div class=\"ocrEmpty\">Scanning every detected word and line…</div>';
+     // Start OCR automatically as soon as the rectangle is released.
+     setTimeout(()=>scanOCR(),30);
    } else {
      $('ocrStatus').textContent='Draw a larger rectangle around the text.';
    }

@@ -367,7 +367,7 @@ let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
 let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
-let ocrItems=[]; let ocrWorker=null; let ocrScanning=false; let geoTextSelecting=false, geoTextSX=0, geoTextSY=0;
+let ocrItems=[]; let ocrDetectedBoxes=[]; let ocrWorker=null; let ocrScanning=false; let geoTextSelecting=false, geoTextSX=0, geoTextSY=0;
 let inlineEditingIndex=-1, inlineEditBackup=null;
 let foundLocationText='';
 
@@ -1199,11 +1199,18 @@ function getOCRRectsForCanvas(srcRect,W,H){
 }
 
 function applyOCRRemoval(ctx2,W,H,srcRect){
+  // Remove every OCR-detected word/line separately. The final replacement is
+  // drawn only once over the whole selected GeoTag area.
+  if(ocrDetectedBoxes.length){
+    for(const b of ocrDetectedBoxes){
+      const x=b.x/srcRect.w*W, y=b.y/srcRect.h*H, w=b.w/srcRect.w*W, h=b.h/srcRect.h*H;
+      removeWhiteFromCanvasExport(ctx2,W,H,{x,y,w,h});
+    }
+    return;
+  }
   const rects=getOCRRectsForCanvas(srcRect,W,H);
   for(const r of rects){
     if(!r.item.replacement.trim())continue;
-    // Reuse the working white-text remover so only bright neutral text pixels
-    // inside the OCR box are inpainted.
     removeWhiteFromCanvasExport(ctx2,W,H,{x:r.x,y:r.y,w:r.w,h:r.h});
   }
 }
@@ -1290,43 +1297,57 @@ async function scanOCR(){
   if(ocrScanning||!video.videoWidth)return;
   if(!textRect){$('ocrStatus').textContent='Find a location first, then draw a rectangle around the GeoTag text.';return}
   if(typeof Tesseract==='undefined'){$('ocrStatus').textContent='Text scanner could not load. Connect to the internet and reload.';return}
-  ocrScanning=true;$('ocrScan').disabled=true;$('ocrStatus').textContent='Scanning selected area…';
+  ocrScanning=true;$('ocrScan').disabled=true;
+  ocrItems=[];ocrDetectedBoxes=[];drawGeoPreview();
   try{
     const tr=textRect;
     const c=document.createElement('canvas');
     c.width=Math.max(1,Math.round(tr.w));c.height=Math.max(1,Math.round(tr.h));
     const cctx=c.getContext('2d',{willReadFrequently:true});
     cctx.drawImage(video,tr.x,tr.y,tr.w,tr.h,0,0,c.width,c.height);
+    $('ocrStatus').textContent='Scanning selected GeoTag area: preparing OCR… 0%';
     if(!ocrWorker)ocrWorker=await Tesseract.createWorker('eng',1,{logger:m=>{
-      if(m&&m.status){const pct=m.progress!=null?` ${Math.round(m.progress*100)}%`:'';$('ocrStatus').textContent='Scanning: '+m.status+pct;}
+      if(m&&m.status){const pct=m.progress!=null?Math.round(m.progress*100):0;$('ocrStatus').textContent=`Scanning every detected text region: ${m.status} ${pct}%`;}
     }});
     const result=await ocrWorker.recognize(c);
     const words=result?.data?.words||[];
-    const localItems=groupOCRWords(words,c.width,c.height);
-    if(!localItems.length){
-      ocrItems=[];
-      $('ocrList').innerHTML='<div class="ocrEmpty">No readable text found inside the selected rectangle. Try a tighter, clearer box.</div>';
-      $('ocrStatus').textContent='No text detected in the selected area.';
+    // Keep EVERY readable detected word, then group only for display/removal.
+    const goodWords=words.filter(w=>w.text&&w.text.trim()&&Number(w.confidence??w.conf??0)>=25&&w.bbox);
+    if(!goodWords.length){
+      $('ocrItems').innerHTML='';
+      $('ocrList').innerHTML='<div class="ocrEmpty">No readable text found. Draw a tighter rectangle around the existing GeoTag text and scan again.</div>';
+      $('ocrStatus').textContent='Scan finished: 0 text regions found.';
       drawGeoPreview();return;
     }
-    // Treat the selected rectangle as one editable text region.
-    const detected=localItems.map(x=>x.text.trim()).filter(Boolean).join(' ');
-    const confidence=Math.round(localItems.reduce((a,x)=>a+x.confidence,0)/localItems.length);
+    const localItems=groupOCRWords(goodWords,c.width,c.height);
+    ocrDetectedBoxes=goodWords.map(w=>({
+      x:Math.max(0,w.bbox.x0-2),y:Math.max(0,w.bbox.y0-2),
+      w:Math.max(4,w.bbox.x1-w.bbox.x0+4),h:Math.max(4,w.bbox.y1-w.bbox.y0+4),
+      text:w.text.trim(),confidence:Number(w.confidence??w.conf??0)
+    }));
+    const detected=localItems.map(x=>x.text.trim()).filter(Boolean).join(' | ');
+    const confidence=Math.round(goodWords.reduce((a,w)=>a+Number(w.confidence??w.conf??0),0)/goodWords.length);
     const replacement=(foundLocationText||[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ')).trim();
     if(!replacement){
-      $('ocrStatus').textContent='Find a location first so the detected text can be replaced automatically.';
+      $('ocrStatus').textContent='Scan complete, but no Find Location result is available.';
       return;
     }
+    // One visible replacement covers the selected GeoTag, while removal is
+    // based on every individual OCR word so no old text is left behind.
     ocrItems=[{
       text:detected,
       replacement,
       bbox:{x:tr.x,y:tr.y,w:tr.w,h:tr.h},
       confidence,
-      enabled:true, sizeScale:(+$('ocrSize').value||100)/100, weight:+$('ocrWeight').value||700, bold:false
+      enabled:true,sizeScale:(+$('ocrSize').value||100)/100,weight:+$('ocrWeight').value||700,bold:false
     }];
+    // Leave selection mode automatically so the changed text becomes visible immediately.
+    textAreaMode=false;geoTextSelecting=false;
+    $('textAreaMode').textContent='▣ Select Text Area';
+    const gs=$('geoTextSelection');if(gs)gs.style.display='none';
     renderOCRList();
-    $('ocrStatus').textContent=`Text area identified (${confidence}% scan confidence). It will be replaced automatically with the location found by Find Location.`;
     drawGeoPreview();
+    $('ocrStatus').textContent=`✓ Scan complete — found ${goodWords.length} text region(s) across ${localItems.length} line(s). The old text has been removed and the new location text is now visible. Double-click the new text to edit it.`;
   }catch(err){
     console.error('Selected-area OCR failed',err);$('ocrStatus').textContent='Scan failed: '+(err.message||err);
   }finally{$('ocrScan').disabled=!textRect;ocrScanning=false;}
@@ -1344,7 +1365,7 @@ $('textAreaMode').onclick=()=>{
 };
 $('ocrScan').onclick=scanOCR;
 $('ocrClear').onclick=()=>{
-  ocrItems=[];textRect=null;$('ocrScan').disabled=true;
+  ocrItems=[];ocrDetectedBoxes=[];textRect=null;$('ocrScan').disabled=true;
   $('ocrList').innerHTML='<div class="ocrEmpty">No text area selected.</div>';
   $('ocrStatus').textContent='Find a location first, then draw a rectangle around the GeoTag text.';
   updateSelectionBox();drawGeoPreview();

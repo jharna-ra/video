@@ -180,12 +180,12 @@ input[type=range]{width:100%}
 <button id="removeWhite" disabled>Remove White Text</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
 <label>White detection sensitivity <b id="whiteVal">115</b></label>
-<input id="whiteThreshold" type="range" min="80" max="245" value="115">
+<input id="whiteThreshold" type="range" min="80" max="245" value="145">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
-<input id="inpaintPasses" type="range" min="1" max="8" value="5">
-<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get cloned over with real neighbouring pixels, so nothing else is blurred.</div>
+<input id="inpaintPasses" type="range" min="1" max="10" value="7">
+<div class="small">If white text is still visible, increase the detection sensitivity/threshold and increase Edge expand. The remover targets neutral white/light-gray pixels inside only the selected rectangles, then fills them with surrounding video pixels.</div>
 </div>
 
 <div class="section">
@@ -429,48 +429,12 @@ function isWhite(data,i,t){
  return neutral && (mx>=t || brightness>=t-15);
 }
 function removeWhiteFromCanvas(ctx2,W,H,rect){
- if(!rect)return;
- const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
- const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
- if(x1<=x0||y1<=y0)return;
- const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
- const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
- const W2=x1-x0,H2=y1-y0,N=W2*H2;
- const mask=new Uint8Array(N);
- for(let y=0;y<H2;y++){
-   for(let x=0;x<W2;x++){
-     const p=y*W2+x,i=p*4;
-     if(isWhite(d,i,t)) mask[p]=1;
-   }
- }
- const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
- const expanded=new Uint8Array(mask);
- for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x; if(mask[p]){
-     for(let dy=-grow;dy<=grow;dy++) for(let dx=-grow;dx<=grow;dx++){
-       if(dx*dx+dy*dy>grow*grow+1)continue;
-       const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
-     }
-   }
- }
- const out=new Uint8ClampedArray(d);
- const maxSearch=60;
- for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x; if(!expanded[p])continue;
-   let sr=0,sg=0,sb=0,n=0;
-   for(let k=1;k<=maxSearch;k++){const xx=x-k;if(xx<0)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const xx=x+k;if(xx>=W2)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const yy=y-k;if(yy<0)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const yy=y+k;if(yy>=H2)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   if(n){
-     const i=p*4,a=strength;
-     out[i]=d[i]*(1-a)+(sr/n)*a;
-     out[i+1]=d[i+1]*(1-a)+(sg/n)*a;
-     out[i+2]=d[i+2]*(1-a)+(sb/n)*a;
-   }
- }
- ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
+  // Preview and export use the same strong white-text removal algorithm.
+  // Keeping one implementation prevents the preview from looking different
+  // from the final downloaded video.
+  removeWhiteFromCanvasExport(ctx2,W,H,rect);
 }
+
 function drawPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();
@@ -1000,6 +964,36 @@ function getGeoTagLines(seconds){
     `Index number:${getIndexText(seconds)}`
   ];
 }
+function drawAnimatedCompass(ctx,W,H,seconds){
+  // Camera-style compass. The outer dial stays fixed while the needle rotates
+  // with the calculated running heading, so it changes continuously during playback/export.
+  const c=getRunningCoords(seconds), n=getRunningCoords(seconds+0.25);
+  let deg=0;
+  if(c.lat!=null&&c.lon!=null&&n.lat!=null&&n.lon!=null){
+    const p1=c.lat*Math.PI/180,p2=n.lat*Math.PI/180,dl=(n.lon-c.lon)*Math.PI/180;
+    const yy=Math.sin(dl)*Math.cos(p2);
+    const xx=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
+    deg=(Math.atan2(yy,xx)*180/Math.PI+360)%360;
+  }
+  const size=Math.max(72,Math.min(128,Math.min(W,H)*0.105));
+  const cx=size*0.72, cy=size*0.72, r=size*0.43;
+  ctx.save();
+  ctx.globalAlpha=.82;
+  ctx.fillStyle='rgba(30,30,30,.58)';ctx.beginPath();ctx.arc(cx,cy,r+7,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(245,245,245,.72)';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(40,40,40,.8)';ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle='#333';ctx.font=`bold ${Math.max(10,size*.11)}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';
+  const labels=[['N',0],['E',90],['S',180],['W',270]];
+  for(const [lab,a] of labels){
+    const rr=r*.78, rad=(a-90)*Math.PI/180;
+    ctx.fillText(lab,cx+Math.cos(rad)*rr,cy+Math.sin(rad)*rr);
+  }
+  ctx.translate(cx,cy);ctx.rotate((deg-90)*Math.PI/180);
+  ctx.fillStyle='#11a9d5';ctx.beginPath();ctx.moveTo(r*.08,0);ctx.lineTo(r*.68,-r*.10);ctx.lineTo(r*.68,r*.10);ctx.closePath();ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.92)';ctx.beginPath();ctx.moveTo(r*.03,0);ctx.lineTo(-r*.55,-r*.10);ctx.lineTo(-r*.55,r*.10);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
 function drawGeoFrame(baseCtx,W,H,seconds){
   // Camera-style GeoTag matching the reference: compact right-side white text
   // and a map in the lower-left corner.
@@ -1025,6 +1019,8 @@ function drawGeoFrame(baseCtx,W,H,seconds){
     baseCtx.strokeRect(mapX,mapY,mapW,mapH);
     baseCtx.restore();
   }
+
+  drawAnimatedCompass(baseCtx,W,H,seconds);
 
   const lines=getGeoTagLines(seconds);
   const ocrActive=ocrItems.some(x=>x.enabled&&x.replacement.trim());
@@ -1074,43 +1070,91 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
   if(rw<2||rh<2)return;
 
   const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
-  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
-  for(let y=0;y<rh;y++){
-    for(let x=0;x<rw;x++){
-      const p=y*rw+x,i=p*4;
-      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
-      const neutral=(mx-mn)<=115;
-      const bright=(rr+gg+bb)/3;
-      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
-    }
-  }
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x;
-    if(mask[p]){
-      for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
-        const xx=x+dx,yy=y+dy;
-        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
-      }
-    }
+  const d=img.data;
+  const threshold=+$('whiteThreshold').value||145;
+  const strength=(+$('removeOpacity').value||100)/100;
+  const expand=Math.max(1,Math.min(10,+$('inpaintPasses').value||7));
+  const N=rw*rh;
+  const mask=new Uint8Array(N);
+  const work=new Uint8ClampedArray(d);
+
+  // Detect white/light-gray text, including compressed anti-aliased edges.
+  for(let p=0,i=0;p<N;p++,i+=4){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx=Math.max(r,g,b), mn=Math.min(r,g,b), avg=(r+g+b)/3;
+    const neutral=(mx-mn)<=105;
+    if(neutral && (mx>=threshold || avg>=threshold)) mask[p]=1;
   }
 
-  const maxSearch=Math.min(50,Math.max(24,Math.round(Math.max(rw,rh)/2)));
-  const filled=new Uint8ClampedArray(d);
+  // Expand the mask so the thin anti-aliased halo around letters is also removed.
+  let expanded=new Uint8Array(mask);
+  for(let pass=0;pass<expand;pass++){
+    const next=new Uint8Array(expanded);
+    for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+      const p=y*rw+x;
+      if(!expanded[p])continue;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const xx=x+dx, yy=y+dy;
+        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) next[yy*rw+xx]=1;
+      }
+    }
+    expanded=next;
+  }
+
+  // Iteratively grow real neighbouring pixels into the removed text area.
+  // This is much stronger than replacing each white pixel from only one side.
+  const filled=new Uint8ClampedArray(work);
+  const filledMask=new Uint8Array(expanded);
+  const passes=Math.min(12,Math.max(2,expand+2));
+  for(let pass=0;pass<passes;pass++){
+    const nextPixels=new Uint8ClampedArray(filled);
+    const nextMask=new Uint8Array(filledMask);
+    for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+      const p=y*rw+x;
+      if(!filledMask[p])continue;
+      let sr=0,sg=0,sb=0,n=0;
+      const samples=[];
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        if(dx===0&&dy===0)continue;
+        const xx=x+dx,yy=y+dy;
+        if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
+        const q=yy*rw+xx;
+        if(!filledMask[q]){const j=q*4;samples.push(j);}
+      }
+      if(samples.length){
+        // Prefer the average of the actual surrounding background pixels.
+        for(const j of samples){sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];}
+        n=samples.length;
+      }else{
+        // For deeper pixels, sample a small ring from already-filled pixels.
+        for(let r=2;r<=Math.min(8,pass+3)&&n<8;r++){
+          const pts=[[x-r,y],[x+r,y],[x,y-r],[x,y+r],[x-r,y-r],[x+r,y-r],[x-r,y+r],[x+r,y+r]];
+          for(const [xx,yy] of pts){
+            if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
+            const q=yy*rw+xx;
+            if(!expanded[q]){const j=q*4;sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;}
+            if(n>=8)break;
+          }
+        }
+      }
+      if(n){
+        const i=p*4;
+        nextPixels[i]=filled[i]*(1-strength)+(sr/n)*strength;
+        nextPixels[i+1]=filled[i+1]*(1-strength)+(sg/n)*strength;
+        nextPixels[i+2]=filled[i+2]*(1-strength)+(sb/n)*strength;
+        nextPixels[i+3]=filled[i+3];
+        nextMask[p]=1;
+      }
+    }
+    filled.set(nextPixels);
+    filledMask.set(nextMask);
+  }
+
+  // One small smoothing pass only inside the removed area to eliminate letter-shaped remnants.
+  const out=new Uint8ClampedArray(filled);
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
     const p=y*rw+x;
     if(!expanded[p])continue;
-    let sr=0,sg=0,sb=0,n=0;
-    for(let k=1;k<=maxSearch;k++){const lx=x-k;if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const rx=x+k;if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const ty=y-k;if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const by=y+k;if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    if(n){const i=p*4;filled[i]=d[i]*(1-strength)+(sr/n)*strength;filled[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;filled[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
-  }
-
-  const out=new Uint8ClampedArray(filled);
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x; if(!expanded[p])continue;
     let sr=0,sg=0,sb=0,n=0;
     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
       const xx=x+dx,yy=y+dy;
@@ -1118,7 +1162,8 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
       const q=yy*rw+xx,j=q*4;
       sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;
     }
-    if(n){const i=p*4;out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;}
+    const i=p*4;
+    out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;
   }
   ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
 }
@@ -1659,7 +1704,7 @@ async function exportVideoFrameAccurate(){
 
     restoreMute=video.muted;
     video.muted=true;
-    video.playbackRate=2.5; // decode faster; encoded timestamps still preserve normal output duration
+    video.playbackRate=4.0; // aggressively decode faster; encoded timestamps still preserve normal output duration
 
     const hasRVFC=typeof video.requestVideoFrameCallback==='function';
     let frameIndex=0;
@@ -1792,7 +1837,7 @@ async function exportVideoFrameAccurate(){
         bitrate:128000
       });
 
-      const chunkSize=8192;
+      const chunkSize=65536; // much fewer AudioData objects = substantially faster audio encoding
       const totalSamples=Math.max(1,s1-s0);
       for(let s=s0;s<s1;s+=chunkSize){
         const n=Math.min(chunkSize,s1-s);
@@ -1811,14 +1856,23 @@ async function exportVideoFrameAccurate(){
         });
         audioEncoder.encode(audioData);
         audioData.close();
+        // Prevent an enormous audio encoder queue from making the final 99%
+        // appear frozen. Drain in larger batches instead of waiting only at flush().
+        if(audioEncoder.encodeQueueSize>24){
+          const waitStart=performance.now();
+          while(audioEncoder.encodeQueueSize>8){
+            if(performance.now()-waitStart>4000) break;
+            await new Promise(r=>setTimeout(r,4));
+          }
+        }
         const pct=94+Math.round(((s-s0)/totalSamples)*5);
         $('exportStatus').textContent='Encoding audio… '+Math.min(98,pct)+'%';
       }
 
-      $('exportStatus').textContent='Finishing audio… 99%';
+      $('exportStatus').textContent='Finishing audio… 99% (draining encoder)';
       await Promise.race([
         audioEncoder.flush(),
-        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out.')),15000))
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out after 8 seconds.')),8000))
       ]);
       audioEncoder.close();
     }
@@ -2195,7 +2249,20 @@ $('downloadGeo').onclick=()=>{
 };
 
 video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
-setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
+let geoAnimRAF=0;
+function animateGeoPreview(){
+  if(geoAnimRAF)return;
+  const tick=()=>{
+    geoAnimRAF=0;
+    if(video.videoWidth && !video.paused && $('geoSection').style.display!=='none'){
+      drawPreview();drawGeoPreview();geoAnimRAF=requestAnimationFrame(tick);
+    }
+  };
+  geoAnimRAF=requestAnimationFrame(tick);
+}
+video.addEventListener('play',animateGeoPreview);
+video.addEventListener('pause',()=>{if(geoAnimRAF){cancelAnimationFrame(geoAnimRAF);geoAnimRAF=0;}});
+setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none' && video.paused)drawGeoPreview()}},250);
 </script>
 </body>
 </html>

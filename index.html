@@ -1,1718 +1,4149 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Video White Text Remover + GeoTag</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>Photo Tools — White Text Remover + GeoTag</title>
+
+<!-- ZIP CREATION -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
-*{box-sizing:border-box}body{margin:0;background:#0b1117;color:#e9eef3;font:14px Arial,sans-serif}
-header{padding:16px 20px;background:#111a23;border-bottom:1px solid #263340}
-header h1{margin:0;font-size:20px}header p{margin:6px 0 0;color:#9eabb7}
-.wrap{max-width:1400px;margin:auto;padding:16px}
-.grid{display:grid;grid-template-columns:360px 1fr;gap:16px}
-.card{background:#121b24;border:1px solid #273440;border-radius:12px;padding:14px}
-h2,h3{margin:0 0 12px}.section{border-top:1px solid #263440;margin-top:14px;padding-top:14px}
-label{display:block;font-weight:600;margin:8px 0 5px;color:#cdd6de}
-input[type=file],input[type=text],input[type=date],input[type=time],input[type=number],textarea,select{width:100%;padding:9px;border-radius:8px;border:1px solid #344553;background:#0d151d;color:#eef3f7}
-textarea{min-height:72px;resize:vertical}
-button{border:0;border-radius:8px;padding:10px 12px;background:#1976e8;color:#fff;font-weight:700;cursor:pointer;margin:4px 3px 0 0}
-button.secondary{background:#293643}button.danger{background:#b63b3b}button:disabled{opacity:.45;cursor:not-allowed}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.sliderTop{display:flex;justify-content:space-between;font-size:12px;color:#cbd4dc}.sliderTop b{color:#6fb1ff}
-input[type=range]{width:100%}
-.status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
-.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
-#viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
-#trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
-#trimRange{width:100%}
-.galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
-.timelineHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}.timelineHead b{font-size:13px}.timelineHead span{font-size:11px;color:#8fa0ad}
-#timelineWrap{position:relative;background:#090f15;border:1px solid #263744;border-radius:10px;padding:8px 34px 9px;overflow:hidden}
-#timelineCanvas{width:100%;height:132px;display:block;border-radius:6px;background:#05090d;touch-action:none;cursor:ew-resize}
-.timelineArrow{position:absolute;top:54px;width:28px;height:40px;margin:0;padding:0;border-radius:7px;background:#202c37;color:#cfd8df;font-size:25px;line-height:35px;z-index:3}
-.timelineArrow.left{left:3px}.timelineArrow.right{right:3px}
-.timelineTimes{display:flex;justify-content:space-between;color:#a3afb9;font-size:11px;margin-top:5px;padding:0 4px}
-.timelineHint{font-size:11px;color:#7f909e;margin-top:5px;text-align:center}
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
 
+html,body{
+    min-height:100%;
+}
 
-.queue{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.queue span{padding:5px 8px;border-radius:6px;background:#1d2934}
-.small{font-size:12px;color:#94a3af;line-height:1.45}
-.tabs{display:flex;gap:8px;margin-bottom:14px}.tabs button.active{background:#1769e0}
-#geoSection{display:none}
-.badge{display:inline-block;padding:4px 7px;border-radius:6px;background:#24313d;color:#9fb0be;font-size:11px}
-#mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px;cursor:crosshair;touch-action:none}
-#logoCanvas{display:none}
-/* GeoTag layout: preview first, overlay/logo directly underneath, compact controls */
-#geoSection .geoPage{display:flex;flex-direction:column;gap:12px;width:100%;}
-#geoSection .geoPreviewCard{width:100%;padding:12px;}
-#geoSection .geoPreviewHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;}
-#geoSection .geoPreviewHead h2{margin:0 0 5px;}
-#geoSection .geoPreviewHint{font-size:11px;color:#8fa0ad;text-align:right;max-width:480px;}
-#geoSection .geoPreviewCard .stage{height:calc(100vh - 390px);min-height:330px;max-height:620px;}
-#geoSection #geoCanvas{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
-#geoSection .geoOptionGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
-#geoSection .geoOptionCard{min-width:0;padding:12px;}
-#geoSection .geoOptionCard h3{margin-bottom:10px;}
-#geoSection .geoOptionCard .sliderTop{margin-top:7px;}
-#geoSection .geoOptionCard input[type=range]{margin:0 0 2px;}
-#geoSection .geoInfoGrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:12px;align-items:start;}
-#geoSection .geoFields3{display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;}
-#geoSection .geoInfoGrid .card{min-width:0;}
-#geoSection textarea{min-height:48px;}
-#geoSection label{margin:4px 0 2px;}
-#geoSection .small{font-size:11px;line-height:1.25;}
-#geoSection .status{padding:6px;margin-top:6px;}
-#geoSection .row{gap:6px;}
-#geoSection button{padding:7px 9px;margin-top:3px;}
-#geoSection .runningBox{border-top:1px solid #263440;margin-top:10px;padding-top:10px;}
-#geoSection .runningBox h3{margin-bottom:6px;}
-#geoSection #mapPreview{height:90px;margin-top:8px;}
-#geoSection .geoActions{border-top:1px solid #263440;margin-top:14px;padding-top:10px;}
-#geoSection .geoActions button{margin-right:4px;}
+body{
+    font-family:Arial,Helvetica,sans-serif;
+    background:#f3f4f6;
+    color:#171717;
+}
+
+button,
+input,
+textarea,
+select{
+    font:inherit;
+}
+
+button{
+    border:0;
+    cursor:pointer;
+}
+
+button:disabled{
+    opacity:.45;
+    cursor:not-allowed;
+}
+
+/* =====================================================
+   TOP STEP BAR
+===================================================== */
+
+#stepBar{
+    max-width:1200px;
+    margin:14px auto 0;
+    padding:0 16px;
+}
+
+.step{
+    display:inline-block;
+    padding:9px 14px;
+    border-radius:9px;
+    font-size:12px;
+    font-weight:700;
+}
+
+#stepOne{
+    background:#1769e0;
+    color:white;
+}
+
+#stepTwo{
+    background:#e5e7eb;
+    color:#555;
+    margin-left:6px;
+}
+
+/* =====================================================
+   COMMON
+===================================================== */
+
+.page{
+    max-width:1200px;
+    margin:auto;
+    padding:24px 16px;
+}
+
+h1{
+    text-align:center;
+    margin-bottom:6px;
+}
+
+.subtitle{
+    text-align:center;
+    color:#666;
+    margin-bottom:20px;
+}
+
+.card{
+    background:white;
+    border:1px solid #ddd;
+    border-radius:16px;
+    padding:16px;
+}
+
+.toolbar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:9px;
+    justify-content:center;
+    margin-bottom:12px;
+}
+
+button,
+.fileButton{
+    padding:11px 15px;
+    border-radius:9px;
+    font-weight:700;
+}
+
+.fileButton{
+    background:#1769e0;
+    color:white;
+    cursor:pointer;
+}
+
+.fileButton input{
+    display:none;
+}
+
+.btn-dark{
+    background:#222;
+    color:white;
+}
+
+.btn-gray{
+    background:#555;
+    color:white;
+}
+
+.btn-blue{
+    background:#1769e0;
+    color:white;
+}
+
+.btn-green{
+    background:#14834b;
+    color:white;
+}
+
+.btn-orange{
+    background:#d97706;
+    color:white;
+}
+
+.status{
+    text-align:center;
+    min-height:22px;
+    color:#555;
+    margin:8px;
+}
+
+.counter{
+    text-align:center;
+    font-weight:700;
+    margin:8px 0;
+}
+
+/* =====================================================
+   IMAGE WORK AREA
+===================================================== */
+
+.imageStage{
+    position:relative;
+    background:#181818;
+    border-radius:14px;
+    min-height:420px;
+    overflow:auto;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:12px;
+}
+
+#editCanvas{
+    display:block;
+    max-width:100%;
+    height:auto;
+    cursor:crosshair;
+}
+
+.selectionBox{
+    position:absolute;
+    border:2px solid #ff3030;
+    background:rgba(255,255,255,.08);
+    display:none;
+    pointer-events:none;
+}
+
+.toolRow{
+    display:flex;
+    justify-content:center;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:12px;
+}
+
+.controlPanel{
+    margin-top:14px;
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:10px;
+}
+
+.control{
+    background:#f7f7f8;
+    border:1px solid #ddd;
+    border-radius:10px;
+    padding:10px;
+}
+
+.control label{
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    font-weight:700;
+    margin-bottom:7px;
+}
+
+.control b{
+    color:#1769e0;
+}
+
+.control input[type="range"]{
+    width:100%;
+}
+
+.help{
+    text-align:center;
+    color:#666;
+    font-size:12px;
+    margin-top:10px;
+}
+
+/* =====================================================
+   FOLDER THUMBNAILS
+===================================================== */
+
+.thumbnailStrip{
+    display:flex;
+    gap:8px;
+    overflow-x:auto;
+    padding:10px 0 2px;
+}
+
+.thumb{
+    width:76px;
+    height:76px;
+    flex:0 0 76px;
+    border-radius:8px;
+    overflow:hidden;
+    border:2px solid transparent;
+    background:#ddd;
+    cursor:pointer;
+}
+
+.thumb.active{
+    border-color:#1769e0;
+}
+
+.thumb img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+/* =====================================================
+   GEO PAGE — SAME FORMAT AS VIDEO TOOL
+===================================================== */
+
+#geoPage{
+    display:none;
+    background:#0b1117;
+    color:#e9eef3;
+    min-height:calc(100vh - 65px);
+}
+
+#geoPage .geoPage{
+    max-width:1400px;
+    margin:auto;
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    width:100%;
+}
+
+#geoPage .card{
+    background:#121b24;
+    border:1px solid #273440;
+    border-radius:12px;
+    padding:14px;
+}
+
+#geoPage .geoPreviewCard{
+    width:100%;
+}
+
+#geoPage .geoPreviewHead{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:8px;
+}
+
+#geoPage .geoPreviewHead h2{
+    margin:0 0 5px;
+}
+
+#geoPage .geoPreviewHint{
+    font-size:11px;
+    color:#8fa0ad;
+    text-align:right;
+    max-width:480px;
+}
+
+#geoPage .previewBox{
+    background:#05090d;
+    border:1px solid #26313b;
+    border-radius:10px;
+    height:calc(100vh - 390px);
+    min-height:330px;
+    max-height:620px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    position:relative;
+}
+
+#geoPage #gCanvas{
+    max-width:100%;
+    max-height:100%;
+    width:auto;
+    height:auto;
+    display:block;
+    cursor:default;
+    touch-action:none;
+}
+
+#geoPage .geoPreviewNote{
+    font-size:11px;
+    color:#94a3af;
+    line-height:1.4;
+    margin-top:7px;
+}
+
+#geoPage .geoOptionGrid{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:12px;
+}
+
+#geoPage .geoOptionCard{
+    min-width:0;
+    padding:12px;
+}
+
+#geoPage .geoOptionCard h3{
+    margin:0 0 10px;
+}
+
+#geoPage .sliderTop{
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    color:#cbd4dc;
+    margin-top:7px;
+}
+
+#geoPage .sliderTop b{
+    color:#6fb1ff;
+}
+
+#geoPage .slider{
+    background:transparent;
+    border:0;
+    padding:0;
+    margin:0;
+}
+
+#geoPage input[type=range]{
+    width:100%;
+    margin:0 0 2px;
+}
+
+#geoPage .geoInfoGrid{
+    display:grid;
+    grid-template-columns:minmax(0,2fr) minmax(280px,1fr);
+    gap:12px;
+    align-items:start;
+}
+
+#geoPage .geoInfoGrid .card{
+    min-width:0;
+}
+
+#geoPage .geoFields3{
+    display:grid;
+    grid-template-columns:1fr 1fr 2fr;
+    gap:8px;
+}
+
+#geoPage label{
+    display:block;
+    font-weight:600;
+    margin:4px 0 2px;
+    color:#cdd6de;
+    font-size:12px;
+}
+
+#geoPage input[type=text],
+#geoPage input[type=date],
+#geoPage input[type=time],
+#geoPage textarea,
+#geoPage select{
+    width:100%;
+    padding:9px;
+    border-radius:8px;
+    border:1px solid #344553;
+    background:#0d151d;
+    color:#eef3f7;
+}
+
+#geoPage textarea{
+    min-height:48px;
+    resize:vertical;
+}
+
+#geoPage button{
+    border:0;
+    border-radius:8px;
+    padding:8px 10px;
+    background:#1976e8;
+    color:#fff;
+    font-weight:700;
+    cursor:pointer;
+    margin:4px 3px 0 0;
+}
+
+#geoPage button:disabled{
+    opacity:.45;
+    cursor:not-allowed;
+}
+
+#geoPage button.secondary{
+    background:#293643;
+}
+
+#geoPage .status{
+    padding:7px;
+    background:#0d151d;
+    border-radius:8px;
+    color:#aebbc6;
+    line-height:1.4;
+    margin-top:7px;
+    font-size:11px;
+}
+
+#geoPage .runningBox{
+    border-top:1px solid #263440;
+    margin-top:10px;
+    padding-top:10px;
+}
+
+#geoPage .runningBox h3{
+    margin:0 0 6px;
+}
+
+#geoPage .small{
+    font-size:11px;
+    color:#94a3af;
+    line-height:1.35;
+}
+
+#geoPage .geoDateCard .geoActions{
+    border-top:1px solid #263440;
+    margin-top:14px;
+    padding-top:10px;
+}
+
+#geoPage .geoDateCard .geoActions button{
+    margin-right:4px;
+}
+
+#geoPage #mapPreview{
+    width:100%;
+    height:90px;
+    object-fit:cover;
+    background:#d7dde1;
+    border-radius:8px;
+    margin-top:8px;
+    cursor:crosshair;
+    touch-action:none;
+    display:none;
+}
+
+#geoPage #gStatus{
+    min-height:22px;
+}
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
 
 @media(max-width:900px){
-  #geoSection .geoOptionGrid{grid-template-columns:1fr 1fr;}
-  #geoSection .geoInfoGrid{grid-template-columns:1fr;}
-  #geoSection .geoFields3{grid-template-columns:1fr 1fr;}
-  #geoSection .geoFields3>div:last-child{grid-column:1 / -1;}
-  #geoSection .geoPreviewCard .stage{height:calc(100vh - 360px);min-height:280px;}
+    #geoPage .geoOptionGrid{
+        grid-template-columns:1fr 1fr;
+    }
+
+    #geoPage .geoInfoGrid{
+        grid-template-columns:1fr;
+    }
+
+    #geoPage .geoFields3{
+        grid-template-columns:1fr 1fr;
+    }
+
+    #geoPage .geoFields3>div:last-child{
+        grid-column:1 / -1;
+    }
+
+    #geoPage .previewBox{
+        height:calc(100vh - 360px);
+        min-height:280px;
+    }
 }
 
 @media(max-width:640px){
-  #geoSection .geoOptionGrid{grid-template-columns:1fr;}
-  #geoSection .geoFields3{grid-template-columns:1fr;}
-  #geoSection .geoFields3>div:last-child{grid-column:auto;}
-  #geoSection .geoPreviewHead{align-items:flex-start;flex-direction:column;}
-  #geoSection .geoPreviewHint{text-align:left;}
-  #geoSection .geoPreviewCard .stage{height:auto;min-height:260px;}
+    #geoPage .geoPage{
+        padding:10px;
+    }
+
+    #geoPage .geoOptionGrid{
+        grid-template-columns:1fr;
+    }
+
+    #geoPage .geoFields3{
+        grid-template-columns:1fr;
+    }
+
+    #geoPage .geoFields3>div:last-child{
+        grid-column:auto;
+    }
+
+    #geoPage .geoPreviewHead{
+        align-items:flex-start;
+        flex-direction:column;
+    }
+
+    #geoPage .geoPreviewHint{
+        text-align:left;
+    }
+
+    #geoPage .previewBox{
+        height:auto;
+        min-height:260px;
+    }
+
+    #geoPage button{
+        width:100%;
+        margin:5px 0 0;
+        padding:10px;
+    }
 }
-@media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
-@media(max-width:640px){
-  .wrap{padding:10px}
-  header{padding:12px 14px}
-  header h1{font-size:17px}
-  header p{font-size:12px}
-  .card{padding:10px}
-  .row,.row3{grid-template-columns:1fr}
-  button{width:100%;margin:5px 0 0;padding:12px;font-size:14px}
-  .row button,.row3 button{width:100%}
-  .tabs{flex-wrap:wrap}
-  .tabs button{flex:1 1 45%}
-  input[type=range]{height:28px}
-  .stage{min-height:220px}
-  #viewCanvas{max-height:50vh}
-  .queue{gap:5px}
-  #timelineWrap{padding:8px 30px 9px}
-  .timelineArrow{width:26px;height:36px;top:50px;font-size:20px;line-height:32px}
-}
+
 </style>
-<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
 </head>
+
 <body>
-<header>
-<h1>Video White Text Remover + GeoTag</h1>
-<p>Trim + gallery-style crop + remove selected white text from every frame + editable GeoTag overlay.</p>
-</header>
 
-<div class="wrap">
-<div class="tabs">
-<button id="tabEdit" class="active">1. Video Edit</button>
-<button id="tabGeo" disabled>2. GeoTag</button>
-</div>
+<!-- =====================================================
+     STEP BAR
+===================================================== -->
 
-<section id="editSection">
-<div class="grid">
-<aside class="card">
-<h2>Video</h2>
-<label>Choose MP4 / WebM / MOV</label>
-<input id="videoFile" type="file" accept="video/*">
+<div id="stepBar">
 
-<div class="queue"><span id="fileName">No video selected</span><span id="durationBadge">0.0 s</span></div>
+    <span id="stepOne" class="step">
+        1. White Text Remover
+    </span>
 
-<div class="section">
-<h3>Trim</h3>
-<div class="row">
-<div><label>Start (seconds)</label><input id="trimStart" type="number" min="0" step="0.1" value="0"></div>
-<div><label>End (seconds)</label><input id="trimEnd" type="number" min="0" step="0.1" value="0"></div>
-</div>
-<div class="row3"><button class="secondary quickTrim" data-sec="10">10.0s</button><button class="secondary quickTrim" data-sec="20">20.0s</button><button class="secondary quickTrim" data-sec="30">30.0s</button></div>
-<div class="small">10.0 = 10 seconds, 20.0 = 20 seconds. You can use decimals such as 10.5. You can also drag the yellow handles in the gallery timeline.</div>
-<input id="trimRange" type="range" min="0" max="0" step="0.1" value="0">
-<div class="row">
-<button id="setStart" class="secondary">Set start from current</button>
-<button id="setEnd" class="secondary">Set end from current</button>
-</div>
+    <span id="stepTwo" class="step">
+        2. Location / GeoTag
+    </span>
+
 </div>
 
-<div class="section">
-<h3>Crop</h3>
-<button id="cropMode" class="secondary">Crop: OFF</button>
-<button id="applyCrop" disabled>Apply Crop</button>
-<button id="resetCrop" class="secondary">Reset Crop</button>
-<div class="small">Turn Crop ON, then drag a rectangular box over the part you want to KEEP, like a gallery crop tool.</div>
-</div>
 
-<div class="section">
-<h3>White Text Removal</h3>
-<button id="removeMode" class="secondary">Select White Text Area</button>
-<button id="removeWhite" disabled>Remove White Text</button>
-<button id="clearWhite" class="secondary">Clear Selection</button>
-<label>White detection sensitivity <b id="whiteVal">115</b></label>
-<input id="whiteThreshold" type="range" min="80" max="245" value="115">
-<label>Removal strength <b id="removeOpacityVal">100%</b></label>
-<input id="removeOpacity" type="range" min="50" max="100" value="100">
-<label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
-<input id="inpaintPasses" type="range" min="1" max="8" value="5">
-<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get cloned over with real neighbouring pixels, so nothing else is blurred.</div>
-</div>
+<!-- =====================================================
+     STEP 1
+===================================================== -->
 
-<div class="section">
-<h3>Export</h3>
-<button id="goGeo" disabled>Continue to GeoTag →</button>
-<button id="downloadVideo" disabled>Download Video</button>
-<div id="exportStatus" class="status">Load a video to begin.</div>
-</div>
-</aside>
+<section id="removePage" class="page">
 
-<main class="card">
-<h2>Video Preview</h2>
-<div class="stage" id="stage">
-<canvas id="viewCanvas"></canvas>
-<div id="selection"></div>
-</div>
-<div class="row">
-<button id="playBtn" disabled>▶ Play</button>
-<button id="pauseBtn" class="secondary" disabled>⏸ Pause</button>
-<button id="frameBack" class="secondary" disabled>◀ Frame</button>
-<button id="frameNext" class="secondary" disabled>Frame ▶</button>
-</div>
-<div class="status" id="editStatus">Select a video.</div>
-<div class="galleryTimeline">
-  <div class="timelineHead"><b>VIDEO TIMELINE <span class="badge">Like Gallery</span></b><span>Drag the yellow handles • tap anywhere to move</span></div>
-  <div id="timelineWrap">
-    <button id="timelinePrev" class="timelineArrow left" title="Previous section">‹</button>
-    <canvas id="timelineCanvas" width="1400" height="132"></canvas>
-    <button id="timelineNext" class="timelineArrow right" title="Next section">›</button>
-  </div>
-  <div class="timelineTimes"><span id="timelineStartLabel">00:00</span><span id="timelineCurrentLabel">00:00</span><span id="timelineEndLabel">00:00</span></div>
-  <div class="timelineHint">Yellow area = selected video • Yellow handles = trim • Blue line = current position</div>
-</div>
-</main>
-</div>
-</section>
+    <h1>Fast White Text Remover</h1>
 
-<section id="geoSection">
-  <div class="geoPage">
-    <!-- Video preview first -->
-    <main class="card geoPreviewCard">
-      <div class="geoPreviewHead">
-        <div>
-          <h2>GeoTag Preview</h2>
-          <div id="geoCounter" class="badge">Video not ready</div>
+    <p class="subtitle">
+        Upload one image or an entire folder. Process each image and use Save & Next.
+    </p>
+
+    <div class="card">
+
+        <div class="toolbar">
+
+            <label class="fileButton">
+                📁 Upload Folder
+                <input
+                    id="folderInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    multiple
+                    webkitdirectory
+                    directory
+                >
+            </label>
+
+            <label class="fileButton">
+                🖼️ Upload Image
+                <input
+                    id="singleInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                >
+            </label>
+
+            <button id="removeBtn" class="btn-dark" disabled>
+                ⬜ Remove White Text
+            </button>
+
+            <button id="undoBtn" class="btn-gray" disabled>
+                ↶ Undo
+            </button>
+
+            <button id="cropBtn" class="btn-orange" disabled>
+                ✂️ Crop
+            </button>
+
+            <button id="applyCropBtn" class="btn-orange" disabled>
+                Apply Crop
+            </button>
+
+            <button id="saveNextBtn" class="btn-green" disabled>
+                💾 Save & Next
+            </button>
+
+            <button id="goGeoBtn" class="btn-blue" disabled>
+                📍 Go To GeoTag
+            </button>
+
         </div>
-        <div class="geoPreviewHint">Drag the map on the preview to move it. Drag its bottom-right corner to resize it.</div>
-      </div>
-      <div class="stage"><canvas id="geoCanvas"></canvas></div>
-      <div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
-    </main>
 
-    <!-- Overlay + logo directly below the video -->
-    <div class="geoOptionGrid">
-      <div class="card geoOptionCard">
-        <h3>Overlay</h3>
-        <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
-        <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
-        <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
-        <div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
-        <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
-        <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
-      </div>
+        <div id="editStatus" class="status">
+            Upload an image or folder to begin.
+        </div>
 
-      <div class="card geoOptionCard">
-        <h3>Blue Camera Logo Position</h3>
-        <div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
-        <div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
-        <div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
-      </div>
+        <div id="editCounter" class="counter">
+            No images loaded
+        </div>
+
+        <div class="imageStage" id="editStage">
+
+            <canvas id="editCanvas"></canvas>
+
+            <div
+                id="selectionBox"
+                class="selectionBox"
+            ></div>
+
+        </div>
+
+        <div class="toolRow">
+
+            <button id="prevEditBtn" class="btn-gray" disabled>
+                ← Previous
+            </button>
+
+            <button id="nextEditBtn" class="btn-gray" disabled>
+                Next →
+            </button>
+
+        </div>
+
+        <div class="controlPanel">
+
+            <div class="control">
+
+                <label>
+                    White removal opacity
+                    <b id="whiteOpacityValue">100%</b>
+                </label>
+
+                <input
+                    id="whiteOpacity"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="100"
+                >
+
+            </div>
+
+            <div class="control">
+
+                <label>
+                    White detection
+                    <b id="whiteThresholdValue">150</b>
+                </label>
+
+                <input
+                    id="whiteThreshold"
+                    type="range"
+                    min="100"
+                    max="230"
+                    value="150"
+                >
+
+            </div>
+
+            <div class="control">
+
+                <label>
+                    Working image size
+                    <b>2200px max</b>
+                </label>
+
+                <div style="font-size:11px;color:#666;line-height:1.4">
+                    Large phone images are automatically scaled for reliable browser processing.
+                </div>
+
+            </div>
+
+        </div>
+
+        <div
+            id="thumbnailStrip"
+            class="thumbnailStrip"
+        ></div>
+
+        <div class="help">
+            Drag around the white text, then click Remove White Text.
+            Crop by clicking Crop and dragging around the part you want to keep.
+        </div>
+
     </div>
 
-    <!-- Compact location/date controls below the main options -->
-    <div class="geoInfoGrid">
-      <div class="card">
-        <h3>Location</h3>
-        <div class="geoFields3">
-          <div><label>State</label><input id="gState" type="text" value="Jammu and Kashmir"></div>
-          <div><label>District / Town</label><input id="gPlace" type="text" value="Beerwah"></div>
-          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
-        </div>
-        <button id="findLocation">📍 Find Location</button>
-        <div id="gCoords" class="status">Enter a location and press Find Location.</div>
-        <div class="runningBox">
-          <h3>Running Latitude / Longitude</h3>
-          <div class="small">Latitude and longitude move continuously while the video plays and exports.</div>
-          <div class="row">
-            <div><label>Start Latitude</label><input id="startLat" type="number" step="0.000001" placeholder="34.014362"></div>
-            <div><label>Start Longitude</label><input id="startLon" type="number" step="0.000001" placeholder="74.592252"></div>
-            <div><label>End Latitude</label><input id="endLat" type="number" step="0.000001" placeholder="34.020000"></div>
-            <div><label>End Longitude</label><input id="endLon" type="number" step="0.000001" placeholder="74.610000"></div>
-          </div>
-          <button id="useCurrentAsStart" class="secondary">Use Found Location as Start</button>
-          <button id="useCurrentAsEnd" class="secondary">Use Found Location as End</button>
-          <div id="runningCoords" class="status">Running Lat —° Long —°</div>
-        </div>
-        <canvas id="mapPreview"></canvas>
-      </div>
-
-      <div class="card geoDateCard">
-        <h3>Date &amp; Moving Time</h3>
-        <div class="row">
-          <div><label>Date</label><input id="gDate" type="date"></div>
-          <div><label>Start Time</label><input id="gTime" type="time" step="1"></div>
-        </div>
-        <div class="small">During export, the displayed time advances with the video.</div>
-        <div class="geoActions">
-          <button id="backEdit" class="secondary">← Back</button>
-          <button id="exportGeo">⬇ Render GeoTagged Video</button>
-          <button id="downloadGeo" disabled>⬇ Download GeoTagged Video</button>
-        </div>
-        <div id="geoStatus" class="status">Find a location, then export.</div>
-      </div>
-    </div>
-  </div>
 </section>
-</div>
 
-<video id="video" playsinline preload="metadata" style="display:none"></video>
-<canvas id="workCanvas" style="display:none"></canvas>
-<canvas id="logoCanvas" width="200" height="120"></canvas>
+
+<!-- =====================================================
+     STEP 2
+===================================================== -->
+
+<section id="geoPage">
+    <div class="geoPage">
+
+        <!-- SAME PREVIEW-FIRST FORMAT AS VIDEO -->
+        <main class="card geoPreviewCard">
+            <div class="geoPreviewHead">
+                <div>
+                    <h2>📍 GeoTag Preview</h2>
+                    <div id="geoCounter" class="badge">No image</div>
+                </div>
+                <div class="geoPreviewHint">
+                    Drag the map to move it and drag its bottom-right corner to resize it. Drag each GeoTag text line separately to place it anywhere on the photo.
+                </div>
+            </div>
+
+            <div class="previewBox">
+                <canvas id="gCanvas"></canvas>
+            </div>
+
+            <div class="geoPreviewNote">
+                This is a generated visual GeoTag overlay, not camera GPS metadata.
+                The map uses OpenStreetMap tiles, matching the Video GeoTag map style.
+            </div>
+        </main>
+
+        <!-- SIMPLE GEOTAG CONTROLS -->
+        <div class="geoOptionGrid">
+
+            <div class="card geoOptionCard">
+                <h3>Map</h3>
+
+                <div class="sliderTop">
+                    <span>Map opacity</span>
+                    <b id="gMapOpacityVal">100%</b>
+                </div>
+                <input id="gMapOpacity" type="range" min="0" max="100" value="100">
+
+                <div class="sliderTop">
+                    <span>Map width</span>
+                    <b id="gMapWidthVal">30%</b>
+                </div>
+                <input id="gMapWidth" type="range" min="5" max="90" value="30">
+
+                <div class="sliderTop">
+                    <span>Map height</span>
+                    <b id="gMapHeightVal">35%</b>
+                </div>
+                <input id="gMapHeight" type="range" min="5" max="90" value="35">
+
+                <div class="small">Drag the map directly on the preview. Drag its bottom-right corner to resize.</div>
+            </div>
+
+            <div class="card geoOptionCard">
+                <h3>GeoTag Text</h3>
+
+                <div class="sliderTop">
+                    <span>Title size</span>
+                    <b id="gTitleVal">100%</b>
+                </div>
+                <input id="gTitle" type="range" min="50" max="180" value="100">
+
+                <div class="sliderTop">
+                    <span>Details size</span>
+                    <b id="gDetailsVal">100%</b>
+                </div>
+                <input id="gDetails" type="range" min="50" max="180" value="100">
+
+                <div class="small">Four independent lines: title, address, coordinates and date/time. Drag each line to position it.</div>
+            </div>
+
+        </div>
+
+        <!-- LOCATION + DATE BELOW OPTIONS -->
+        <div class="geoInfoGrid">
+
+            <div class="card">
+                <h3>Location</h3>
+
+                <div class="geoFields3">
+                    <div>
+                        <label>State</label>
+                        <select id="gState"></select>
+                    </div>
+
+                    <div>
+                        <label>District / Town / Subdivision</label>
+                        <input id="gPlace" type="text" placeholder="Example: Beerwah">
+                    </div>
+
+                    <div>
+                        <label>Address / Location — printed on image</label>
+                        <input id="gAddress" type="text" placeholder="Example: Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India">
+                    </div>
+                </div>
+
+                <button id="gFind">📍 Find Location</button>
+                <div id="gStatus" class="status">Enter a location and click Find Location.</div>
+                <div id="gCoords" class="status">Latitude / Longitude —</div>
+
+                <div class="runningBox">
+                    <h3>Map</h3>
+                    <div class="small">
+                        The map is centered on the location you find and is loaded from
+                        OpenStreetMap, using the same 25-tile map method as the Video tool.
+                    </div>
+                </div>
+
+                <canvas id="mapPreview"></canvas>
+            </div>
+
+            <div class="card geoDateCard">
+                <h3>Date &amp; Time</h3>
+
+                <div class="row">
+                    <div class="field">
+                        <label>Date</label>
+                        <input id="gDate" type="date">
+                    </div>
+
+                    <div class="field">
+                        <label>Time</label>
+                        <input id="gTime" type="time" step="1">
+                    </div>
+                </div>
+
+                <div class="small">
+                    Set the date and time that should appear on the photo.
+                </div>
+
+                <div class="geoActions">
+                    <button id="gBack" class="secondary">← Back</button>
+                    <button id="gPrev" class="secondary">← Previous</button>
+                    <button id="gSaveNext">💾 Save &amp; Next</button>
+                    <button id="gDownloadAll">⬇ Download All ZIP</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
 
 <script>
-const $=id=>document.getElementById(id);
-const video=$('video'), view=$('viewCanvas'), vctx=view.getContext('2d',{willReadFrequently:true});
-const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true});
-const geo=$('geoCanvas'), gctx=geo.getContext('2d',{willReadFrequently:true});
-// The export/white-text-removal canvas is read repeatedly with getImageData.
-// Keep this context explicitly optimized for readback-heavy processing.
-if(!wctx) throw new Error('Export canvas context unavailable');
-const stage=$('stage'), selBox=$('selection');
+/* =========================================================
+   GLOBAL HELPERS
+========================================================= */
 
-let file=null, videoURL=null, duration=0, playing=false;
-let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
-let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
-let startLat=null, startLon=null, endLat=null, endLon=null;
-let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
-let outputW=0, outputH=0;
-let timelineFrames=[], timelineDragging=null, timelineReady=false;
+const $ = id => document.getElementById(id);
 
-const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:30,mapH:35,
- logoX:90,logoY:50,logoSize:70
+
+/* =========================================================
+   STEP 1 VARIABLES
+========================================================= */
+
+const folderInput = $("folderInput");
+const singleInput = $("singleInput");
+
+const editCanvas = $("editCanvas");
+const editCtx = editCanvas.getContext("2d", {
+    willReadFrequently:true
+});
+
+const editStage = $("editStage");
+const selectionBox = $("selectionBox");
+
+let imageFiles = [];
+let currentEditIndex = 0;
+
+let originalCanvasData = null;
+
+let selection = null;
+let selecting = false;
+let selectionMode = "remove";
+
+let startX = 0;
+let startY = 0;
+
+let cropSelection = null;
+
+let cleanedImages = [];
+
+
+/* =========================================================
+   LOAD IMAGE FILE
+========================================================= */
+
+function loadFileImage(file){
+
+    return new Promise((resolve,reject)=>{
+
+        if(!file){
+            reject(new Error("No image."));
+            return;
+        }
+
+        const url = URL.createObjectURL(file);
+
+        const image = new Image();
+
+        image.onload = ()=>{
+
+            URL.revokeObjectURL(url);
+
+            resolve(image);
+
+        };
+
+        image.onerror = ()=>{
+
+            URL.revokeObjectURL(url);
+
+            reject(new Error(
+                "Could not decode image."
+            ));
+
+        };
+
+        image.src = url;
+
+    });
+
+}
+
+
+/* =========================================================
+   ADD FILES
+========================================================= */
+
+async function setImageFiles(files){
+
+    const arr = Array.from(files || [])
+        .filter(file =>
+            file &&
+            file.type &&
+            file.type.startsWith("image/")
+        );
+
+    if(!arr.length){
+
+        $("editStatus").textContent =
+            "No supported images were found.";
+
+        return;
+
+    }
+
+    imageFiles = arr;
+
+    currentEditIndex = 0;
+
+    cleanedImages = [];
+
+    await loadCurrentEditImage();
+
+    buildThumbnails();
+
+}
+
+
+/* =========================================================
+   FOLDER INPUT
+========================================================= */
+
+folderInput.addEventListener(
+    "change",
+    async function(){
+
+        await setImageFiles(this.files);
+
+    }
+);
+
+
+/* =========================================================
+   SINGLE IMAGE INPUT
+========================================================= */
+
+singleInput.addEventListener(
+    "change",
+    async function(){
+
+        await setImageFiles(this.files);
+
+    }
+);
+
+
+/* =========================================================
+   LOAD CURRENT EDIT IMAGE
+========================================================= */
+
+async function loadCurrentEditImage(){
+
+    if(!imageFiles.length)
+        return;
+
+    const file =
+        imageFiles[currentEditIndex];
+
+    $("editStatus").textContent =
+        "Opening " + file.name + "…";
+
+    try{
+
+        const image =
+            await loadFileImage(file);
+
+        const MAX_SIZE = 2200;
+
+        const scale =
+            Math.min(
+                1,
+                MAX_SIZE /
+                Math.max(
+                    image.naturalWidth,
+                    image.naturalHeight
+                )
+            );
+
+        editCanvas.width =
+            Math.max(
+                1,
+                Math.round(
+                    image.naturalWidth * scale
+                )
+            );
+
+        editCanvas.height =
+            Math.max(
+                1,
+                Math.round(
+                    image.naturalHeight * scale
+                )
+            );
+
+        editCtx.clearRect(
+            0,
+            0,
+            editCanvas.width,
+            editCanvas.height
+        );
+
+        editCtx.drawImage(
+            image,
+            0,
+            0,
+            editCanvas.width,
+            editCanvas.height
+        );
+
+        originalCanvasData =
+            editCtx.getImageData(
+                0,
+                0,
+                editCanvas.width,
+                editCanvas.height
+            );
+
+        selection = null;
+        cropSelection = null;
+
+        selectionBox.style.display =
+            "none";
+
+        $("removeBtn").disabled = false;
+        $("undoBtn").disabled = true;
+        $("cropBtn").disabled = false;
+        $("applyCropBtn").disabled = true;
+        $("saveNextBtn").disabled = false;
+        $("goGeoBtn").disabled =
+            cleanedImages.length === 0;
+
+        updateEditUI();
+
+        $("editStatus").textContent =
+            "Ready — " + file.name;
+
+    }catch(err){
+
+        console.error(err);
+
+        $("editStatus").textContent =
+            "Could not open this image. Try JPG, PNG or WebP.";
+
+    }
+
+}
+
+
+/* =========================================================
+   UPDATE EDIT UI
+========================================================= */
+
+function updateEditUI(){
+
+    const total =
+        imageFiles.length;
+
+    $("editCounter").textContent =
+        total
+            ? `Image ${currentEditIndex+1} of ${total} — ${imageFiles[currentEditIndex].name}`
+            : "No images loaded";
+
+    $("prevEditBtn").disabled =
+        currentEditIndex <= 0;
+
+    $("nextEditBtn").disabled =
+        currentEditIndex >= total-1;
+
+    buildThumbnails();
+
+}
+
+
+/* =========================================================
+   THUMBNAILS
+========================================================= */
+
+function buildThumbnails(){
+
+    const strip =
+        $("thumbnailStrip");
+
+    strip.innerHTML = "";
+
+    imageFiles.forEach(
+        (file,index)=>{
+
+            const div =
+                document.createElement("div");
+
+            div.className =
+                "thumb" +
+                (
+                    index === currentEditIndex
+                    ? " active"
+                    : ""
+                );
+
+            const img =
+                document.createElement("img");
+
+            const url =
+                URL.createObjectURL(file);
+
+            img.src = url;
+
+            img.onload = ()=>{
+                URL.revokeObjectURL(url);
+            };
+
+            div.appendChild(img);
+
+            div.addEventListener(
+                "click",
+                async ()=>{
+
+                    await saveCurrentWithoutAdvance();
+
+                    currentEditIndex =
+                        index;
+
+                    await loadCurrentEditImage();
+
+                }
+            );
+
+            strip.appendChild(div);
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   CANVAS POINT
+========================================================= */
+
+function getEditPoint(e){
+
+    const rect =
+        editCanvas.getBoundingClientRect();
+
+    return {
+
+        x:Math.max(
+            0,
+            Math.min(
+                editCanvas.width,
+                (e.clientX-rect.left) *
+                editCanvas.width /
+                rect.width
+            )
+        ),
+
+        y:Math.max(
+            0,
+            Math.min(
+                editCanvas.height,
+                (e.clientY-rect.top) *
+                editCanvas.height /
+                rect.height
+            )
+        )
+
+    };
+
+}
+
+
+/* =========================================================
+   SHOW SELECTION
+========================================================= */
+
+function showSelection(sel){
+
+    if(!sel){
+
+        selectionBox.style.display =
+            "none";
+
+        return;
+
+    }
+
+    const canvasRect =
+        editCanvas.getBoundingClientRect();
+
+    const stageRect =
+        editStage.getBoundingClientRect();
+
+    selectionBox.style.left =
+        (
+            editCanvas.offsetLeft +
+            sel.x *
+            canvasRect.width /
+            editCanvas.width
+        ) + "px";
+
+    selectionBox.style.top =
+        (
+            editCanvas.offsetTop +
+            sel.y *
+            canvasRect.height /
+            editCanvas.height
+        ) + "px";
+
+    selectionBox.style.width =
+        (
+            sel.w *
+            canvasRect.width /
+            editCanvas.width
+        ) + "px";
+
+    selectionBox.style.height =
+        (
+            sel.h *
+            canvasRect.height /
+            editCanvas.height
+        ) + "px";
+
+    selectionBox.style.display =
+        "block";
+
+    selectionBox.style.borderColor =
+        selectionMode === "crop"
+            ? "#ff9d00"
+            : "#ff3030";
+
+}
+
+
+/* =========================================================
+   POINTER DOWN
+========================================================= */
+
+editCanvas.addEventListener(
+    "pointerdown",
+    function(e){
+
+        if(!imageFiles.length)
+            return;
+
+        selecting = true;
+
+        editCanvas.setPointerCapture(
+            e.pointerId
+        );
+
+        const p =
+            getEditPoint(e);
+
+        startX = p.x;
+        startY = p.y;
+
+        selection = {
+            x:startX,
+            y:startY,
+            w:0,
+            h:0
+        };
+
+        showSelection(selection);
+
+    }
+);
+
+
+/* =========================================================
+   POINTER MOVE
+========================================================= */
+
+editCanvas.addEventListener(
+    "pointermove",
+    function(e){
+
+        if(!selecting)
+            return;
+
+        const p =
+            getEditPoint(e);
+
+        selection = {
+
+            x:Math.min(
+                startX,
+                p.x
+            ),
+
+            y:Math.min(
+                startY,
+                p.y
+            ),
+
+            w:Math.abs(
+                p.x-startX
+            ),
+
+            h:Math.abs(
+                p.y-startY
+            )
+
+        };
+
+        showSelection(selection);
+
+    }
+);
+
+
+/* =========================================================
+   POINTER UP
+========================================================= */
+
+editCanvas.addEventListener(
+    "pointerup",
+    function(){
+
+        selecting = false;
+
+        if(
+            !selection ||
+            selection.w < 4 ||
+            selection.h < 4
+        ){
+
+            selection = null;
+
+            showSelection(null);
+
+            return;
+
+        }
+
+        if(selectionMode === "crop"){
+
+            cropSelection =
+                {...selection};
+
+            $("applyCropBtn").disabled =
+                false;
+
+            $("editStatus").textContent =
+                "Crop area selected. Click Apply Crop.";
+
+        }else{
+
+            $("editStatus").textContent =
+                "White text area selected. Click Remove White Text.";
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   WHITE DETECTION
+========================================================= */
+
+function isWhitePixel(data,i){
+
+    const r = data[i];
+    const g = data[i+1];
+    const b = data[i+2];
+
+    const max =
+        Math.max(r,g,b);
+
+    const min =
+        Math.min(r,g,b);
+
+    const threshold =
+        Number(
+            $("whiteThreshold").value
+        );
+
+    return (
+        max >= threshold &&
+        max-min <= 85 &&
+        r+g+b >= threshold*3
+    );
+
+}
+
+
+/* =========================================================
+   REMOVE WHITE TEXT
+========================================================= */
+
+$("removeBtn").addEventListener(
+    "click",
+    function(){
+
+        if(
+            !selection ||
+            selection.w < 4 ||
+            selection.h < 4
+        ){
+
+            $("editStatus").textContent =
+                "First drag around the white text.";
+
+            return;
+
+        }
+
+        if(selectionMode !== "remove"){
+
+            $("editStatus").textContent =
+                "Click Crop again to leave crop mode.";
+
+            return;
+
+        }
+
+        $("editStatus").textContent =
+            "Removing white text…";
+
+        const x =
+            Math.max(
+                0,
+                Math.floor(selection.x)
+            );
+
+        const y =
+            Math.max(
+                0,
+                Math.floor(selection.y)
+            );
+
+        const w =
+            Math.min(
+                editCanvas.width-x,
+                Math.ceil(selection.w)
+            );
+
+        const h =
+            Math.min(
+                editCanvas.height-y,
+                Math.ceil(selection.h)
+            );
+
+        const imageData =
+            editCtx.getImageData(
+                x,
+                y,
+                w,
+                h
+            );
+
+        const pixels =
+            imageData.data;
+
+        const mask =
+            new Uint8Array(w*h);
+
+
+        /* Detect */
+
+        for(
+            let yy=0;
+            yy<h;
+            yy++
+        ){
+
+            for(
+                let xx=0;
+                xx<w;
+                xx++
+            ){
+
+                const i =
+                    (yy*w+xx)*4;
+
+                if(
+                    isWhitePixel(
+                        pixels,
+                        i
+                    )
+                ){
+
+                    mask[
+                        yy*w+xx
+                    ] = 1;
+
+                }
+
+            }
+
+        }
+
+
+        /* Expand */
+
+        for(
+            let pass=0;
+            pass<2;
+            pass++
+        ){
+
+            const old =
+                mask.slice();
+
+            for(
+                let yy=0;
+                yy<h;
+                yy++
+            ){
+
+                for(
+                    let xx=0;
+                    xx<w;
+                    xx++
+                ){
+
+                    if(
+                        old[yy*w+xx]
+                    )
+                        continue;
+
+                    let hit=false;
+
+                    for(
+                        let dy=-1;
+                        dy<=1 && !hit;
+                        dy++
+                    ){
+
+                        for(
+                            let dx=-1;
+                            dx<=1;
+                            dx++
+                        ){
+
+                            const nx =
+                                xx+dx;
+
+                            const ny =
+                                yy+dy;
+
+                            if(
+                                nx>=0 &&
+                                nx<w &&
+                                ny>=0 &&
+                                ny<h &&
+                                old[
+                                    ny*w+nx
+                                ]
+                            ){
+
+                                hit=true;
+                                break;
+
+                            }
+
+                        }
+
+                    }
+
+                    if(hit)
+                        mask[
+                            yy*w+xx
+                        ]=1;
+
+                }
+
+            }
+
+        }
+
+
+        /*
+          Inpaint using nearby non-white pixels.
+        */
+
+        const distances =
+            [
+                1,2,3,4,5,
+                7,9,12,16,
+                20,25
+            ];
+
+
+        for(
+            let pass=0;
+            pass<6;
+            pass++
+        ){
+
+            const old =
+                pixels.slice();
+
+            for(
+                let yy=0;
+                yy<h;
+                yy++
+            ){
+
+                for(
+                    let xx=0;
+                    xx<w;
+                    xx++
+                ){
+
+                    if(
+                        !mask[yy*w+xx]
+                    )
+                        continue;
+
+                    const samples=[];
+
+                    for(
+                        const d of distances
+                    ){
+
+                        const candidates=[
+
+                            [xx-d,yy],
+                            [xx+d,yy],
+                            [xx,yy-d],
+                            [xx,yy+d],
+                            [xx-d,yy-d],
+                            [xx+d,yy-d],
+                            [xx-d,yy+d],
+                            [xx+d,yy+d]
+
+                        ];
+
+                        for(
+                            const pair of candidates
+                        ){
+
+                            const nx =
+                                pair[0];
+
+                            const ny =
+                                pair[1];
+
+                            if(
+                                nx>=0 &&
+                                nx<w &&
+                                ny>=0 &&
+                                ny<h &&
+                                !mask[
+                                    ny*w+nx
+                                ]
+                            ){
+
+                                samples.push(
+                                    (ny*w+nx)*4
+                                );
+
+                            }
+
+                        }
+
+                        if(
+                            samples.length >= 10
+                        )
+                            break;
+
+                    }
+
+                    if(!samples.length)
+                        continue;
+
+                    let r=0;
+                    let g=0;
+                    let b=0;
+
+                    const count =
+                        Math.min(
+                            samples.length,
+                            12
+                        );
+
+                    for(
+                        let s=0;
+                        s<count;
+                        s++
+                    ){
+
+                        const i =
+                            samples[s];
+
+                        r += old[i];
+                        g += old[i+1];
+                        b += old[i+2];
+
+                    }
+
+                    const i =
+                        (yy*w+xx)*4;
+
+                    const opacity =
+                        Number(
+                            $("whiteOpacity").value
+                        ) / 100;
+
+                    const nr =
+                        Math.round(r/count);
+
+                    const ng =
+                        Math.round(g/count);
+
+                    const nb =
+                        Math.round(b/count);
+
+                    pixels[i] =
+                        Math.round(
+                            pixels[i] *
+                            (1-opacity) +
+                            nr *
+                            opacity
+                        );
+
+                    pixels[i+1] =
+                        Math.round(
+                            pixels[i+1] *
+                            (1-opacity) +
+                            ng *
+                            opacity
+                        );
+
+                    pixels[i+2] =
+                        Math.round(
+                            pixels[i+2] *
+                            (1-opacity) +
+                            nb *
+                            opacity
+                        );
+
+                }
+
+            }
+
+        }
+
+
+        editCtx.putImageData(
+            imageData,
+            x,
+            y
+        );
+
+        selection = null;
+
+        showSelection(null);
+
+        $("undoBtn").disabled =
+            false;
+
+        $("editStatus").textContent =
+            "White text removed. You can continue editing or Save & Next.";
+
+    }
+);
+
+
+/* =========================================================
+   UNDO
+========================================================= */
+
+$("undoBtn").addEventListener(
+    "click",
+    function(){
+
+        if(!originalCanvasData)
+            return;
+
+        editCtx.putImageData(
+            originalCanvasData,
+            0,
+            0
+        );
+
+        selection = null;
+        cropSelection = null;
+
+        showSelection(null);
+
+        $("undoBtn").disabled =
+            true;
+
+        $("applyCropBtn").disabled =
+            true;
+
+        $("editStatus").textContent =
+            "Original image restored.";
+
+    }
+);
+
+
+/* =========================================================
+   CROP MODE
+========================================================= */
+
+$("cropBtn").addEventListener(
+    "click",
+    function(){
+
+        selectionMode = "crop";
+
+        selection = null;
+
+        cropSelection = null;
+
+        showSelection(null);
+
+        $("applyCropBtn").disabled =
+            true;
+
+        $("editStatus").textContent =
+            "Crop mode: drag around the area you want to keep.";
+
+    }
+);
+
+
+/* =========================================================
+   APPLY CROP
+========================================================= */
+
+$("applyCropBtn").addEventListener(
+    "click",
+    function(){
+
+        if(
+            !cropSelection ||
+            cropSelection.w < 4 ||
+            cropSelection.h < 4
+        )
+            return;
+
+        const s =
+            cropSelection;
+
+        const sx =
+            Math.max(
+                0,
+                Math.floor(s.x)
+            );
+
+        const sy =
+            Math.max(
+                0,
+                Math.floor(s.y)
+            );
+
+        const sw =
+            Math.min(
+                editCanvas.width-sx,
+                Math.floor(s.w)
+            );
+
+        const sh =
+            Math.min(
+                editCanvas.height-sy,
+                Math.floor(s.h)
+            );
+
+        const temp =
+            document.createElement("canvas");
+
+        temp.width = sw;
+        temp.height = sh;
+
+        const tctx =
+            temp.getContext("2d");
+
+        tctx.drawImage(
+            editCanvas,
+            sx,
+            sy,
+            sw,
+            sh,
+            0,
+            0,
+            sw,
+            sh
+        );
+
+        editCanvas.width = sw;
+        editCanvas.height = sh;
+
+        editCtx.drawImage(
+            temp,
+            0,
+            0
+        );
+
+        originalCanvasData =
+            editCtx.getImageData(
+                0,
+                0,
+                sw,
+                sh
+            );
+
+        selection = null;
+        cropSelection = null;
+
+        selectionMode = "remove";
+
+        showSelection(null);
+
+        $("applyCropBtn").disabled =
+            true;
+
+        $("undoBtn").disabled =
+            false;
+
+        $("editStatus").textContent =
+            "Crop applied.";
+
+    }
+);
+
+
+/* =========================================================
+   SAVE CURRENT CLEAN IMAGE
+========================================================= */
+
+function canvasToBlob(canvas,type="image/png"){
+
+    return new Promise(
+        (resolve,reject)=>{
+
+            canvas.toBlob(
+                blob=>{
+
+                    if(blob)
+                        resolve(blob);
+                    else
+                        reject(
+                            new Error(
+                                "Could not create image."
+                            )
+                        );
+
+                },
+                type,
+                .95
+            );
+
+        }
+    );
+
+}
+
+
+async function saveCurrentWithoutAdvance(){
+
+    if(!imageFiles.length)
+        return null;
+
+    const file =
+        imageFiles[currentEditIndex];
+
+    const blob =
+        await canvasToBlob(
+            editCanvas,
+            "image/png"
+        );
+
+    /*
+      Preserve the original filename.
+      Only the extension changes to PNG if needed.
+      The base name remains exactly the same.
+    */
+
+    const originalName =
+        file.name;
+
+    const dot =
+        originalName.lastIndexOf(".");
+
+    const baseName =
+        dot > 0
+            ? originalName.slice(0,dot)
+            : originalName;
+
+    const outputName =
+        baseName + ".png";
+
+    const item = {
+
+        index:currentEditIndex,
+
+        originalName:originalName,
+
+        outputName:outputName,
+
+        blob:blob
+
+    };
+
+    const existing =
+        cleanedImages.findIndex(
+            x =>
+                x.index === currentEditIndex
+        );
+
+    if(existing >= 0)
+        cleanedImages[existing] = item;
+    else
+        cleanedImages.push(item);
+
+    cleanedImages.sort(
+        (a,b)=>a.index-b.index
+    );
+
+    $("goGeoBtn").disabled =
+        false;
+
+    return item;
+
+}
+
+
+/* =========================================================
+   SAVE & NEXT
+========================================================= */
+
+$("saveNextBtn").addEventListener(
+    "click",
+    async function(){
+
+        if(!imageFiles.length)
+            return;
+
+        const btn =
+            $("saveNextBtn");
+
+        btn.disabled = true;
+
+        btn.textContent =
+            "Saving…";
+
+        try{
+
+            await saveCurrentWithoutAdvance();
+
+            if(
+                currentEditIndex <
+                imageFiles.length-1
+            ){
+
+                currentEditIndex++;
+
+                await loadCurrentEditImage();
+
+                $("editStatus").textContent =
+                    "Saved. Now processing " +
+                    imageFiles[currentEditIndex].name;
+
+            }else{
+
+                $("editStatus").textContent =
+                    `All ${cleanedImages.length} images saved.`;
+
+                $("goGeoBtn").disabled =
+                    false;
+
+            }
+
+        }catch(err){
+
+            console.error(err);
+
+            $("editStatus").textContent =
+                "Could not save this image.";
+
+        }finally{
+
+            btn.disabled = false;
+
+            btn.textContent =
+                "💾 Save & Next";
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   PREVIOUS / NEXT EDIT
+========================================================= */
+
+$("prevEditBtn").addEventListener(
+    "click",
+    async function(){
+
+        if(currentEditIndex <= 0)
+            return;
+
+        await saveCurrentWithoutAdvance();
+
+        currentEditIndex--;
+
+        await loadCurrentEditImage();
+
+    }
+);
+
+
+$("nextEditBtn").addEventListener(
+    "click",
+    async function(){
+
+        if(
+            currentEditIndex >=
+            imageFiles.length-1
+        )
+            return;
+
+        await saveCurrentWithoutAdvance();
+
+        currentEditIndex++;
+
+        await loadCurrentEditImage();
+
+    }
+);
+
+
+/* =========================================================
+   WHITE REMOVAL SLIDERS
+========================================================= */
+
+$("whiteOpacity").addEventListener(
+    "input",
+    function(){
+
+        $("whiteOpacityValue").textContent =
+            this.value + "%";
+
+    }
+);
+
+
+$("whiteThreshold").addEventListener(
+    "input",
+    function(){
+
+        $("whiteThresholdValue").textContent =
+            this.value;
+
+    }
+);
+
+
+/* =========================================================
+   GEO VARIABLES
+========================================================= */
+
+const gCanvas =
+    $("gCanvas");
+
+const gCtx =
+    gCanvas.getContext("2d");
+
+let geoIndex = 0;
+
+let geoImages = [];
+
+let gLat = null;
+let gLon = null;
+let mapImg = null;
+
+
+/* =========================================================
+   STATE LIST
+========================================================= */
+
+const stateNames = [
+
+    "Andhra Pradesh",
+    "Arunachal Pradesh",
+    "Assam",
+    "Bihar",
+    "Chhattisgarh",
+    "Goa",
+    "Gujarat",
+    "Haryana",
+    "Himachal Pradesh",
+    "Jharkhand",
+    "Karnataka",
+    "Kerala",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Odisha",
+    "Punjab",
+    "Rajasthan",
+    "Sikkim",
+    "Tamil Nadu",
+    "Telangana",
+    "Tripura",
+    "Uttar Pradesh",
+    "Uttarakhand",
+    "West Bengal",
+    "Delhi",
+    "Jammu and Kashmir",
+    "Ladakh",
+    "Puducherry",
+    "Chandigarh",
+    "Andaman and Nicobar Islands",
+    "Dadra and Nagar Haveli and Daman and Diu",
+    "Lakshadweep"
+
+];
+
+
+stateNames.forEach(
+    state=>{
+
+        const option =
+            document.createElement("option");
+
+        option.value = state;
+        option.textContent = state;
+
+        $("gState").appendChild(
+            option
+        );
+
+    }
+);
+
+
+$("gState").value =
+    "Jammu and Kashmir";
+
+
+/* =========================================================
+   DEFAULT LOCATION
+========================================================= */
+
+$("gPlace").value =
+    "Beerwah";
+
+$("gAddress").value =
+    "Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India";
+
+
+/* =========================================================
+   GEO SETTINGS
+========================================================= */
+
+const GEO = {
+
+    /* Clean real-style GeoTag: no grey stamp and no camera logo. */
+    mapOpacity:100,
+    mapX:0,
+    mapY:65,
+    mapWidth:30,
+    mapHeight:35,
+
+    titleSize:100,
+    detailsSize:100,
+
+    /* Independent position for each visible GeoTag line, in percent. */
+    titleX:32,   titleY:72,
+    addressX:32, addressY:79,
+    coordX:32,   coordY:85,
+    dateX:32,    dateY:91,
+
+    showHandles:true
+
 };
 
-function fmt(n){return Number(n||0).toFixed(1)}
-function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
-function setToday(){
- const d=new Date();
- $('gDate').value=d.toISOString().slice(0,10);
- $('gTime').value=[d.getHours(),d.getMinutes(),d.getSeconds()].map((x,i)=>String(x).padStart(i===0?2:2,'0')).join(':');
-}
-setToday();
 
-function setStatus(t){$('editStatus').textContent=t}
-function resizePreview(){
- if(!video.videoWidth)return;
- const max=1100, s=Math.min(1,max/video.videoWidth);
- view.width=Math.max(1,Math.round(video.videoWidth*s));
- view.height=Math.max(1,Math.round(video.videoHeight*s));
- drawPreview();
+function setCurrentDateTime(){
+    const now = new Date();
+    $("gDate").value =
+        now.getFullYear() + "-" +
+        String(now.getMonth()+1).padStart(2,"0") + "-" +
+        String(now.getDate()).padStart(2,"0");
+    $("gTime").value =
+        String(now.getHours()).padStart(2,"0") + ":" +
+        String(now.getMinutes()).padStart(2,"0") + ":" +
+        String(now.getSeconds()).padStart(2,"0");
 }
-function sourceRect(){
- const W=video.videoWidth,H=video.videoHeight;
- if(!crop)return {x:0,y:0,w:W,h:H};
- return crop;
-}
-function drawBase(ctx2,W,H){
- const r=sourceRect();
- ctx2.clearRect(0,0,W,H);
- ctx2.drawImage(video,r.x,r.y,r.w,r.h,0,0,W,H);
-}
-function isWhite(data,i,t){
- const r=data[i],g=data[i+1],b=data[i+2];
- const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
- // Neutral check keeps this from flagging saturated bright colors (yellow
- // vests, orange signage) while still catching real white/light-gray text,
- // including the slightly off-white/gray tint video compression adds.
- const neutral=(mx-mn)<=95;
- const brightness=(r+g+b)/3;
- return neutral && (mx>=t || brightness>=t-15);
-}
-function removeWhiteFromCanvas(ctx2,W,H,rect){
- if(!rect)return;
- const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
- const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
- if(x1<=x0||y1<=y0)return;
- const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
- const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
- const W2=x1-x0,H2=y1-y0,N=W2*H2;
- const mask=new Uint8Array(N);
- for(let y=0;y<H2;y++){
-   for(let x=0;x<W2;x++){
-     const p=y*W2+x,i=p*4;
-     if(isWhite(d,i,t)) mask[p]=1;
-   }
- }
- const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
- const expanded=new Uint8Array(mask);
- for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x; if(mask[p]){
-     for(let dy=-grow;dy<=grow;dy++) for(let dx=-grow;dx<=grow;dx++){
-       if(dx*dx+dy*dy>grow*grow+1)continue;
-       const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
-     }
-   }
- }
- const out=new Uint8ClampedArray(d);
- const maxSearch=60;
- for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x; if(!expanded[p])continue;
-   let sr=0,sg=0,sb=0,n=0;
-   for(let k=1;k<=maxSearch;k++){const xx=x-k;if(xx<0)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const xx=x+k;if(xx>=W2)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const yy=y-k;if(yy<0)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const yy=y+k;if(yy>=H2)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   if(n){
-     const i=p*4,a=strength;
-     out[i]=d[i]*(1-a)+(sr/n)*a;
-     out[i+1]=d[i+1]*(1-a)+(sg/n)*a;
-     out[i+2]=d[i+2]*(1-a)+(sb/n)*a;
-   }
- }
- ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
-}
-function drawPreview(){
- if(!video.videoWidth)return;
- const r=sourceRect();
- const s=Math.min(1,1100/r.w);
- view.width=Math.round(r.w*s);view.height=Math.round(r.h*s);
- vctx.clearRect(0,0,view.width,view.height);
- vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
- if(whiteRect){
-   const wr=whiteRect;
-   removeWhiteFromCanvas(vctx,view.width,view.height,{
-     x:wr.x/r.w*view.width,
-     y:wr.y/r.h*view.height,
-     w:wr.w/r.w*view.width,
-     h:wr.h/r.h*view.height
-   });
- }
-}
-function updateSelectionBox(){
- if(!selecting && !whiteRect && !crop)return;
- const r=sourceRect();
- const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- let q=whiteRect||crop;
- if(!q){selBox.style.display='none';return}
- const x=C.left-R.left+q.x/r.w*C.width;
- const y=C.top-R.top+q.y/r.h*C.height;
- const w=q.w/r.w*C.width,h=q.h/r.h*C.height;
- selBox.style.left=x+'px';selBox.style.top=y+'px';selBox.style.width=w+'px';selBox.style.height=h+'px';selBox.style.display='block';
-}
-function pointerPos(e){
- const R=view.getBoundingClientRect(),r=sourceRect();
- return {x:clamp((e.clientX-R.left)/R.width*r.w,0,r.w),y:clamp((e.clientY-R.top)/R.height*r.h,0,r.h)}
-}
-view.addEventListener('pointerdown',e=>{
- if(!cropMode&&!removeMode)return;
- selecting=true;view.setPointerCapture(e.pointerId);
- const p=pointerPos(e);sx=p.x;sy=p.y;selBox.style.display='block';
-});
-view.addEventListener('pointermove',e=>{
- if(!selecting)return;
- const p=pointerPos(e);
- const q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
- const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- selBox.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
- selBox.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
- selBox.style.width=(q.w/r.w*C.width)+'px';selBox.style.height=(q.h/r.h*C.height)+'px';
-});
-view.addEventListener('pointerup',e=>{
- if(!selecting)return;selecting=false;
- const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
- if(q.w<5||q.h<5){return}
- if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
- if(removeMode){whiteRect={...q};$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
- updateSelectionBox();
-});
+setCurrentDateTime();
 
-function timelineFmt(sec){
-  sec=Math.max(0,Number(sec)||0); const m=Math.floor(sec/60), s=Math.floor(sec%60);
-  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+
+/* =========================================================
+   CONVERT BLOB TO IMAGE
+========================================================= */
+
+function blobToImage(blob){
+
+    return new Promise(
+        (resolve,reject)=>{
+
+            const url =
+                URL.createObjectURL(blob);
+
+            const image =
+                new Image();
+
+            image.onload =
+                function(){
+
+                    URL.revokeObjectURL(
+                        url
+                    );
+
+                    resolve(image);
+
+                };
+
+            image.onerror =
+                function(){
+
+                    URL.revokeObjectURL(
+                        url
+                    );
+
+                    reject(
+                        new Error(
+                            "Could not load saved image."
+                        )
+                    );
+
+                };
+
+            image.src = url;
+
+        }
+    );
+
 }
-function drawTimeline(){
-  const c=$('timelineCanvas'),ctx=c.getContext('2d');
-  const W=c.width,H=c.height; ctx.clearRect(0,0,W,H);
-  ctx.fillStyle='#05090d';ctx.fillRect(0,0,W,H);
-  const top=27, thumbH=76, frames=timelineFrames;
 
-  if(frames.length){
-    const fw=W/frames.length;
-    frames.forEach((im,i)=>{
-      const x=i*fw;
-      ctx.drawImage(im,x,top,Math.ceil(fw)+1,thumbH);
-      ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(x+fw-1,top,1,thumbH);
-    });
-  }else{
-    ctx.fillStyle='#18232d';ctx.fillRect(0,top,W,thumbH);
-    ctx.fillStyle='#72808c';ctx.font='14px Arial';ctx.fillText('Load a video to create the gallery timeline',20,top+40);
-  }
-  if(!duration){return;}
 
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start,duration);
-  const cur=clamp(video.currentTime||0,0,duration);
-  const xS=start/duration*W,xE=end/duration*W,xC=cur/duration*W;
+/* =========================================================
+   OPEN GEOTAG PAGE
+========================================================= */
 
-  ctx.fillStyle='rgba(0,0,0,.68)';
-  if(xS>0)ctx.fillRect(0,top,xS,thumbH);
-  if(xE<W)ctx.fillRect(xE,top,W-xE,thumbH);
+$("goGeoBtn").addEventListener(
+    "click",
+    async function(){
 
-  ctx.strokeStyle='#ffd400';ctx.lineWidth=4;
-  ctx.strokeRect(Math.max(1,xS),top+1,Math.max(2,xE-xS-2),thumbH-2);
+        /*
+          Save current image first.
+        */
 
-  [xS,xE].forEach(x=>{
-    ctx.fillStyle='#ffd400';ctx.fillRect(x-5,top-6,10,thumbH+12);
-    ctx.fillStyle='#222';ctx.fillRect(x-2,top+24,4,28);
-    ctx.beginPath();ctx.moveTo(x-5,top-9);ctx.lineTo(x+5,top-9);ctx.lineTo(x,top-3);ctx.closePath();ctx.fillStyle='#ffd400';ctx.fill();
-  });
+        try{
 
-  ctx.font='10px Arial';ctx.textAlign='center';
-  const tickCount=Math.min(12,Math.max(5,Math.ceil(duration/5)+1));
-  for(let i=0;i<tickCount;i++){
-    const t=duration*i/(tickCount-1||1),x=t/duration*W;
-    ctx.strokeStyle='rgba(210,220,230,.35)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(x,18);ctx.lineTo(x,25);ctx.stroke();
-    ctx.fillStyle='#9ba8b3';ctx.fillText(timelineFmt(t),x,12);
-  }
-  ctx.textAlign='start';
+            await saveCurrentWithoutAdvance();
 
-  ctx.strokeStyle='#1597ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(xC,17);ctx.lineTo(xC,H-8);ctx.stroke();
-  ctx.fillStyle='#1597ff';ctx.beginPath();ctx.moveTo(xC-7,17);ctx.lineTo(xC+7,17);ctx.lineTo(xC,25);ctx.closePath();ctx.fill();
+        }catch(err){
 
-  const label=timelineFmt(cur);ctx.font='bold 12px Arial';const tw=ctx.measureText(label).width+16;
-  const bx=clamp(xC-tw/2,2,W-tw-2);ctx.fillStyle='#253542';
-  roundRect(ctx,bx,0,tw,18,4);ctx.fill();
-  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(label,bx+tw/2,13);ctx.textAlign='start';
+            console.error(err);
 
-  $('timelineStartLabel').textContent=timelineFmt(start);
-  $('timelineCurrentLabel').textContent=timelineFmt(cur);
-  $('timelineEndLabel').textContent=timelineFmt(end);
+        }
+
+        geoImages =
+            cleanedImages
+            .slice()
+            .sort(
+                (a,b)=>a.index-b.index
+            );
+
+        if(!geoImages.length){
+
+            alert(
+                "Please save at least one cleaned image first."
+            );
+
+            return;
+
+        }
+
+        geoIndex = 0;
+
+        $("removePage").style.display =
+            "none";
+
+        $("geoPage").style.display =
+            "block";
+
+        $("stepOne").style.background =
+            "#e5e7eb";
+
+        $("stepOne").style.color =
+            "#555";
+
+        $("stepTwo").style.background =
+            "#1769e0";
+
+        $("stepTwo").style.color =
+            "#fff";
+
+        await loadGeoImage();
+
+    }
+);
+
+
+/* =========================================================
+   LOAD GEO IMAGE
+========================================================= */
+
+async function loadGeoImage(){
+
+    if(!geoImages.length)
+        return;
+
+    const item = geoImages[geoIndex];
+
+    $("geoCounter").textContent =
+        `Image ${geoIndex+1} of ${geoImages.length} — ${item.originalName}`;
+
+    $("gPrev").disabled = geoIndex <= 0;
+
+    await redrawGeoFromSaved();
+
 }
-function roundRectCorners(ctx,x,y,w,h,tl,tr,br,bl){
-  ctx.beginPath();
-  ctx.moveTo(x+tl,y);
-  ctx.lineTo(x+w-tr,y);
-  ctx.arcTo(x+w,y,x+w,y+tr,tr);
-  ctx.lineTo(x+w,y+h-br);
-  ctx.arcTo(x+w,y+h,x+w-br,y+h,br);
-  ctx.lineTo(x+bl,y+h);
-  ctx.arcTo(x,y+h,x,y+h-bl,bl);
-  ctx.lineTo(x,y+tl);
-  ctx.arcTo(x,y,x+tl,y,tl);
-  ctx.closePath();
-}
-function roundRect(ctx,x,y,w,h,r){
-  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
-}
-async function buildTimeline(){
-  if(!duration||!video.videoWidth)return;
-  timelineFrames=[];timelineReady=false;drawTimeline();
-  const saved=video.currentTime;
-  const n=Math.min(18,Math.max(8,Math.ceil(duration/2)));
-  for(let i=0;i<n;i++){
-    const t=duration*(i/(n-1||1));
-    video.currentTime=t;
-    await new Promise(res=>{const f=()=>res();video.addEventListener('seeked',f,{once:true});setTimeout(res,250)});
-    const im=document.createElement('canvas');
-    const w=120,h=Math.max(68,Math.round(120*video.videoHeight/video.videoWidth));im.width=w;im.height=76;
-    const ictx=im.getContext('2d');
-    ictx.fillStyle='#111';ictx.fillRect(0,0,w,76);
-    const scale=Math.min(w/video.videoWidth,76/video.videoHeight);const dw=video.videoWidth*scale,dh=video.videoHeight*scale;
-    ictx.drawImage(video,(w-dw)/2,(76-dh)/2,dw,dh);timelineFrames.push(im);
-    drawTimeline();
-  }
-  video.currentTime=clamp(saved,0,duration);timelineReady=true;drawTimeline();
-}
-function timelineTimeFromEvent(e){
-  const r=$('timelineCanvas').getBoundingClientRect();return clamp((e.clientX-r.left)/r.width,0,1)*duration;
-}
-$('timelineCanvas').addEventListener('pointerdown',e=>{
-  if(!duration)return;
-  const t=timelineTimeFromEvent(e),start=+$('trimStart').value||0,end=+$('trimEnd').value||duration;
-  const r=$('timelineCanvas').getBoundingClientRect(),px=t/duration*r.width,ps=start/duration*r.width,pe=end/duration*r.width;
-  if(Math.abs(px-ps)<18)timelineDragging='start';
-  else if(Math.abs(px-pe)<18)timelineDragging='end';
-  else timelineDragging='playhead';
-  $('timelineCanvas').setPointerCapture(e.pointerId);
-  timelineMove(e);
-});
-function timelineMove(e){
-  if(!timelineDragging||!duration)return;
-  const t=timelineTimeFromEvent(e),step=.1;
-  if(timelineDragging==='start'){
-    const end=+$('trimEnd').value||duration; $('trimStart').value=fmt(Math.min(t,end-.1));
-    if(video.currentTime<+$('trimStart').value)video.currentTime=+$('trimStart').value;
-  }else if(timelineDragging==='end'){
-    const start=+$('trimStart').value||0; $('trimEnd').value=fmt(Math.max(t,start+.1));
-    if(video.currentTime>+$('trimEnd').value)video.currentTime=+$('trimEnd').value;
-  }else{
-    video.currentTime=clamp(t,+$('trimStart').value||0,+$('trimEnd').value||duration);
-  }
-  drawTimeline();drawPreview();drawGeoPreview();
-}
-$('timelineCanvas').addEventListener('pointermove',timelineMove);
-$('timelineCanvas').addEventListener('pointerup',()=>timelineDragging=null);
-$('timelineCanvas').addEventListener('pointercancel',()=>timelineDragging=null);
-$('timelinePrev').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)-5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
-$('timelineNext').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)+5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
 
-document.querySelectorAll('.quickTrim').forEach(btn=>btn.addEventListener('click',()=>{
- const sec=Math.min(+$('durationBadge').textContent||duration,+btn.dataset.sec); $('trimStart').value='0.0'; $('trimEnd').value=fmt(Math.min(duration,+btn.dataset.sec)); video.currentTime=0; drawTimeline();
-}));
-$('videoFile').addEventListener('change',()=>{
- file=$('videoFile').files[0]; if(!file)return;
- if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
- $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
-});
-video.addEventListener('loadedmetadata',()=>{
- duration=video.duration||0;
- $('durationBadge').textContent=fmt(duration)+' s';
- $('trimStart').value='0';$('trimEnd').value=fmt(duration);
- $('trimRange').max=duration; $('trimRange').value=0;
- resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
- $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
- buildTimeline();
-});
-video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
-video.addEventListener('play',()=>{playing=true;});
-video.addEventListener('pause',()=>{playing=false;});
-$('trimRange').addEventListener('input',()=>{video.currentTime=+$('trimRange').value;drawTimeline()});
-$('trimStart').addEventListener('input',()=>{let v=clamp(+$('trimStart').value||0,0,duration);let e=+$('trimEnd').value||duration;if(v>=e)v=Math.max(0,e-.1);$('trimStart').value=fmt(v);if(video.currentTime<v)video.currentTime=v;drawTimeline()});
-$('trimEnd').addEventListener('input',()=>{let v=clamp(+$('trimEnd').value||duration,0,duration);let s=+$('trimStart').value||0;if(v<=s)v=Math.min(duration,s+.1);$('trimEnd').value=fmt(v);if(video.currentTime>v)video.currentTime=v;drawTimeline()});
-$('setStart').onclick=()=>{$('trimStart').value=fmt(clamp(video.currentTime,0,(+$('trimEnd').value||duration)-.1));drawTimeline()}
-$('setEnd').onclick=()=>{$('trimEnd').value=fmt(clamp(video.currentTime,(+$('trimStart').value||0)+.1,duration));drawTimeline()}
-$('playBtn').onclick=()=>video.play();
-$('pauseBtn').onclick=()=>video.pause();
-$('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.currentTime-1/30)}
-$('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
-$('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
-$('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
-$('applyCrop').onclick=()=>{if(!crop)return;const old=sourceRect();crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
-$('resetCrop').onclick=()=>{crop=null;whiteRect=null;$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
-$('removeWhite').onclick=()=>{if(!whiteRect)return;setStatus('White-text removal will be applied to every frame during export.');drawPreview()}
-$('clearWhite').onclick=()=>{whiteRect=null;$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
-$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;drawPreview()}
-$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';drawPreview()}
-$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;drawPreview()}
 
-function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
-function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
-function formatMovingTime(base,delta){
- let t=parseStartTime(base)+Math.max(0,delta),h=Math.floor(t/3600)%24,m=Math.floor(t/60)%60,s=Math.floor(t%60);
- return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-}
-function wrapText(ctx,text,max,font,maxLines=3){
- ctx.font=font;const words=String(text||'').trim().split(/\s+/),lines=[];let line='';
- for(const word of words){const test=line?line+' '+word:word;if(ctx.measureText(test).width>max&&line){lines.push(line);line=word;if(lines.length>=maxLines)break}else line=test}
- if(line&&lines.length<maxLines)lines.push(line);return lines;
-}
-function drawLogo(ctx,x,y,size){
-  ctx.save();
-  ctx.translate(x,y);
-  const r=Math.max(8,size*.18);
-  ctx.fillStyle='#149bd3';
-  ctx.beginPath();
-  ctx.roundRect(-size/2,-size/2,size,size,r);
-  ctx.fill();
+/* =========================================================
+   TEXT WRAPPING
+========================================================= */
 
-  const bodyW=size*.68, bodyH=size*.40, bodyX=-bodyW/2, bodyY=-bodyH/2+size*.035;
-  ctx.fillStyle='#fff';
-  ctx.beginPath();
-  ctx.roundRect(bodyX,bodyY,bodyW,bodyH,Math.max(3,size*.025));
-  ctx.fill();
+function wrapGeoText(
+    text,
+    maxWidth,
+    font,
+    maxLines
+){
 
-  const bumpW=size*.25, bumpH=size*.10;
-  ctx.beginPath();
-  ctx.roundRect(-bumpW*.42,bodyY-bumpH*.72,bumpW,bumpH,Math.max(2,size*.015));
-  ctx.fill();
+    gCtx.font = font;
 
-  ctx.fillStyle='#149bd3';
-  ctx.beginPath();
-  ctx.arc(0,bodyY+bodyH/2,size*.145,0,Math.PI*2);
-  ctx.fill();
-  ctx.strokeStyle='#fff';
-  ctx.lineWidth=Math.max(2,size*.035);
-  ctx.beginPath();
-  ctx.arc(0,bodyY+bodyH/2,size*.19,0,Math.PI*2);
-  ctx.stroke();
-  ctx.restore();
+    const words =
+        String(text || "")
+        .trim()
+        .split(/\s+/);
+
+    const lines = [];
+
+    let line = "";
+
+    for(
+        const word of words
+    ){
+
+        const test =
+            line
+                ? line + " " + word
+                : word;
+
+        if(
+            gCtx.measureText(test).width >
+            maxWidth &&
+            line
+        ){
+
+            lines.push(line);
+
+            line = word;
+
+            if(
+                lines.length >=
+                maxLines
+            )
+                break;
+
+        }else{
+
+            line = test;
+
+        }
+
+    }
+
+    if(
+        line &&
+        lines.length < maxLines
+    ){
+
+        lines.push(line);
+
+    }
+
+    return lines;
+
 }
-async function findLocation(){
- const q=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
- if(!q){$('gCoords').textContent='Enter a district/town.';return}
- $('gCoords').textContent='Finding location…';
- try{
-  const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
-  const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
-  lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
-  if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
-  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
-  mapImg=await makeMap(lat,lon);
-  loadRealGPSRoute();drawGeoPreview();
- }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
+
+
+/* =========================================================
+   DATE FORMAT
+========================================================= */
+
+function formatDate(value){
+
+    if(!value)
+        return "Date";
+
+    const p =
+        value.split("-");
+
+    if(p.length !== 3)
+        return value;
+
+    return (
+        p[2] +
+        "/" +
+        p[1] +
+        "/" +
+        p[0]
+    );
+
 }
-$('findLocation').onclick=findLocation;
+
+
+/* =========================================================
+   TIME FORMAT
+========================================================= */
+
+function formatTime(value){
+
+    if(!value)
+        return "Time";
+
+    const p =
+        value.split(":");
+
+    let h =
+        Number(p[0]);
+
+    const m =
+        p[1] || "00";
+
+    const suffix =
+        h >= 12
+            ? "PM"
+            : "AM";
+
+    h =
+        h % 12 || 12;
+
+    return (
+        String(h).padStart(2,"0") +
+        ":" +
+        m +
+        " " +
+        suffix
+    );
+
+}
+
+
+/* =========================================================
+   DRAW FALLBACK MAP
+========================================================= */
+
+function drawFallbackMap(
+    x,
+    y,
+    w,
+    h
+){
+
+    gCtx.save();
+
+    gCtx.beginPath();
+
+    gCtx.rect(
+        x,
+        y,
+        w,
+        h
+    );
+
+    gCtx.clip();
+
+    gCtx.fillStyle =
+        "#d7dcde";
+
+    gCtx.fillRect(
+        x,
+        y,
+        w,
+        h
+    );
+
+
+    /*
+      Map-like roads.
+    */
+
+    gCtx.strokeStyle =
+        "rgba(100,110,115,.30)";
+
+    gCtx.lineWidth =
+        Math.max(
+            2,
+            w*.006
+        );
+
+    for(
+        let i=-h;
+        i<w+h;
+        i+=Math.max(
+            30,
+            w*.14
+        )
+    ){
+
+        gCtx.beginPath();
+
+        gCtx.moveTo(
+            x+i,
+            y
+        );
+
+        gCtx.lineTo(
+            x+i+h,
+            y+h
+        );
+
+        gCtx.stroke();
+
+    }
+
+
+    for(
+        let i=0;
+        i<h;
+        i+=Math.max(
+            30,
+            h*.17
+        )
+    ){
+
+        gCtx.beginPath();
+
+        gCtx.moveTo(
+            x,
+            y+i
+        );
+
+        gCtx.lineTo(
+            x+w,
+            y+i+h*.12
+        );
+
+        gCtx.stroke();
+
+    }
+
+
+    /*
+      Location marker.
+    */
+
+    const px =
+        x+w/2;
+
+    const py =
+        y+h/2;
+
+    const r =
+        Math.max(
+            7,
+            h*.065
+        );
+
+    gCtx.fillStyle =
+        "#e53935";
+
+    gCtx.beginPath();
+
+    gCtx.arc(
+        px,
+        py,
+        r,
+        0,
+        Math.PI*2
+    );
+
+    gCtx.fill();
+
+    gCtx.beginPath();
+
+    gCtx.moveTo(
+        px-r*.7,
+        py+r*.3
+    );
+
+    gCtx.lineTo(
+        px,
+        py+r*1.8
+    );
+
+    gCtx.lineTo(
+        px+r*.7,
+        py+r*.3
+    );
+
+    gCtx.closePath();
+
+    gCtx.fill();
+
+    gCtx.fillStyle =
+        "#fff";
+
+    gCtx.beginPath();
+
+    gCtx.arc(
+        px,
+        py,
+        r*.38,
+        0,
+        Math.PI*2
+    );
+
+    gCtx.fill();
+
+    gCtx.restore();
+
+}
+
+
+/* =========================================================
+   MAP TILE
+========================================================= */
 
 function tileXY(lat,lon,z){
- const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
+    const n = 2**z;
+    const x = (lon+180)/360*n;
+    const y = (1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;
+    return {x,y,n};
 }
+
 async function makeMap(lat,lon){
- const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
- const c=document.createElement('canvas');c.width=size;c.height=size;
- const cctx=c.getContext('2d');
- cctx.clearRect(0,0,size,size);
+    /*
+      Same map engine as the Video GeoTag tool:
+      zoom 15, 25 OpenStreetMap tiles loaded in parallel,
+      centered on the selected latitude/longitude.
+    */
+    const z = 15;
+    const t = tileXY(lat,lon,z);
+    const cx = Math.floor(t.x);
+    const cy = Math.floor(t.y);
+    const size = 1280;
 
- // Load all 25 tiles in parallel. The old version loaded them one-by-one,
- // which made the map take a long time to become available. Export waits for
- // this function, so the very first exported frame can contain the map.
- const jobs=[];
- for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-   jobs.push(new Promise(res=>{
-     const im=new Image();
-     im.crossOrigin='anonymous';
-     const draw=()=>{
-       try{
-         cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);
-       }catch(e){}
-       res();
-     };
-     im.onload=draw;
-     im.onerror=()=>res();
-     im.src=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
-   }));
- }
- await Promise.all(jobs);
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
 
- cctx.fillStyle='#e53935';
- cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();
- cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
- cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);
- cctx.fillStyle='#333';cctx.font='12px Arial';
- cctx.fillText('© OpenStreetMap contributors',12,size-14);
- return c;
-}
+    const cctx = c.getContext("2d");
+    cctx.clearRect(0,0,size,size);
 
-function readRunningCoords(){
-  startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
-  endLat=parseFloat($('endLat').value); endLon=parseFloat($('endLon').value);
-  return [startLat,startLon].every(Number.isFinite);
-}
+    const jobs = [];
 
-// Build a route from real roads using OpenStreetMap's public OSRM routing
-// service. The GeoTag then follows the returned road geometry instead of
-// drawing an artificial straight line between two coordinates.
-async function loadRealGPSRoute(){
-  if(!readRunningCoords()) return;
-  if(!Number.isFinite(endLat)||!Number.isFinite(endLon)) return;
-  const key=[startLat,startLon,endLat,endLon].map(v=>v.toFixed(6)).join(',');
-  if(key===gpsRouteKey || gpsRouteLoading) return;
-  gpsRouteLoading=true;
-  $('runningCoords').textContent='Loading real road route…';
-  try{
-    const url='https://router.project-osrm.org/route/v1/driving/'+
-      `${startLon},${startLat};${endLon},${endLat}`+
-      '?overview=full&geometries=geojson&steps=false';
-    const r=await fetch(url,{headers:{Accept:'application/json'}});
-    if(!r.ok) throw Error('Route request failed');
-    const j=await r.json();
-    if(j.code!=='Ok'||!j.routes?.[0]?.geometry?.coordinates?.length) throw Error('No route');
+    for(let dy=-2;dy<=2;dy++){
+        for(let dx=-2;dx<=2;dx++){
 
-    gpsRoute=j.routes[0].geometry.coordinates.map(([lo,la])=>({lat:la,lon:lo}));
-    gpsRouteDistances=[0];
-    for(let i=1;i<gpsRoute.length;i++){
-      gpsRouteDistances[i]=gpsRouteDistances[i-1]+gpsDistanceMeters(
-        gpsRoute[i-1].lat,gpsRoute[i-1].lon,gpsRoute[i].lat,gpsRoute[i].lon
-      );
-    }
-    gpsRouteTotal=gpsRouteDistances[gpsRouteDistances.length-1]||0;
-    gpsRouteKey=key;
-    $('runningCoords').textContent='Real road GPS route loaded';
-    drawGeoPreview();
-  }catch(e){
-    gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;gpsRouteKey='';
-    $('runningCoords').textContent='Road route unavailable — using smooth GPS movement';
-    drawGeoPreview();
-  }finally{gpsRouteLoading=false;}
-}
+            jobs.push(new Promise(resolve=>{
 
-function gpsDistanceMeters(aLat,aLon,bLat,bLon){
-  const R=6371000, p1=aLat*Math.PI/180, p2=bLat*Math.PI/180;
-  const dp=(bLat-aLat)*Math.PI/180, dl=(bLon-aLon)*Math.PI/180;
-  const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
-  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
-}
+                const im = new Image();
+                im.crossOrigin = "anonymous";
 
-function getRoutePoint(progress){
-  if(!gpsRoute.length) return null;
-  if(progress<=0) return gpsRoute[0];
-  if(progress>=1) return gpsRoute[gpsRoute.length-1];
-  const target=progress*gpsRouteTotal;
-  let lo=0,hi=gpsRouteDistances.length-1;
-  while(lo<hi){
-    const mid=(lo+hi)>>1;
-    if(gpsRouteDistances[mid]<target) lo=mid+1; else hi=mid;
-  }
-  const i=Math.max(1,lo), a=gpsRoute[i-1], b=gpsRoute[i];
-  const span=Math.max(0.000001,gpsRouteDistances[i]-gpsRouteDistances[i-1]);
-  const t=(target-gpsRouteDistances[i-1])/span;
-  return {lat:a.lat+(b.lat-a.lat)*t,lon:a.lon+(b.lon-a.lon)*t};
-}
+                const draw = ()=>{
+                    try{
+                        cctx.drawImage(
+                            im,
+                            size/2+(dx-(t.x-cx))*256,
+                            size/2+(dy-(t.y-cy))*256,
+                            256,
+                            256
+                        );
+                    }catch(e){}
 
-// If a road route is available, use it. Otherwise use a gentle curved
-// fallback so the coordinates still move naturally when the routing service
-// is temporarily unavailable.
-function getRunningCoords(seconds){
-  const trimStart=+$('trimStart').value||0;
-  const trimEnd=+$('trimEnd').value||duration;
-  const length=Math.max(0.001,trimEnd-trimStart);
-  const p=clamp(seconds/length,0,1);
-  if(!readRunningCoords()) return {lat,lon};
+                    resolve();
+                };
 
-  // GPS-style wandering path. The coordinate does NOT move in a straight
-  // line. It makes small, smooth changes and comes back exactly to the
-  // starting point at the middle of the video, then starts wandering again.
-  // The seed keeps the path stable during preview/export instead of changing
-  // randomly on every frame.
-  const seed=(startLat*1000003+startLon*9176+(endLat||0)*37+(endLon||0)*13);
-  const rand=(n)=>{
-    const x=Math.sin(seed+n*12.9898)*43758.5453;
-    return x-Math.floor(x);
-  };
+                im.onload = draw;
+                im.onerror = ()=>resolve();
 
-  const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
-  const mToLat=m=>m/111320;
-  const mToLon=m=>m/(111320*cosLat);
+                // When this HTML is opened directly as a local file,
+                // tile.openstreetmap.org can reject requests because a local
+                // file does not provide the normal web Referer. Use the
+                // OSM Germany tile server in that case; it uses OSM data and
+                // the same familiar OSM map style. On a normal http/https
+                // deployment, keep the standard OSM tile server.
+                const tileHost =
+                    location.protocol === "file:"
+                    ? "https://tile.openstreetmap.de"
+                    : "https://tile.openstreetmap.org";
 
-  // Keep the movement believable: tens of metres rather than huge jumps.
-  const radius=Math.max(18,Math.min(90,25+length*0.7));
-  const points=[];
-  for(let i=0;i<13;i++){
-    const q=i/12;
-    if(i===0||i===12){ points.push({x:0,y:0}); continue; }
-    const angle=rand(i)*Math.PI*2;
-    const r=radius*(0.35+rand(i+30)*0.65);
-    points.push({x:Math.cos(angle)*r,y:Math.sin(angle)*r});
-  }
+                im.src =
+                    `${tileHost}/${z}/${cx+dx}/${cy+dy}.png`;
 
-  function wander(q){
-    q=clamp(q,0,1);
-    const pos=q*12;
-    const i=Math.min(11,Math.floor(pos));
-    const t=pos-i;
-    const ease=t*t*(3-2*t);
-    const a=points[i], b=points[i+1];
-    return {x:a.x+(b.x-a.x)*ease,y:a.y+(b.y-a.y)*ease};
-  }
+            }));
 
-  // First half: wander away and return exactly to the start.
-  if(p<=0.5){
-    const w=wander(p*2);
-    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
-  }
-
-  // Second half: start again from the exact starting coordinate and wander
-  // toward the requested end coordinate (if supplied).
-  const q=(p-0.5)*2;
-  const w=wander(q);
-  const hasEnd=Number.isFinite(endLat)&&Number.isFinite(endLon)&&
-               (Math.abs(endLat-startLat)>0.0000001||Math.abs(endLon-startLon)>0.0000001);
-  if(!hasEnd){
-    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
-  }
-
-  const endNorth=(endLat-startLat)*111320;
-  const endEast=(endLon-startLon)*111320*cosLat;
-  const routeWeight=q*q*(3-2*q);
-  return {
-    lat:startLat+mToLat(w.y*(1-routeWeight)+endNorth*routeWeight),
-    lon:startLon+mToLon(w.x*(1-routeWeight)+endEast*routeWeight)
-  };
-}
-function updateRunningCoords(seconds){
-  const c=getRunningCoords(seconds);
-  if(c.lat!=null&&c.lon!=null) $('runningCoords').textContent=`Running Lat ${c.lat.toFixed(6)}°  Long ${c.lon.toFixed(6)}°`;
-  return c;
-}
-$('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat').value=lat.toFixed(6); $('startLon').value=lon.toFixed(6); if(!$('endLat').value)$('endLat').value=lat.toFixed(6); if(!$('endLon').value)$('endLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
-$('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
-['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
-
-function drawGeoFrame(baseCtx,W,H,seconds){
-  // ================================================================
-  // GEO OVERLAY = TWO COMPLETELY INDEPENDENT BLOCKS
-  // 1) MAP BLOCK: its own position, width and height.
-  // 2) STAMP BLOCK: its own position, width and height, text and logo.
-  // The ONLY relationship is that the map bottom touches the stamp top.
-  // ================================================================
-  const stampOpacity=clamp(state.gOpacity/100,0,1);
-  const mapOpacity=clamp(state.gMapO/100,0,1);
-
-  // ------------------------- STAMP BLOCK -------------------------
-  const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  const stampX=0;
-  const stampY=Math.round(H-stampH);
-  const stampW=W;
-  const stampRadius=Math.max(18,Math.round(stampH*.14));
-  const stampPad=Math.max(5,Math.round(stampH*.022));
-  const stampGap=Math.max(12,Math.round(stampH*.045));
-
-  // -------------------------- MAP BLOCK --------------------------
-  // The map has its OWN position and size. It can be dragged and resized
-  // directly on the video preview without changing the stamp block.
-  const mapX=clamp(W*state.mapX/100,0,Math.max(0,W-20));
-  const mapY=clamp(H*state.mapY/100,0,Math.max(0,H-20));
-  const mapW=clamp(W*state.mapW/100,20,W-mapX);
-  const mapH=clamp(H*state.mapH/100,20,H-mapY);
-
-  // Draw STAMP block first.
-  baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  baseCtx.fillStyle='rgba(0,0,0,.76)';
-  roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
-  baseCtx.fill();
-  baseCtx.restore();
-
-  // Draw MAP block on the LEFT side of the STAMP, at the EXACT same Y.
-  // The map and stamp have the same height and share the same top/bottom edges.
-  if(mapImg){
-    baseCtx.save();
-    baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    baseCtx.beginPath();
-    baseCtx.rect(mapX,mapY,mapW,mapH);
-    baseCtx.clip();
-    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
-    baseCtx.restore();
-  }
-
-  // Everything below belongs ONLY to the STAMP block.
-  const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
-  const logoCenterX=clamp(
-    W*state.logoX/100,
-    stampX+stampW*.72+logoSize/2,
-    stampX+stampW-logoSize/2-stampPad
-  );
-  const logoCenterY=clamp(
-    stampY+stampH*(state.logoY/100),
-    stampY+logoSize/2+stampPad,
-    stampY+stampH-logoSize/2-stampPad
-  );
-  const logoLeft=logoCenterX-logoSize/2;
-
-  // STAMP text is independent from the map. The map can be moved/resized
-  // without changing the title/details position.
-  const textX=stampX+stampW*.255;
-  const textRight=logoLeft-stampGap;
-  const maxW=Math.max(150,textRight-textX);
-  const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
-  const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
-  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
-  const address=$('gAddress').value.trim();
-  const running=getRunningCoords(seconds);
-  const coordText=`Lat ${running.lat==null?'—':running.lat.toFixed(6)}°  Long ${running.lon==null?'—':running.lon.toFixed(6)}°`;
-  updateRunningCoords(seconds);
-  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
-
-  // STAMP TEXT BLOCK ONLY.
-  baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  baseCtx.fillStyle='#fff';
-  baseCtx.textBaseline='alphabetic';
-  baseCtx.shadowColor='rgba(0,0,0,.30)';
-  baseCtx.shadowBlur=Math.max(1,stampH*.008);
-
-  baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
-  const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
-  let yy=stampY+stampPad+titleSize;
-  titleLines.forEach(line=>{baseCtx.fillText(line,textX,yy);yy+=titleSize*1.02});
-
-  baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
-  const lineGap=Math.max(3,detailSize*.25);
-  const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
-  addressLines.forEach(line=>{if(yy<=stampY+stampH-stampPad)baseCtx.fillText(line,textX,yy);yy+=detailSize+lineGap});
-  if(yy<=stampY+stampH-stampPad){baseCtx.fillText(coordText,textX,yy);yy+=detailSize+lineGap*1.05;}
-  if(yy<=stampY+stampH-stampPad)baseCtx.fillText(dateTime,textX,yy);
-  baseCtx.restore();
-
-  // STAMP LOGO BLOCK ONLY.
-  baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
-  baseCtx.restore();
-
-  // Preview-only map controls. They are never rendered into the exported video.
-  if(baseCtx===gctx && mapImg){
-    baseCtx.save();
-    baseCtx.strokeStyle='rgba(255,255,255,.95)';
-    baseCtx.lineWidth=Math.max(1,2*W/geo.width);
-    baseCtx.setLineDash([6,4]);
-    baseCtx.strokeRect(mapX,mapY,mapW,mapH);
-    baseCtx.setLineDash([]);
-    const hs=Math.max(8,12*W/geo.width);
-    baseCtx.fillStyle='rgba(255,255,255,.95)';
-    baseCtx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
-    baseCtx.restore();
-  }
-}
-
-function prepareOutput(){
- const r=sourceRect();
- outputW=Math.max(2,Math.round(r.w/2)*2);
- outputH=Math.max(2,Math.round(r.h/2)*2);
- work.width=outputW;work.height=outputH;
-}
-function removeWhiteFromCanvasExport(ctx2,W,H,rect){
-  if(!rect)return;
-  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
-  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
-  const rw=x1-x0, rh=y1-y0;
-  if(rw<2||rh<2)return;
-
-  const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
-  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
-  for(let y=0;y<rh;y++){
-    for(let x=0;x<rw;x++){
-      const p=y*rw+x,i=p*4;
-      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
-      const neutral=(mx-mn)<=115;
-      const bright=(rr+gg+bb)/3;
-      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
-    }
-  }
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x;
-    if(mask[p]){
-      for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
-        const xx=x+dx,yy=y+dy;
-        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
-      }
-    }
-  }
-
-  const maxSearch=Math.min(50,Math.max(24,Math.round(Math.max(rw,rh)/2)));
-  const filled=new Uint8ClampedArray(d);
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x;
-    if(!expanded[p])continue;
-    let sr=0,sg=0,sb=0,n=0;
-    for(let k=1;k<=maxSearch;k++){const lx=x-k;if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const rx=x+k;if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const ty=y-k;if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const by=y+k;if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    if(n){const i=p*4;filled[i]=d[i]*(1-strength)+(sr/n)*strength;filled[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;filled[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
-  }
-
-  const out=new Uint8ClampedArray(filled);
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x; if(!expanded[p])continue;
-    let sr=0,sg=0,sb=0,n=0;
-    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-      const xx=x+dx,yy=y+dy;
-      if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
-      const q=yy*rw+xx,j=q*4;
-      sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;
-    }
-    if(n){const i=p*4;out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;}
-  }
-  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
-}
-
-function removeWhiteFromCanvasFast(ctx2,W,H,rect){
-  if(!rect)return;
-  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
-  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
-  const rw=x1-x0, rh=y1-y0;
-  if(rw<2||rh<2)return;
-
-  // Fast inpaint: detect white pixels once, then use only the four nearest
-  // non-white neighbours. This avoids the old long per-pixel searches.
-  const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data, threshold=+$('whiteThreshold').value||115;
-  const strength=(+$('removeOpacity').value||100)/100;
-  const N=rw*rh, mask=new Uint8Array(N);
-
-  for(let p=0,i=0;p<N;p++,i+=4){
-    const r=d[i],g=d[i+1],b=d[i+2];
-    const mx=r>g?(r>b?r:b):(g>b?g:b);
-    const mn=r<g?(r<b?r:b):(g<b?g:b);
-    if(mx>=threshold && (r+g+b)/3>=threshold && mx-mn<=115) mask[p]=1;
-  }
-
-  const out=new Uint8ClampedArray(d);
-  for(let y=0;y<rh;y++){
-    const row=y*rw;
-    for(let x=0;x<rw;x++){
-      const p=row+x;
-      if(!mask[p])continue;
-      let sr=0,sg=0,sb=0,n=0,j;
-      if(x>0 && !mask[p-1]){j=(p-1)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(x+1<rw && !mask[p+1]){j=(p+1)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(y>0 && !mask[p-rw]){j=(p-rw)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(y+1<rh && !mask[p+rw]){j=(p+rw)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(n){
-        j=p*4;
-        out[j]=d[j]*(1-strength)+(sr/n)*strength;
-        out[j+1]=d[j+1]*(1-strength)+(sg/n)*strength;
-        out[j+2]=d[j+2]*(1-strength)+(sb/n)*strength;
-      }
-    }
-  }
-  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
-}
-
-let fastGL=null;
-function initFastGL(){
-  if(fastGL && fastGL.c.width===outputW && fastGL.c.height===outputH)return fastGL;
-  fastGL=null;
-  const c=document.createElement('canvas');
-  c.width=outputW;c.height=outputH;
-  const gl=c.getContext('webgl',{premultipliedAlpha:false,antialias:false,preserveDrawingBuffer:false});
-  if(!gl)return null;
-  const vs=`attribute vec2 p; varying vec2 uv; void main(){uv=(p+1.0)*0.5; gl_Position=vec4(p,0.,1.);}`;
-  const fs=`precision mediump float; varying vec2 uv; uniform sampler2D tex; uniform vec4 rr; uniform float th; uniform float strength; uniform vec2 px;
-  bool white(vec3 c){float mx=max(c.r,max(c.g,c.b));float mn=min(c.r,min(c.g,c.b));float bright=(c.r+c.g+c.b)/3.0;return mx>=th && bright>=th && (mx-mn)<=0.45;}
-  void main(){
-    vec4 c=texture2D(tex,uv);
-    bool inside=uv.x>=rr.x&&uv.x<=rr.z&&uv.y>=rr.y&&uv.y<=rr.w;
-    if(inside && white(c.rgb)){
-      vec3 s=vec3(0.0);float n=0.0;
-      vec3 a=texture2D(tex,uv+vec2(-px.x,0.)).rgb;if(!white(a)){s+=a;n+=1.0;}
-      vec3 b=texture2D(tex,uv+vec2(px.x,0.)).rgb;if(!white(b)){s+=b;n+=1.0;}
-      vec3 d=texture2D(tex,uv+vec2(0.,-px.y)).rgb;if(!white(d)){s+=d;n+=1.0;}
-      vec3 e=texture2D(tex,uv+vec2(0.,px.y)).rgb;if(!white(e)){s+=e;n+=1.0;}
-      vec3 q=texture2D(tex,uv+vec2(-px.x,-px.y)).rgb;if(!white(q)){s+=q;n+=1.0;}
-      vec3 r=texture2D(tex,uv+vec2(px.x,-px.y)).rgb;if(!white(r)){s+=r;n+=1.0;}
-      vec3 t=texture2D(tex,uv+vec2(-px.x,px.y)).rgb;if(!white(t)){s+=t;n+=1.0;}
-      vec3 u=texture2D(tex,uv+vec2(px.x,px.y)).rgb;if(!white(u)){s+=u;n+=1.0;}
-      if(n>0.0)c.rgb=mix(c.rgb,s/n,strength);
-    }
-    gl_FragColor=c;
-  }`;
-  function sh(type,src){const shd=gl.createShader(type);gl.shaderSource(shd,src);gl.compileShader(shd);return shd}
-  const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);
-  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){return null}
-  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  const pos=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
-  fastGL={gl,c,pr,tex,rr:gl.getUniformLocation(pr,'rr'),th:gl.getUniformLocation(pr,'th'),strength:gl.getUniformLocation(pr,'strength'),px:gl.getUniformLocation(pr,'px')};
-  return fastGL;
-}
-function drawWhiteRemovalGPU(rect){
-  const g=initFastGL(); if(!g)return false;
-  const {gl,c,pr,tex}=g;
-  gl.viewport(0,0,outputW,outputH);gl.useProgram(pr);
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,work);
-  gl.uniform1f(g.th,(+$('whiteThreshold').value||115)/255);
-  gl.uniform1f(g.strength,(+$('removeOpacity').value||100)/100);
-  gl.uniform2f(g.px,1/outputW,1/outputH);
-  const x=rect.x/outputW, y=rect.y/outputH, w=rect.w/outputW, h=rect.h/outputH;
-  gl.uniform4f(g.rr,x,1-(y+h),x+w,1-y);
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-  wctx.clearRect(0,0,outputW,outputH);
-  wctx.drawImage(c,0,0,outputW,outputH);
-  return true;
-}
-
-function exportNeedsFrameProcessing(){
-  // Crop/trim are represented by sourceRect()/start-end below. Only run
-  // expensive per-pixel/overlay work when the user actually enabled it.
-  return !!whiteRect || (lat!=null && lon!=null);
-}
-
-function drawExportFrame(elapsedOverride){
-  const r=sourceRect();
-  wctx.clearRect(0,0,outputW,outputH);
-  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
-
-  // White-text removal is completely skipped when no white-text area was
-  // selected. This avoids getImageData/putImageData on every exported frame.
-  if(whiteRect){
-    const rectOnOutput={
-      x:whiteRect.x/r.w*outputW,
-      y:whiteRect.y/r.h*outputH,
-      w:whiteRect.w/r.w*outputW,
-      h:whiteRect.h/r.h*outputH
-    };
-    // Use the export-grade inpainting routine here. The ultra-fast 4-neighbour
-    // version can leave the middle of thick white letters untouched because
-    // those pixels have no immediate non-white neighbour.
-    removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
-  }
-
-  // GeoTag/map/logo are skipped entirely unless a location has actually
-  // been selected. This keeps plain crop/trim exports much lighter.
-  if(lat!=null&&lon!=null){
-    const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
-    drawGeoFrame(wctx,outputW,outputH,elapsed);
-  }
-}
-
-function seekVideo(target){
-  return new Promise(resolve=>{
-    const t=clamp(target,0,duration||target);
-    let done=false;
-    const finish=()=>{
-      if(done)return; done=true;
-      video.removeEventListener('seeked',onSeeked);
-      resolve();
-    };
-    const onSeeked=()=>{
-      requestAnimationFrame(()=>requestAnimationFrame(finish));
-    };
-    video.addEventListener('seeked',onSeeked,{once:true});
-    video.currentTime=t;
-    setTimeout(finish,2000);
-  });
-}
-
-async function pickVideoCodec(width,height,fps){
-  const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
-  // Hardware first: much faster on most modern Chrome/Windows systems.
-  for(const codec of candidates){
-    try{
-      const support=await VideoEncoder.isConfigSupported({
-        codec,width,height,bitrate:8_000_000,framerate:fps,
-        hardwareAcceleration:'prefer-hardware'
-      });
-      if(support&&support.supported)return {codec,hardwareAcceleration:'prefer-hardware'};
-    }catch(e){}
-  }
-  for(const codec of candidates){
-    try{
-      const support=await VideoEncoder.isConfigSupported({
-        codec,width,height,bitrate:8_000_000,framerate:fps,
-        hardwareAcceleration:'no-preference'
-      });
-      if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
-    }catch(e){}
-  }
-  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
-}
-
-async function exportVideoFrameAccurate(){
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=Math.max(0.05,end-start);
-  const fps=30;
-  const frameCount=Math.max(1,Math.ceil(length*fps));
-
-  prepareOutput();
-  video.pause();
-
-  // The map MUST be ready before the first exported frame.
-  if(lat!=null && lon!=null && !mapImg){
-    $('exportStatus').textContent='Preparing map…';
-    mapImg=await makeMap(lat,lon);
-  }
-  if(lat!=null && lon!=null && !mapImg){
-    throw new Error('Map could not be loaded. Check your internet connection and try again.');
-  }
-
-  const audioPromise=(async()=>{
-    try{
-      const arr=await file.arrayBuffer();
-      const actx=new (window.AudioContext||window.webkitAudioContext)();
-      return await actx.decodeAudioData(arr);
-    }catch(e){
-      console.warn('No usable audio track for export',e);
-      return null;
-    }
-  })();
-
-  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
-  const audioBuffer=await audioPromise;
-  const hasAudio=!!audioBuffer;
-  const muxer=new Mp4Muxer.Muxer({
-    target:new Mp4Muxer.ArrayBufferTarget(),
-    fastStart:'in-memory',
-    video:{codec:'avc',width:outputW,height:outputH},
-    audio:hasAudio?{
-      codec:'aac',
-      numberOfChannels:audioBuffer.numberOfChannels,
-      sampleRate:audioBuffer.sampleRate
-    }:undefined,
-  });
-
-  let encoderFailed=null;
-  let rejectEncoding=null;
-  let videoEncoder=null;
-  let restoreMute=video.muted;
-
-  try{
-    videoEncoder=new VideoEncoder({
-      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
-      error:e=>{
-        console.error('video encoder error',e);
-        encoderFailed=e;
-        if(rejectEncoding) rejectEncoding(e);
-      }
-    });
-
-    videoEncoder.configure({
-      codec,
-      width:outputW,
-      height:outputH,
-      bitrate:8_000_000,
-      framerate:fps,
-      hardwareAcceleration,
-      // Do not use latencyMode:'realtime' for an offline export.
-      // Offline encoding is allowed to drain the queue naturally.
-      firstTimestampBehavior:'offset'
-    });
-
-    const needsFrameProcessing=exportNeedsFrameProcessing();
-    $('exportStatus').textContent=needsFrameProcessing
-      ? 'Rendering selected changes… 0% (accelerated)'
-      : 'Rendering crop/trim only… 0% (accelerated)';
-    await seekVideo(start);
-
-    restoreMute=video.muted;
-    video.muted=true;
-    video.playbackRate=2.5; // decode faster; encoded timestamps still preserve normal output duration
-
-    const hasRVFC=typeof video.requestVideoFrameCallback==='function';
-    let frameIndex=0;
-    let firstFrameTimestamp=null;
-    let callbackId=null;
-    let rafId=0;
-
-    await new Promise((resolve,reject)=>{
-      rejectEncoding=reject;
-      let finished=false;
-
-      const cleanup=()=>{
-        if(callbackId!==null && video.cancelVideoFrameCallback){
-          try{video.cancelVideoFrameCallback(callbackId)}catch(e){}
         }
-        if(rafId)cancelAnimationFrame(rafId);
-        video.removeEventListener('ended',onEnded);
-      };
+    }
 
-      const finish=()=>{
-        if(finished)return;
-        finished=true;
-        cleanup();
-        try{video.pause()}catch(e){}
-        resolve();
-      };
+    await Promise.all(jobs);
 
-      const fail=(err)=>{
-        if(finished)return;
-        finished=true;
-        cleanup();
-        try{video.pause()}catch(e){}
-        reject(err);
-      };
+    /*
+      Keep the same center marker and attribution as Video.
+    */
+    cctx.fillStyle = "#e53935";
+    cctx.beginPath();
+    cctx.arc(size/2,size/2,10,0,Math.PI*2);
+    cctx.fill();
 
-      const onEnded=()=>finish();
+    cctx.strokeStyle = "#fff";
+    cctx.lineWidth = 4;
+    cctx.stroke();
 
-      const scheduleNext=()=>{
-        if(finished)return;
-        if(hasRVFC){
-          callbackId=video.requestVideoFrameCallback(onFrame);
+    cctx.fillStyle = "rgba(255,255,255,.85)";
+    cctx.fillRect(8,size-28,145,20);
+
+    cctx.fillStyle = "#333";
+    cctx.font = "12px Arial";
+    cctx.fillText(
+        "© OpenStreetMap contributors",
+        12,
+        size-14
+    );
+
+    return c;
+}
+
+async function drawMap(x,y,w,h,alpha){
+
+    if(!mapImg)
+        return;
+
+    gCtx.save();
+
+    gCtx.globalAlpha =
+        alpha === undefined ? 1 : alpha;
+
+    gCtx.beginPath();
+    gCtx.rect(x,y,w,h);
+    gCtx.clip();
+
+    /*
+      This is the exact same map image produced by the
+      Video GeoTag map engine, scaled into the photo map box.
+    */
+    gCtx.drawImage(
+        mapImg,
+        x,y,w,h
+    );
+
+    gCtx.restore();
+}
+
+/* =========================================================
+   CAMERA LOGO
+========================================================= */
+
+function geoClamp(n,a,b){
+    return Math.max(a,Math.min(b,n));
+}
+
+/* Same geometry as the Video GeoTag tool.
+   Used for drawing AND for mouse/touch hit-testing. */
+
+function geoLayout(W,H){
+
+    const stampH = geoClamp(
+        H*GEO.height/100,
+        Math.max(70,H*.10),
+        H*.90
+    );
+
+    const stampX = 0;
+    const stampY = Math.round(H-stampH);
+    const stampW = W;
+
+    const stampRadius = Math.max(18,Math.round(stampH*.14));
+    const stampPad    = Math.max(5,Math.round(stampH*.022));
+    const stampGap    = Math.max(12,Math.round(stampH*.045));
+
+    const mapX = geoClamp(W*GEO.mapX/100,0,Math.max(0,W-20));
+    const mapY = geoClamp(H*GEO.mapY/100,0,Math.max(0,H-20));
+    const mapW = geoClamp(W*GEO.mapWidth/100,20,W-mapX);
+    const mapH = geoClamp(H*GEO.mapHeight/100,20,H-mapY);
+
+    const logoSize = geoClamp(
+        stampH*.38*(GEO.logoSize/70),
+        40,
+        Math.min(110,stampH*.55)
+    );
+
+    const logoCX = geoClamp(
+        W*GEO.logoX/100,
+        stampX+stampW*.72+logoSize/2,
+        stampX+stampW-logoSize/2-stampPad
+    );
+
+    const logoCY = geoClamp(
+        stampY+stampH*(GEO.logoY/100),
+        stampY+logoSize/2+stampPad,
+        stampY+stampH-logoSize/2-stampPad
+    );
+
+    return {
+        W,H,
+        stampX,stampY,stampW,stampH,stampRadius,stampPad,stampGap,
+        mapX,mapY,mapW,mapH,
+        logoSize,logoCX,logoCY
+    };
+
+}
+
+function geoScale(){
+    const r = gCanvas.getBoundingClientRect();
+    return r.width ? gCanvas.width/r.width : 1;
+}
+
+function geoHandleSize(){
+    return Math.max(12,14*geoScale());
+}
+
+function geoRoundRectCorners(ctx,x,y,w,h,tl,tr,br,bl){
+    ctx.beginPath();
+    ctx.moveTo(x+tl,y);
+    ctx.lineTo(x+w-tr,y);
+    ctx.arcTo(x+w,y,x+w,y+tr,tr);
+    ctx.lineTo(x+w,y+h-br);
+    ctx.arcTo(x+w,y+h,x+w-br,y+h,br);
+    ctx.lineTo(x+bl,y+h);
+    ctx.arcTo(x,y+h,x,y+h-bl,bl);
+    ctx.lineTo(x,y+tl);
+    ctx.arcTo(x,y,x+tl,y,tl);
+    ctx.closePath();
+}
+
+function geoWrapText(ctx,text,max,font,maxLines){
+    ctx.font = font;
+    const words = String(text||"").trim().split(/\s+/);
+    const lines = [];
+    let line = "";
+    for(const word of words){
+        const test = line ? line+" "+word : word;
+        if(ctx.measureText(test).width>max && line){
+            lines.push(line);
+            line = word;
+            if(lines.length>=maxLines) break;
         }else{
-          rafId=requestAnimationFrame(()=>onFrame(performance.now(),null));
+            line = test;
         }
-      };
+    }
+    if(line && lines.length<maxLines) lines.push(line);
+    return lines;
+}
 
-      const onFrame=async(now,metadata)=>{
-        if(finished)return;
-        try{
-          const mediaTime=(metadata&&metadata.mediaTime!=null)
-            ?metadata.mediaTime
-            :video.currentTime;
+function geoClock(value){
+    if(!value) return "00:00:00";
+    const p = value.split(":").map(Number);
+    return [p[0]||0,p[1]||0,p[2]||0]
+        .map(n=>String(n).padStart(2,"0"))
+        .join(":");
+}
 
-          if(firstFrameTimestamp===null)firstFrameTimestamp=mediaTime;
-          const elapsed=Math.max(0,mediaTime-firstFrameTimestamp);
+/* Blue camera logo — identical to the Video tool (centre based). */
 
-          // Draw one final frame before finishing.
-          const clampedElapsed=Math.min(length,elapsed);
-          if(frameIndex>=frameCount || elapsed>=length-0.005){
-            drawExportFrame(length);
-            finish();
-            return;
-          }
+function geoDrawLogo(ctx,x,y,size){
 
-          drawExportFrame(clampedElapsed);
-          const timestamp=Math.max(0,Math.round((clampedElapsed)*1e6));
-          const vf=new VideoFrame(work,{timestamp});
-          videoEncoder.encode(vf,{keyFrame:frameIndex===0 || frameIndex%(fps*4)===0});
-          vf.close();
-          frameIndex++;
+    ctx.save();
+    ctx.translate(x,y);
 
-          // Apply backpressure without calling flush() during frame capture.
-          // flush() waits for the entire encoder queue and can make the render
-          // look frozen around 88–89%. Instead, briefly wait for the queue to
-          // drain below a safe level, with a hard timeout.
-          if(videoEncoder.encodeQueueSize>=96){
-            $('exportStatus').textContent='Encoding video… '+Math.min(99,Math.max(1,Math.round((clampedElapsed/length)*99)))+'%';
-            const queueWaitStart=performance.now();
-            while(videoEncoder.encodeQueueSize>=32 && !encoderFailed){
-              if(performance.now()-queueWaitStart>3000){
-                throw new Error('Video encoder is not draining. Switching to stable export.');
-              }
-              await new Promise(r=>setTimeout(r,10));
+    const r = Math.max(8,size*.18);
+
+    ctx.fillStyle = "#149bd3";
+    ctx.beginPath();
+    ctx.roundRect(-size/2,-size/2,size,size,r);
+    ctx.fill();
+
+    const bodyW = size*.68;
+    const bodyH = size*.40;
+    const bodyX = -bodyW/2;
+    const bodyY = -bodyH/2+size*.035;
+
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.roundRect(bodyX,bodyY,bodyW,bodyH,Math.max(3,size*.025));
+    ctx.fill();
+
+    const bumpW = size*.25;
+    const bumpH = size*.10;
+
+    ctx.beginPath();
+    ctx.roundRect(-bumpW*.42,bodyY-bumpH*.72,bumpW,bumpH,Math.max(2,size*.015));
+    ctx.fill();
+
+    ctx.fillStyle = "#149bd3";
+    ctx.beginPath();
+    ctx.arc(0,bodyY+bodyH/2,size*.145,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = Math.max(2,size*.035);
+    ctx.beginPath();
+    ctx.arc(0,bodyY+bodyH/2,size*.19,0,Math.PI*2);
+    ctx.stroke();
+
+    ctx.restore();
+
+}
+
+
+/* =========================================================
+   DRAW GEOTAG  (same layout as the Video GeoTag tool)
+========================================================= */
+
+async function drawGeo(){
+
+    if(!gCanvas.width || !gCanvas.height) return;
+    if(gLat === null || gLon === null) return;
+
+    const ctx = gCtx;
+    const W = gCanvas.width;
+    const H = gCanvas.height;
+    const L = geoLayout(W,H);
+    const mapOpacity = geoClamp(GEO.mapOpacity/100,0,1);
+
+    /* ---------------------------------------------------------
+       MAP ONLY — no grey stamp behind it.
+    --------------------------------------------------------- */
+    await drawMap(L.mapX,L.mapY,L.mapW,L.mapH,mapOpacity);
+
+    /* ---------------------------------------------------------
+       FOUR INDEPENDENT TEXT LINES.
+       They are drawn directly over the photo, like a real
+       geotag: no grey panel and no camera logo.
+    --------------------------------------------------------- */
+    const titleText = [
+        $("gPlace").value.trim(),
+        $("gState").value.trim(),
+        "India"
+    ].filter(Boolean).join(", ");
+
+    const address = $("gAddress").value.trim();
+    const coordText = `Lat ${gLat.toFixed(6)}°  Long ${gLon.toFixed(6)}°`;
+    const dateTime = `${formatDate($("gDate").value)} ${geoClock($("gTime").value)}`;
+
+    const titleSize = Math.max(14,H*.052*GEO.titleSize/100);
+    const detailSize = Math.max(10,H*.027*GEO.detailsSize/100);
+
+    const lines = [
+        {key:"title",  text:titleText,  x:GEO.titleX,  y:GEO.titleY,  size:titleSize,  weight:700},
+        {key:"address",text:address,    x:GEO.addressX,y:GEO.addressY,size:detailSize, weight:600},
+        {key:"coord",  text:coordText,  x:GEO.coordX,  y:GEO.coordY,  size:detailSize, weight:600},
+        {key:"date",   text:dateTime,   x:GEO.dateX,   y:GEO.dateY,   size:detailSize, weight:600}
+    ];
+
+    ctx.save();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.shadowColor = "rgba(0,0,0,.72)";
+    ctx.shadowBlur = Math.max(2,H*.006);
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
+
+    for(const line of lines){
+        if(!line.text) continue;
+        const x = geoClamp(W*line.x/100,0,W-10);
+        const y = geoClamp(H*line.y/100,line.size,H-3);
+        const maxW = Math.max(40,W-x-8);
+        const font = `bold ${line.size}px Arial, sans-serif`;
+        ctx.font = font;
+
+        /* Keep every requested line as one draggable line. If it is
+           too long, shrink only that line so it stays on the image. */
+        let actualSize = line.size;
+        while(ctx.measureText(line.text).width > maxW && actualSize > 8){
+            actualSize -= .5;
+            ctx.font = `${line.weight} ${actualSize}px Arial, sans-serif`;
+        }
+        ctx.fillText(line.text,x,y);
+    }
+    ctx.restore();
+
+    /* Preview-only handles. They are never included in saved PNG. */
+    if(GEO.showHandles){
+        const sc = geoScale();
+        const hs = geoHandleSize();
+        ctx.save();
+        ctx.setLineDash([6*sc,4*sc]);
+        ctx.strokeStyle = "rgba(255,255,255,.92)";
+        ctx.lineWidth = Math.max(1.5,2*sc);
+        ctx.strokeRect(L.mapX,L.mapY,L.mapW,L.mapH);
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255,255,255,.95)";
+        ctx.strokeStyle = "rgba(0,0,0,.6)";
+        ctx.lineWidth = Math.max(1,sc);
+        ctx.fillRect(L.mapX+L.mapW-hs,L.mapY+L.mapH-hs,hs,hs);
+        ctx.strokeRect(L.mapX+L.mapW-hs,L.mapY+L.mapH-hs,hs,hs);
+        ctx.restore();
+    }
+}
+
+
+/* =========================================================
+   GEO SLIDERS
+========================================================= */
+
+function connectSlider(
+    id,
+    property,
+    valueId
+){
+
+    $(id).addEventListener(
+        "input",
+        function(){
+
+            GEO[property] =
+                Number(this.value);
+
+            $(valueId).textContent =
+                this.value+"%";
+
+            redrawGeoFromSaved();
+
+        }
+    );
+
+}
+
+connectSlider("gMapOpacity","mapOpacity","gMapOpacityVal");
+connectSlider("gMapWidth","mapWidth","gMapWidthVal");
+connectSlider("gMapHeight","mapHeight","gMapHeightVal");
+connectSlider("gTitle","titleSize","gTitleVal");
+connectSlider("gDetails","detailsSize","gDetailsVal");
+
+
+/* =========================================================
+   LIVE GEO TEXT  (clean redraw every time)
+========================================================= */
+
+[
+    "gState",
+    "gPlace",
+    "gAddress",
+    "gDate",
+    "gTime"
+].forEach(
+    id=>{
+        $(id).addEventListener(
+            "input",
+            function(){
+                if(
+                    gLat !== null &&
+                    gLon !== null
+                ){
+                    redrawGeoFromSaved();
+                }
             }
-            if(encoderFailed)throw encoderFailed;
-          }
+        );
+    }
+);
 
-          const pct=Math.min(99,Math.max(1,Math.round((clampedElapsed/length)*99)));
-          $('exportStatus').textContent=(needsFrameProcessing?'Rendering selected changes… ':'Rendering crop/trim only… ')+pct+'%';
-          scheduleNext();
-        }catch(err){
-          fail(err);
-        }
-      };
 
-      video.addEventListener('ended',onEnded,{once:true});
-      scheduleNext();
-      video.play().catch(fail);
-    });
+/* =========================================================
+   FIND LOCATION
+========================================================= */
 
-    video.playbackRate=1;
-    video.muted=restoreMute;
+$("gFind").addEventListener(
+    "click",
+    findLocation
+);
 
-    if(encoderFailed)throw encoderFailed;
 
-    $('exportStatus').textContent='Finishing video encoding… 91%';
-    await Promise.race([
-      videoEncoder.flush(),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out after 5 seconds.')),5000))
-    ]);
+async function findLocation(){
 
-    videoEncoder.close();
-    videoEncoder=null;
-    rejectEncoding=null;
+    const state =
+        $("gState").value.trim();
 
-    if(hasAudio){
-      $('exportStatus').textContent='Encoding audio… 94%';
-      const sr=audioBuffer.sampleRate;
-      const ch=audioBuffer.numberOfChannels;
-      const s0=Math.floor(start*sr);
-      const s1=Math.min(audioBuffer.length,Math.floor(end*sr));
-      const audioEncoder=new AudioEncoder({
-        output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),
-        error:e=>console.error('audio encoder error',e)
-      });
-      audioEncoder.configure({
-        codec:'mp4a.40.2',
-        sampleRate:sr,
-        numberOfChannels:ch,
-        bitrate:128000
-      });
+    const place =
+        $("gPlace").value.trim();
 
-      const chunkSize=8192;
-      const totalSamples=Math.max(1,s1-s0);
-      for(let s=s0;s<s1;s+=chunkSize){
-        const n=Math.min(chunkSize,s1-s);
-        const interleaved=new Float32Array(n*ch);
-        for(let c=0;c<ch;c++){
-          const data=audioBuffer.getChannelData(c);
-          for(let k=0;k<n;k++)interleaved[k*ch+c]=data[s+k];
-        }
-        const audioData=new AudioData({
-          format:'f32',
-          sampleRate:sr,
-          numberOfFrames:n,
-          numberOfChannels:ch,
-          timestamp:Math.round((s-s0)/sr*1e6),
-          data:interleaved
-        });
-        audioEncoder.encode(audioData);
-        audioData.close();
-        const pct=94+Math.round(((s-s0)/totalSamples)*5);
-        $('exportStatus').textContent='Encoding audio… '+Math.min(98,pct)+'%';
-      }
+    const address =
+        $("gAddress").value.trim();
 
-      $('exportStatus').textContent='Finishing audio… 99%';
-      await Promise.race([
-        audioEncoder.flush(),
-        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out.')),15000))
-      ]);
-      audioEncoder.close();
+
+    if(!state){
+
+        $("gStatus").textContent =
+            "Select a state.";
+
+        return;
+
     }
 
-    $('exportStatus').textContent='Finalizing MP4…';
-    muxer.finalize();
-    exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
-    $('exportStatus').textContent='Video rendered — 100% complete. Download button is ready.';
-    $('downloadVideo').disabled=false;
-  }finally{
-    rejectEncoding=null;
-    video.muted=restoreMute;
-    video.playbackRate=1;
-    if(videoEncoder){
-      try{videoEncoder.close()}catch(e){}
+    if(!place){
+
+        $("gStatus").textContent =
+            "Enter a district, town or subdivision.";
+
+        return;
+
     }
-  }
-}
 
-async function exportVideoRealtimeFallback(){
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=end-start;
 
-  prepareOutput();
-  video.pause();
-  await seekVideo(start);
+    const btn =
+        $("gFind");
 
-  const canvasStream=work.captureStream(0);
-  const canvasVideoTrack=canvasStream.getVideoTracks()[0];
-  try{
-    const sourceStream=video.captureStream ? video.captureStream() :
-                       (video.mozCaptureStream ? video.mozCaptureStream() : null);
-    if(sourceStream) sourceStream.getAudioTracks().forEach(track=>canvasStream.addTrack(track));
-  }catch(e){console.warn('Audio capture unavailable',e)}
+    btn.disabled = true;
 
-  let mime='';
-  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){
-    if(MediaRecorder.isTypeSupported(m)){mime=m;break}
-  }
-  if(!mime){$('exportStatus').textContent='This browser cannot record video in a supported format.';return}
+    btn.textContent =
+        "📍 Finding…";
 
-  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:8000000,audioBitsPerSecond:128000});
-  const chunks=[];
-  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
+    $("gStatus").textContent =
+        "Searching OpenStreetMap…";
 
-  let stopped=false, frameCallbackId=null, rafId=0;
-  const stop=()=>{
-    if(stopped)return; stopped=true;
-    if(rafId)cancelAnimationFrame(rafId);
-    if(frameCallbackId!==null && video.cancelVideoFrameCallback){try{video.cancelVideoFrameCallback(frameCallbackId)}catch(e){}}
-    try{video.pause()}catch(e){}
-    try{rec.stop()}catch(e){}
-  };
 
-  $('exportStatus').textContent='Rendering video… 0%';
-  rec.start(250);
+    const queries = [
 
-  const renderFrame=()=>{
-    if(stopped)return;
-    const elapsed=Math.max(0,video.currentTime-start);
-    if(elapsed>=length-0.03){drawExportFrame();if(canvasVideoTrack.requestFrame)canvasVideoTrack.requestFrame();stop();return}
-    drawExportFrame();
-    if(canvasVideoTrack.requestFrame)canvasVideoTrack.requestFrame();
-    $('exportStatus').textContent='Rendering video… '+clamp(Math.round(elapsed/length*100),0,99)+'%';
-    if(video.requestVideoFrameCallback){
-      frameCallbackId=video.requestVideoFrameCallback(renderFrame);
-    }else{
-      rafId=requestAnimationFrame(renderFrame);
-    }
-  };
+        [
+            place,
+            state,
+            "India"
+        ].join(", "),
 
-  renderFrame();
-  await video.play();
+        [
+            address,
+            place,
+            state,
+            "India"
+        ]
+        .filter(Boolean)
+        .join(", ")
 
-  while(!stopped){
-    if(video.currentTime>=end-0.03){stop();break}
-    await new Promise(r=>setTimeout(r,50));
-  }
+    ];
 
-  exportBlob=await done;
-  $('exportStatus').textContent='Video rendered at normal speed ('+(mime.includes('mp4')?'MP4':'WebM')+'). Download button is ready.';
-  $('downloadVideo').disabled=false;
-}
 
-async function exportVideo(){
-  if(!file)return;
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=end-start;
-  prepareOutput();
-  video.pause();
-  await seekVideo(start);
-
-  const fps=Math.min(30,Math.max(24,video.getVideoPlaybackQuality?30:30));
-  const canvasStream=work.captureStream(fps);
-  const sourceStream=video.captureStream?video.captureStream():null;
-  if(sourceStream) sourceStream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
-  let mime='';
-  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
-  if(!mime)throw new Error('This Chrome cannot record video.');
-  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
-  const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
-  let stopped=false,frameId=null,raf=0;
-  const stop=()=>{if(stopped)return;stopped=true;if(frameId!==null&&video.cancelVideoFrameCallback)try{video.cancelVideoFrameCallback(frameId)}catch(e){}if(raf)cancelAnimationFrame(raf);try{video.pause()}catch(e){}try{rec.stop()}catch(e){}};
-  const render=(now,meta)=>{
-    if(stopped)return;
-    const t=meta&&meta.mediaTime!=null?meta.mediaTime:video.currentTime;
-    const elapsed=t-start;
-    if(elapsed>=length-0.02){drawExportFrame(length);stop();return}
-    drawExportFrame(elapsed);
-    if(Math.floor(elapsed*10)%5===0)$('exportStatus').textContent='Fast rendering… '+Math.min(99,Math.round(elapsed/length*100))+'%';
-    if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
-  };
-  $('exportStatus').textContent='Fast rendering… 0%';
-  rec.start(500);
-  video.muted=true;video.playbackRate=1;
-  if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
-  await video.play();
-  while(!stopped){if(video.currentTime>=end-0.02){stop();break}await new Promise(r=>setTimeout(r,30));}
-  exportBlob=await done;
-  video.muted=false;
-  $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
-  $('downloadVideo').disabled=false;
-}
-async function doExport(){
-  const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
-  if(hasWebCodecs){
     try{
-      await exportVideoFrameAccurate();
-      return;
+
+        let found = null;
+
+
+        for(
+            const query of queries
+        ){
+
+            const url =
+                "https://nominatim.openstreetmap.org/search?" +
+                new URLSearchParams({
+
+                    q:query,
+
+                    format:"jsonv2",
+
+                    addressdetails:"1",
+
+                    limit:"5",
+
+                    countrycodes:"in",
+
+                    "accept-language":"en"
+
+                });
+
+
+            try{
+
+                const response =
+                    await fetch(
+                        url,
+                        {
+                            headers:{
+                                "Accept":
+                                    "application/json"
+                            }
+                        }
+                    );
+
+
+                if(!response.ok)
+                    continue;
+
+
+                const results =
+                    await response.json();
+
+
+                if(
+                    !results ||
+                    !results.length
+                )
+                    continue;
+
+
+                found =
+                    results[0];
+
+
+                if(found)
+                    break;
+
+            }catch(err){
+
+                console.warn(
+                    err
+                );
+
+            }
+
+        }
+
+
+        if(!found)
+            throw new Error(
+                "Location not found."
+            );
+
+
+        const lat =
+            Number(found.lat);
+
+        const lon =
+            Number(found.lon);
+
+
+        if(
+            !Number.isFinite(lat) ||
+            !Number.isFinite(lon)
+        )
+            throw new Error(
+                "Invalid coordinates."
+            );
+
+
+        gLat = lat;
+        gLon = lon;
+
+        $("gCoords").textContent =
+            `Lat ${lat.toFixed(6)}° Long ${lon.toFixed(6)}°`;
+
+        $("gStatus").textContent =
+            "Location found. Loading map…";
+
+        mapImg = await makeMap(gLat,gLon);
+
+        $("gStatus").textContent =
+            "Location found successfully. Map loaded."; 
+
+        await redrawGeoFromSaved();
+
     }catch(err){
-      console.warn('Frame-accurate MP4 export failed, falling back to recorder export.',err);
+
+        console.error(err);
+
+        gLat = null;
+        gLon = null;
+        mapImg = null;
+
+        $("gCoords").textContent =
+            "—";
+
+        $("gStatus").textContent =
+            "Location not found. Try a town/district with the state and PIN code.";
+
+    }finally{
+
+        btn.disabled = false;
+
+        btn.textContent =
+            "📍 Find Location";
+
     }
-  }
-  await exportVideo();
-  if(exportBlob && exportBlob.type.includes('webm')){
-    const statusEl = ($('geoSection').style.display!=='none') ? $('geoStatus') : $('exportStatus');
-    const reason = (typeof window.isSecureContext!=='undefined' && !window.isSecureContext)
-      ? ' Reason: this page isn\'t served over HTTPS or localhost, so Chrome disables the MP4 encoder (WebCodecs) — deploy this file to a host like Vercel, or run it via a local server, to get real MP4 output.'
-      : ' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
-    statusEl.textContent += reason;
-  }
-}
-$('downloadVideo').onclick=async()=>{
- if(!file)return;
- $('downloadVideo').disabled=true;
- const prevStatus=$('exportStatus').textContent;
- try{
-   await doExport();
- }catch(err){
-   console.error(err);
-   $('exportStatus').textContent='Export failed: '+(err.message||err);
-   $('downloadVideo').disabled=false;
-   return;
- }
- if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
- const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
- const base=file.name.replace(/\.[^.]+$/,'');
- const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
- const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+tag+'.'+ext; a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
- $('downloadVideo').disabled=false;
-}
-$('goGeo').onclick=()=>{$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
-$('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview()}
-$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
-$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
-for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
- $(id).oninput=()=>{
-   state[id]=+$(id).value;
-   if(id==='gMapW') state.mapW=+$(id).value;
-   if(id==='mapH') state.mapH=+$(id).value;
-   $(id+'Val').textContent=$(id).value+'%';
-   drawGeoPreview();
- }
 }
-let mapDrag=null;
-function getMapRectOnPreview(){
- if(!geo.width||!geo.height)return null;
- const W=geo.width,H=geo.height;
- const mx=clamp(W*state.mapX/100,0,Math.max(0,W-20));
- const my=clamp(H*state.mapY/100,0,Math.max(0,H-20));
- const mw=clamp(W*state.mapW/100,20,W-mx);
- const mh=clamp(H*state.mapH/100,20,H-my);
- return {x:mx,y:my,w:mw,h:mh,W,H};
+
+
+/* =========================================================
+   SAVE CURRENT GEOTAG
+========================================================= */
+
+async function saveCurrentGeo(){
+
+    if(!geoImages.length)
+        return;
+
+    const item =
+        geoImages[geoIndex];
+
+    /*
+      The map frame / resize handle are preview-only,
+      so draw a clean copy before saving.
+    */
+
+    let blob;
+
+    GEO.showHandles = false;
+
+    try{
+
+        await redrawGeoFromSaved();
+
+        blob =
+            await canvasToBlob(
+                gCanvas,
+                "image/png"
+            );
+
+    }finally{
+
+        GEO.showHandles = true;
+
+        await redrawGeoFromSaved();
+
+    }
+
+    item.geoBlob =
+        blob;
+
+    const original =
+        item.originalName;
+
+    const dot =
+        original.lastIndexOf(".");
+
+    const base =
+        dot > 0
+            ? original.slice(0,dot)
+            : original;
+
+    item.geoName =
+        base + ".png";
+
 }
-function mapPointerPos(e){
- const r=geo.getBoundingClientRect();
- return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};
+
+
+/* =========================================================
+   GEO SAVE & NEXT
+========================================================= */
+
+$("gSaveNext").addEventListener(
+    "click",
+    async function(){
+
+        if(!geoImages.length)
+            return;
+
+
+        const btn =
+            $("gSaveNext");
+
+        btn.disabled = true;
+
+        btn.textContent =
+            "Saving…";
+
+
+        try{
+
+            await saveCurrentGeo();
+
+
+            if(
+                geoIndex <
+                geoImages.length-1
+            ){
+
+                geoIndex++;
+
+                /*
+                  Keep same location and visual
+                  settings, but give the next image
+                  its own date/time if desired.
+                */
+
+                await loadGeoImage();
+
+                $("gStatus").textContent =
+                    "Saved. Now edit the next image.";
+
+            }else{
+
+                $("gStatus").textContent =
+                    "All GeoTag images are complete.";
+
+            }
+
+        }catch(err){
+
+            console.error(err);
+
+            $("gStatus").textContent =
+                "Could not save this GeoTag image.";
+
+        }finally{
+
+            btn.disabled = false;
+
+            btn.textContent =
+                "💾 Save & Next";
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   GEO PREVIOUS
+========================================================= */
+
+$("gPrev").addEventListener(
+    "click",
+    async function(){
+
+        if(geoIndex <= 0)
+            return;
+
+        /*
+          Save current first.
+        */
+
+        await saveCurrentGeo();
+
+        geoIndex--;
+
+        await loadGeoImage();
+
+    }
+);
+
+
+/* =========================================================
+   BACK TO WHITE REMOVER
+========================================================= */
+
+$("gBack").addEventListener(
+    "click",
+    function(){
+
+        $("geoPage").style.display =
+            "none";
+
+        $("removePage").style.display =
+            "block";
+
+        $("stepOne").style.background =
+            "#1769e0";
+
+        $("stepOne").style.color =
+            "#fff";
+
+        $("stepTwo").style.background =
+            "#e5e7eb";
+
+        $("stepTwo").style.color =
+            "#555";
+
+    }
+);
+
+
+/* =========================================================
+   DOWNLOAD ALL ZIP
+========================================================= */
+
+$("gDownloadAll").addEventListener(
+    "click",
+    async function(){
+
+        /*
+          Save current image before making ZIP.
+        */
+
+        if(geoImages.length){
+
+            await saveCurrentGeo();
+
+        }
+
+
+        const completed =
+            geoImages.filter(
+                item =>
+                    item.geoBlob
+            );
+
+
+        if(!completed.length){
+
+            alert(
+                "No completed GeoTag images yet."
+            );
+
+            return;
+
+        }
+
+
+        if(
+            typeof JSZip ===
+            "undefined"
+        ){
+
+            alert(
+                "ZIP library could not load. Check your internet connection and reload the page."
+            );
+
+            return;
+
+        }
+
+
+        const btn =
+            $("gDownloadAll");
+
+        btn.disabled = true;
+
+        btn.textContent =
+            "Preparing ZIP…";
+
+
+        try{
+
+            const zip =
+                new JSZip();
+
+
+            /*
+              Preserve original names.
+              If two uploaded files have exactly
+              the same filename, JSZip gets a unique
+              name without overwriting.
+            */
+
+            const usedNames =
+                new Set();
+
+
+            for(
+                const item of completed
+            ){
+
+                let name =
+                    item.geoName ||
+                    item.outputName ||
+                    item.originalName;
+
+
+                let finalName =
+                    name;
+
+                let counter=2;
+
+
+                while(
+                    usedNames.has(
+                        finalName
+                    )
+                ){
+
+                    const dot =
+                        name.lastIndexOf(".");
+
+
+                    if(dot > 0){
+
+                        finalName =
+                            name.slice(0,dot) +
+                            ` (${counter})` +
+                            name.slice(dot);
+
+                    }else{
+
+                        finalName =
+                            name +
+                            ` (${counter})`;
+
+                    }
+
+                    counter++;
+
+                }
+
+
+                usedNames.add(
+                    finalName
+                );
+
+
+                zip.file(
+                    finalName,
+                    item.geoBlob
+                );
+
+            }
+
+
+            const zipBlob =
+                await zip.generateAsync(
+                    {
+                        type:"blob",
+                        compression:"DEFLATE",
+                        compressionOptions:{
+                            level:6
+                        }
+                    },
+                    metadata=>{
+
+                        const percent =
+                            Math.round(
+                                metadata.percent
+                            );
+
+                        btn.textContent =
+                            `ZIP ${percent}%`;
+
+                    }
+                );
+
+
+            const url =
+                URL.createObjectURL(
+                    zipBlob
+                );
+
+
+            const a =
+                document.createElement("a");
+
+            a.href = url;
+
+            a.download =
+                "GeoTagged_Images.zip";
+
+            document.body.appendChild(a);
+
+            a.click();
+
+            a.remove();
+
+
+            setTimeout(
+                ()=>{
+                    URL.revokeObjectURL(
+                        url
+                    );
+                },
+                3000
+            );
+
+
+            $("gStatus").textContent =
+                `${completed.length} image(s) downloaded in ZIP.`;
+
+        }catch(err){
+
+            console.error(err);
+
+            alert(
+                "Could not create the ZIP. Try again."
+            );
+
+        }finally{
+
+            btn.disabled = false;
+
+            btn.textContent =
+                "⬇ Download All ZIP";
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   REDRAW GEO FROM SAVED IMAGE  (clean base + overlay)
+========================================================= */
+
+const geoBaseCache = new WeakMap();
+let geoRedrawToken = 0;
+
+async function redrawGeoFromSaved(){
+
+    if(!geoImages.length)
+        return;
+
+    const token = ++geoRedrawToken;
+
+    const item =
+        geoImages[geoIndex];
+
+    try{
+
+        let image =
+            geoBaseCache.get(item.blob);
+
+        if(!image){
+
+            image =
+                await blobToImage(
+                    item.blob
+                );
+
+            geoBaseCache.set(
+                item.blob,
+                image
+            );
+
+        }
+
+        if(token !== geoRedrawToken)
+            return;
+
+        const scale =
+            Math.min(
+                1,
+                1800/image.naturalWidth
+            );
+
+        const W =
+            Math.max(
+                1,
+                Math.round(image.naturalWidth*scale)
+            );
+
+        const H =
+            Math.max(
+                1,
+                Math.round(image.naturalHeight*scale)
+            );
+
+        gCanvas.width = W;
+        gCanvas.height = H;
+
+        gCtx.setTransform(1,0,0,1,0,0);
+        gCtx.clearRect(0,0,W,H);
+        gCtx.drawImage(image,0,0,W,H);
+
+        await drawGeo();
+
+    }catch(err){
+
+        console.error(err);
+
+        $("gStatus").textContent =
+            "Could not display this saved image.";
+
+    }
+
 }
-geo.addEventListener('pointerdown',e=>{
- if(!mapImg||!geo.width)return;
- const r=getMapRectOnPreview(); if(!r)return;
- const p=mapPointerPos(e); const hs=Math.max(10,16*geo.width/Math.max(1,geo.getBoundingClientRect().width));
- const resize=Math.abs(p.x-(r.x+r.w))<=hs && Math.abs(p.y-(r.y+r.h))<=hs;
- if(resize || (p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h)){
-   e.preventDefault(); geo.setPointerCapture(e.pointerId);
-   mapDrag={mode:resize?'resize':'move',startX:p.x,startY:p.y,x:r.x,y:r.y,w:r.w,h:r.h,W:r.W,H:r.H};
- }
+
+
+/* =========================================================
+   DRAG ON THE PREVIEW
+   - drag the map to move it
+   - drag its bottom-right corner to resize it
+   - drag the blue logo to move it
+========================================================= */
+
+let geoDrag = null;
+
+function geoPoint(e){
+    const rect = gCanvas.getBoundingClientRect();
+    return {
+        x:(e.clientX-rect.left)*gCanvas.width/rect.width,
+        y:(e.clientY-rect.top)*gCanvas.height/rect.height
+    };
+}
+
+function geoTextLayout(W,H){
+    const titleSize = Math.max(14,H*.052*GEO.titleSize/100);
+    const detailSize = Math.max(10,H*.027*GEO.detailsSize/100);
+    return [
+        {mode:"title",  x:W*GEO.titleX/100,   y:H*GEO.titleY/100,   size:titleSize},
+        {mode:"address",x:W*GEO.addressX/100, y:H*GEO.addressY/100, size:detailSize},
+        {mode:"coord",  x:W*GEO.coordX/100,   y:H*GEO.coordY/100,   size:detailSize},
+        {mode:"date",   x:W*GEO.dateX/100,    y:H*GEO.dateY/100,    size:detailSize}
+    ];
+}
+
+function geoTextValue(mode){
+    if(mode==="title") return [$("gPlace").value.trim(),$("gState").value.trim(),"India"].filter(Boolean).join(", ");
+    if(mode==="address") return $("gAddress").value.trim();
+    if(mode==="coord") return gLat==null ? "" : `Lat ${gLat.toFixed(6)}°  Long ${gLon.toFixed(6)}°`;
+    return `${formatDate($("gDate").value)} ${geoClock($("gTime").value)}`;
+}
+
+function geoHit(p){
+    const L = geoLayout(gCanvas.width,gCanvas.height);
+    const hs = geoHandleSize();
+
+    /* Resize handle gets priority over text/map. */
+    if(
+        p.x >= L.mapX+L.mapW-hs*1.6 && p.x <= L.mapX+L.mapW+hs*.4 &&
+        p.y >= L.mapY+L.mapH-hs*1.6 && p.y <= L.mapY+L.mapH+hs*.4
+    ) return {mode:"resize",L};
+
+    /* Text lines are independently draggable. */
+    const texts = geoTextLayout(gCanvas.width,gCanvas.height);
+    for(let i=texts.length-1;i>=0;i--){
+        const t = texts[i];
+        const value = geoTextValue(t.mode);
+        if(!value) continue;
+        const font = `${t.mode==="title"?700:600} ${t.size}px Arial, sans-serif`;
+        gCtx.save();
+        gCtx.font = font;
+        const tw = Math.min(gCanvas.width-t.x,Math.max(40,gCtx.measureText(value).width));
+        gCtx.restore();
+        if(p.x>=t.x-10 && p.x<=t.x+tw+10 && p.y>=t.y-t.size-10 && p.y<=t.y+8)
+            return {mode:t.mode,L};
+    }
+
+    if(p.x>=L.mapX && p.x<=L.mapX+L.mapW && p.y>=L.mapY && p.y<=L.mapY+L.mapH)
+        return {mode:"move",L};
+
+    return null;
+}
+
+function geoSyncSlider(id,valueId,value){
+    $(id).value = Math.round(value);
+    $(valueId).textContent = Math.round(value)+"%";
+}
+
+gCanvas.addEventListener("pointerdown",function(e){
+    if(gLat === null || gLon === null) return;
+    const p = geoPoint(e);
+    const hit = geoHit(p);
+    if(!hit) return;
+    e.preventDefault();
+    gCanvas.setPointerCapture(e.pointerId);
+    geoDrag = {mode:hit.mode,startX:p.x,startY:p.y,L:hit.L};
 });
-geo.addEventListener('pointermove',e=>{
- if(!mapDrag)return;
- const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
- if(mapDrag.mode==='move'){
-   state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
-   state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
- }else{
-   state.mapW=clamp((mapDrag.w+dx)/mapDrag.W*100,5,100-state.mapX);
-   state.mapH=clamp((mapDrag.h+dy)/mapDrag.H*100,5,100-state.mapY);
-   $('gMapW').value=Math.round(state.mapW); $('gMapWVal').textContent=Math.round(state.mapW)+'%';
-   $('mapH').value=Math.round(state.mapH); $('mapHVal').textContent=Math.round(state.mapH)+'%';
- }
- drawGeoPreview();
+
+gCanvas.addEventListener("pointermove",function(e){
+    const p = geoPoint(e);
+
+    if(!geoDrag){
+        if(gLat === null || gLon === null){ gCanvas.style.cursor="default"; return; }
+        const hit = geoHit(p);
+        gCanvas.style.cursor = !hit ? "default" : hit.mode==="resize" ? "nwse-resize" : "grab";
+        return;
+    }
+
+    const W = gCanvas.width;
+    const H = gCanvas.height;
+    const L = geoDrag.L;
+
+    if(geoDrag.mode === "move"){
+        GEO.mapX = geoClamp((L.mapX+(p.x-geoDrag.startX))/W*100,0,100-GEO.mapWidth);
+        GEO.mapY = geoClamp((L.mapY+(p.y-geoDrag.startY))/H*100,0,100-GEO.mapHeight);
+    }else if(geoDrag.mode === "resize"){
+        GEO.mapWidth = geoClamp((L.mapW+(p.x-geoDrag.startX))/W*100,5,Math.min(90,100-GEO.mapX));
+        GEO.mapHeight = geoClamp((L.mapH+(p.y-geoDrag.startY))/H*100,5,Math.min(90,100-GEO.mapY));
+        geoSyncSlider("gMapWidth","gMapWidthVal",GEO.mapWidth);
+        geoSyncSlider("gMapHeight","gMapHeightVal",GEO.mapHeight);
+    }else{
+        const keyX = geoDrag.mode+"X";
+        const keyY = geoDrag.mode+"Y";
+        GEO[keyX] = geoClamp(p.x/W*100,0,100);
+        GEO[keyY] = geoClamp(p.y/H*100,0,100);
+    }
+
+    redrawGeoFromSaved();
 });
-function endMapDrag(){mapDrag=null;}
-geo.addEventListener('pointerup',endMapDrag); geo.addEventListener('pointercancel',endMapDrag); geo.addEventListener('pointerleave',()=>{if(mapDrag)endMapDrag();});
 
-function drawGeoPreview(){
- if(!video.videoWidth)return;
- const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
- gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
- if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
- if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
-}
-$('exportGeo').onclick=async()=>{
- if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}
- $('exportGeo').disabled=true;
- $('downloadGeo').disabled=true;
- $('geoStatus').textContent='Rendering GeoTagged Video…';
- try{
-   await doExport();
-   if(exportBlob){
-     $('downloadGeo').disabled=false;
-     $('geoStatus').textContent='GeoTagged video rendered successfully. Download button is ready.';
-   }else{
-     $('geoStatus').textContent='Could not render the GeoTagged video.';
-   }
- }catch(err){
-   console.error(err);
-   $('geoStatus').textContent='GeoTagged video export failed: '+(err.message||err);
- }finally{
-   $('exportGeo').disabled=false;
- }
-}
-$('downloadGeo').onclick=()=>{
- if(!exportBlob||!file)return;
- const a=document.createElement('a');
- const url=URL.createObjectURL(exportBlob);
- a.href=url;
- const base=file.name.replace(/\.[^.]+$/,'');
- const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+'_geotag.'+ext;
- document.body.appendChild(a);
- a.click();
- a.remove();
- setTimeout(()=>URL.revokeObjectURL(url),3000);
-};
+function geoEndDrag(){ geoDrag=null; }
+gCanvas.addEventListener("pointerup",geoEndDrag);
+gCanvas.addEventListener("pointercancel",geoEndDrag);
 
-video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
-setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
+
+/* =========================================================
+   INITIAL EDIT CANVAS
+========================================================= */
+
+editCanvas.width = 900;
+editCanvas.height = 550;
+
+editCtx.fillStyle =
+    "#222";
+
+editCtx.fillRect(
+    0,
+    0,
+    900,
+    550
+);
+
+editCtx.fillStyle =
+    "#888";
+
+editCtx.font =
+    "22px Arial";
+
+editCtx.textAlign =
+    "center";
+
+editCtx.fillText(
+    "Upload an image or folder",
+    450,
+    275
+);
+
+
+/* =========================================================
+   INITIAL GEO CANVAS
+========================================================= */
+
+gCanvas.width = 900;
+gCanvas.height = 550;
+
+gCtx.fillStyle =
+    "#17202a";
+
+gCtx.fillRect(
+    0,
+    0,
+    900,
+    550
+);
+
+gCtx.fillStyle =
+    "#81909d";
+
+gCtx.font =
+    "22px Arial";
+
+gCtx.textAlign =
+    "center";
+
+gCtx.fillText(
+    "Complete White Text Remover first",
+    450,
+    275
+);
+
 </script>
+
 </body>
 </html>

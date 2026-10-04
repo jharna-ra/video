@@ -160,7 +160,7 @@ input[type=range]{width:100%}
 <label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
 <label>White detection sensitivity <b id="whiteVal">185</b></label>
 <input id="whiteThreshold" type="range" min="90" max="245" value="185">
-<label>Removal strength <b id="removeOpacityVal">100%</b></label>
+<label>Removal strength (100% recommended) <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="70" max="100" value="100">
 <label>Edge expand / halo cleanup <b id="inpaintPassVal">9</b>px</label>
 <input id="inpaintPasses" type="range" min="2" max="28" value="9">
@@ -655,74 +655,139 @@ function scaledStatic(sm,w,h){
 // copies information inward from the real boundary. This removes the white
 // rectangle/flat patch look and keeps local gradients much better.
 function inpaintHole(d,w,h,hole,strength){
-  const N=w*h;let hn=0;for(let p=0;p<N;p++)if(hole[p])hn++;
-  if(!hn||hn===N)return;
+  // Patch/exemplar inpainting: reconstruct the hidden area from REAL nearby
+  // video patches.  No blur, averaging, sharpening or artificial grain is
+  // applied.  The only pixels written into the text area are copied from
+  // pixels that were already present in the original frame.
+  const N=w*h;
+  let remaining=0;
+  for(let p=0;p<N;p++)if(hole[p])remaining++;
+  if(!remaining||remaining===N)return;
 
-  const fill=new Float32Array(N*3);
-  for(let p=0;p<N;p++){const i=p*4;fill[p*3]=d[i];fill[p*3+1]=d[i+1];fill[p*3+2]=d[i+2];}
+  const patchR=Math.max(2,Math.min(5,Math.round((+$('inpaintPasses').value||9)/3)));
+  const searchR=Math.max(18,Math.min(65,Math.round(26+patchR*6)));
+  const originalHole=hole.slice();
+  const filled=hole.slice();
+  const dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
 
-  // Distance layers from known pixels into the hole.
-  const dist=new Int16Array(N);dist.fill(-1);
-  const q=new Int32Array(N);let head=0,tail=0;
-  for(let p=0;p<N;p++)if(!hole[p]){dist[p]=0;q[tail++]=p;}
-  while(head<tail){
-    const p=q[head++],nd=dist[p]+1,x=p%w,y=(p/w)|0;
-    if(x>0&&dist[p-1]<0){dist[p-1]=nd;q[tail++]=p-1;}
-    if(x<w-1&&dist[p+1]<0){dist[p+1]=nd;q[tail++]=p+1;}
-    if(y>0&&dist[p-w]<0){dist[p-w]=nd;q[tail++]=p-w;}
-    if(y<h-1&&dist[p+w]<0){dist[p+w]=nd;q[tail++]=p+w;}
+  function inside(x,y){return x>=0&&x<w&&y>=0&&y<h}
+  function patchFullyKnown(cx,cy){
+    for(let dy=-patchR;dy<=patchR;dy++)for(let dx=-patchR;dx<=patchR;dx++){
+      if(dx*dx+dy*dy>patchR*patchR)continue;
+      const x=cx+dx,y=cy+dy;
+      if(!inside(x,y)||filled[y*w+x])return false;
+    }
+    return true;
   }
-
-  const maxD=Math.max(1,Math.min(40,Math.max(...Array.from(dist))));
-  const maxIter=Math.max(8,Math.min(32,Math.round(10+(+$('inpaintPasses').value||9)*.8)));
-  for(let it=0;it<maxIter;it++){
-    const next=fill.slice();
-    for(let p=0;p<N;p++)if(hole[p]){
-      const x=p%w,y=(p/w)|0;let sr=0,sg=0,sb=0,sw=0;
-      const radius=it<4?2:1;
-      for(let yy=Math.max(0,y-radius);yy<=Math.min(h-1,y+radius);yy++)for(let xx=Math.max(0,x-radius);xx<=Math.min(w-1,x+radius);xx++){
-        if(xx===x&&yy===y)continue;
-        const n=yy*w+xx;
-        const dx=xx-x,dy=yy-y,dd=Math.sqrt(dx*dx+dy*dy);
-        const wgt=1/(1+dd);
-        sr+=fill[n*3]*wgt;sg+=fill[n*3+1]*wgt;sb+=fill[n*3+2]*wgt;sw+=wgt;
-      }
-      if(sw){
-        const a=1-(it/maxIter)*.25;
-        next[p*3]=fill[p*3]*(1-a)+(sr/sw)*a;
-        next[p*3+1]=fill[p*3+1]*(1-a)+(sg/sw)*a;
-        next[p*3+2]=fill[p*3+2]*(1-a)+(sb/sw)*a;
+  function patchScore(tx,ty,sx,sy){
+    let s=0,n=0;
+    for(let dy=-patchR;dy<=patchR;dy++)for(let dx=-patchR;dx<=patchR;dx++){
+      if(dx*dx+dy*dy>patchR*patchR)continue;
+      const ax=tx+dx,ay=ty+dy,bx=sx+dx,by=sy+dy;
+      if(!inside(ax,ay)||!inside(bx,by))return 1e30;
+      const ap=ay*w+ax;
+      // Only compare pixels whose original information is still visible.
+      if(!originalHole[ap]){
+        const ai=ap*4,bi=(by*w+bx)*4;
+        const dr=d[ai]-d[bi],dg=d[ai+1]-d[bi+1],db=d[ai+2]-d[bi+2];
+        const edge=(Math.abs(dx)+Math.abs(dy)<=2)?2.5:1;
+        s+=(dr*dr*.30+dg*dg*.59+db*db*.11)*edge;
+        n+=edge;
       }
     }
-    fill.set(next);
+    return n?s/n:1e30;
   }
 
-  // Boundary-colour correction: use a small ring around the hole to avoid
-  // a visible brightness seam.
-  let br=bg=bb=bc=0;
-  for(let p=0;p<N;p++)if(hole[p]){
-    const x=p%w,y=(p/w)|0;
-    const ns=[p-1,p+1,p-w,p+w];
-    for(const n of ns){
-      if(n<0||n>=N||hole[n])continue;
-      const i=n*4;br+=d[i];bg+=d[i+1];bb+=d[i+2];bc++;
+  function boundaryPixels(){
+    const list=[];
+    for(let y=patchR;y<h-patchR;y++)for(let x=patchR;x<w-patchR;x++){
+      const p=y*w+x;if(!filled[p])continue;
+      let hasHole=false;
+      for(const [dx,dy] of dirs){const xx=x+dx,yy=y+dy;if(inside(xx,yy)&&!filled[yy*w+xx]){hasHole=true;break;}}
+      if(hasHole)list.push(p);
     }
+    return list;
   }
-  if(bc){br/=bc;bg/=bc;bb/=bc;}
 
-  for(let p=0;p<N;p++)if(hole[p]){
-    const i=p*4,fade=Math.min(1,dist[p]/Math.max(1,maxD));
-    // Only a gentle global correction; local diffusion remains dominant.
-    const corr=(1-fade)*.18;
-    let r=fill[p*3]*(1-corr)+br*corr;
-    let g=fill[p*3+1]*(1-corr)+bg*corr;
-    let b=fill[p*3+2]*(1-corr)+bb*corr;
-    // Tiny texture from the original local neighbourhood prevents a flat fill.
-    const noise=(Math.random()-.5)*1.4;
-    r=clamp(r+noise,0,255);g=clamp(g+noise,0,255);b=clamp(b+noise,0,255);
-    d[i]=d[i]*(1-strength)+r*strength;
-    d[i+1]=d[i+1]*(1-strength)+g*strength;
-    d[i+2]=d[i+2]*(1-strength)+b*strength;
+  const maxRounds=Math.max(2,Math.min(10,Math.ceil((+$('inpaintPasses').value||9)*.75)));
+  for(let round=0;round<maxRounds && remaining>0;round++){
+    const boundary=boundaryPixels();
+    if(!boundary.length)break;
+
+    // Fill several best boundary patches per round. This keeps the texture
+    // coherent instead of making a pixel-by-pixel blur trail.
+    let writes=0;
+    const stride=Math.max(1,Math.floor(boundary.length/700));
+    for(let bi=0;bi<boundary.length;bi+=stride){
+      const tp=boundary[bi],tx=tp%w,ty=(tp/w)|0;
+      let bestX=-1,bestY=-1,best=1e30;
+
+      const candidates=[];
+      // Search the local area in a coarse grid first.
+      for(let sy=Math.max(patchR,ty-searchR);sy<=Math.min(h-patchR-1,ty+searchR);sy+=2){
+        for(let sx=Math.max(patchR,tx-searchR);sx<=Math.min(w-patchR-1,tx+searchR);sx+=2){
+          if(filled[sy*w+sx])continue;
+          if(patchFullyKnown(sx,sy))candidates.push([sx,sy]);
+        }
+      }
+      // Always test strong directional matches too.
+      const special=[[-searchR,0],[searchR,0],[0,-searchR],[0,searchR],
+        [-Math.round(searchR*.7),-Math.round(searchR*.7)],
+        [Math.round(searchR*.7),-Math.round(searchR*.7)],
+        [-Math.round(searchR*.7),Math.round(searchR*.7)],
+        [Math.round(searchR*.7),Math.round(searchR*.7)]];
+      for(const [dx,dy] of special){
+        const sx=tx+dx,sy=ty+dy;
+        if(inside(sx,sy)&&sx>=patchR&&sy>=patchR&&sx<w-patchR&&sy<h-patchR&&patchFullyKnown(sx,sy))candidates.push([sx,sy]);
+      }
+
+      // A cap prevents a large text box from freezing the browser.
+      const limit=Math.min(candidates.length,140);
+      for(let i=0;i<limit;i++){
+        const [sx,sy]=candidates[i],sc=patchScore(tx,ty,sx,sy);
+        if(sc<best){best=sc;bestX=sx;bestY=sy;}
+      }
+      if(bestX<0)continue;
+
+      // Copy the whole source patch, but ONLY into pixels still inside the
+      // original text mask. Real source texture is therefore preserved.
+      for(let dy=-patchR;dy<=patchR;dy++)for(let dx=-patchR;dx<=patchR;dx++){
+        if(dx*dx+dy*dy>patchR*patchR)continue;
+        const ax=tx+dx,ay=ty+dy,bx=bestX+dx,by=bestY+dy;
+        if(!inside(ax,ay)||!inside(bx,by))continue;
+        const ap=ay*w+ax;
+        if(!filled[ap]){
+          const ai=ap*4,bi2=(by*w+bx)*4;
+          d[ai]=d[bi2];d[ai+1]=d[bi2+1];d[ai+2]=d[bi2+2];
+          filled[ap]=1;remaining--;writes++;
+        }
+      }
+      if(remaining<=0)break;
+    }
+    if(!writes)break;
+  }
+
+  // Final deterministic nearest-original-pixel fill. This is only a safety
+  // net for very large masks; it still never creates blur or noise.
+  if(remaining){
+    const q=new Int32Array(N),dist=new Int32Array(N);dist.fill(-1);
+    let head=0,tail=0;
+    for(let p=0;p<N;p++)if(!originalHole[p]){dist[p]=0;q[tail++]=p;}
+    while(head<tail&&remaining){
+      const p=q[head++],x=p%w,y=(p/w)|0;
+      const ns=[p-1,p+1,p-w,p+w];
+      for(const n of ns){
+        if(n<0||n>=N||dist[n]>=0)continue;
+        const nx=n%w,ny=(n/w)|0;
+        if(Math.abs(nx-x)>1||Math.abs(ny-y)>1)continue;
+        dist[n]=dist[p]+1;q[tail++]=n;
+        if(originalHole[n]&&!filled[n]){
+          const ai=n*4,bi2=p*4;
+          d[ai]=d[bi2];d[ai+1]=d[bi2+1];d[ai+2]=d[bi2+2];
+          filled[n]=1;remaining--;
+        }
+      }
+    }
   }
 }
 
@@ -778,7 +843,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
     let c=0;
     if(any)for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;c++;}
     ctx2.putImageData(img,x0,y0);
-    setStatus('Strong mask: '+(c/rectArea*100).toFixed(2)+'% of selected box. Red = removed/reconstructed pixels.');
+    setStatus('Exemplar mask: '+(c/rectArea*100).toFixed(2)+'% of selected box. Red = removed/reconstructed pixels.');
     return;
   }
   if(!any)return;

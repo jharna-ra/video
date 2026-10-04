@@ -124,7 +124,7 @@ input[type=range]{width:100%}
 <aside class="card">
 <h2>Video</h2>
 <label>Choose MP4 / WebM / MOV</label>
-<input id="videoFile" type="file" accept="video/*">
+<input id="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska,video/*">
 
 <div class="queue"><span id="fileName">No video selected</span><span id="durationBadge">0.0 s</span></div>
 
@@ -290,6 +290,60 @@ input[type=range]{width:100%}
 </div>
 
 <video id="video" playsinline preload="auto" style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
+<script>
+/* Independent video-picker bootstrap.
+   It is intentionally separate from the editor script so a later editor error
+   cannot leave the picker stuck on "No video selected". */
+(function(){
+  const input=document.getElementById('videoFile');
+  const vid=document.getElementById('video');
+  const nameEl=document.getElementById('fileName');
+  const durEl=document.getElementById('durationBadge');
+  if(!input||!vid)return;
+  let pickerURL=null;
+  function report(msg){
+    const st=document.getElementById('editStatus');
+    if(st)st.textContent=msg;
+  }
+  function pick(){
+    const f=input.files&&input.files[0];
+    if(!f){
+      window.__selectedVideoFile=null;
+      if(nameEl)nameEl.textContent='No video selected';
+      if(durEl)durEl.textContent='0.0 s';
+      report('No video selected.');
+      return;
+    }
+    window.__selectedVideoFile=f;
+    if(pickerURL)URL.revokeObjectURL(pickerURL);
+    pickerURL=URL.createObjectURL(f);
+    if(nameEl)nameEl.textContent=f.name;
+    if(durEl)durEl.textContent='Loading…';
+    report('Selected: '+f.name+' — loading video…');
+    vid.pause();
+    vid.removeAttribute('src');
+    try{vid.load();}catch(e){}
+    vid.src=pickerURL;
+    try{vid.load();}catch(e){}
+    window.dispatchEvent(new CustomEvent('video-file-picked',{detail:{file:f}}));
+  }
+  input.addEventListener('change',pick);
+  input.addEventListener('input',pick);
+  vid.addEventListener('loadedmetadata',function(){
+    if(window.__selectedVideoFile && durEl){
+      durEl.textContent=(Number(vid.duration)||0).toFixed(1)+' s';
+      report('Video loaded: '+window.__selectedVideoFile.name);
+    }
+  });
+  vid.addEventListener('error',function(){
+    if(!window.__selectedVideoFile)return;
+    const c=vid.error&&vid.error.code;
+    report(c===4 ? 'Video selected, but this browser cannot decode this video format/codec.' : 'Video selected, but the browser could not read the video.');
+    if(durEl)durEl.textContent='Error';
+  });
+  window.__videoPickerReady=true;
+})();
+</script>
 <canvas id="workCanvas" style="display:none"></canvas>
 <canvas id="logoCanvas" width="200" height="120"></canvas>
 
@@ -979,7 +1033,7 @@ document.querySelectorAll('.quickTrim').forEach(btn=>btn.addEventListener('click
 }));
 $('videoFile').addEventListener('change',async(e)=>{
  const input=e.currentTarget;
- const selected=input.files&&input.files.length?input.files[0]:null;
+ const selected=(input.files&&input.files.length?input.files[0]:null)||window.__selectedVideoFile||null;
  if(!selected){
    file=null;
    $('fileName').textContent='No video selected';
@@ -1002,6 +1056,9 @@ $('videoFile').addEventListener('change',async(e)=>{
  staticMask=null; wrCache.clear();
  setStatus('Loading video preview…');
  console.log('Selected video:',file.name,file.type,file.size);
+});
+window.addEventListener('video-file-picked',e=>{
+  if(e&&e.detail&&e.detail.file) file=e.detail.file;
 });
 video.addEventListener('loadstart',()=>{
   if(file) setStatus('Loading '+file.name+'…');

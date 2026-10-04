@@ -158,16 +158,15 @@ input[type=range]{width:100%}
 <button id="clearWhite" class="secondary">Clear Selection</button>
 <label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
 <label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
-<label>White detection sensitivity <b id="whiteVal">185</b></label>
-<input id="whiteThreshold" type="range" min="90" max="245" value="185">
-<label>Removal strength (100% recommended) <b id="removeOpacityVal">100%</b></label>
-<input id="removeOpacity" type="range" min="70" max="100" value="100">
-<label>Edge expand / halo cleanup <b id="inpaintPassVal">9</b>px</label>
-<input id="inpaintPasses" type="range" min="2" max="28" value="9">
-<label>Max text stroke thickness <b id="textThickVal">12</b>px</label>
-<input id="textThick" type="range" min="2" max="50" value="12">
-<label class="checkLine"><input id="aggressiveWhite" type="checkbox" checked> Aggressive white-text removal</label>
-<div class="small">Draw a box around the text. Aggressive mode removes the bright core, anti-aliased grey edges, glow and compression remnants, then reconstructs the area from surrounding pixels. Keep the box tight around the text so nearby white objects are not removed.</div>
+<label>White detection sensitivity <b id="whiteVal">170</b></label>
+<input id="whiteThreshold" type="range" min="80" max="245" value="170">
+<label>Removal strength <b id="removeOpacityVal">100%</b></label>
+<input id="removeOpacity" type="range" min="50" max="100" value="100">
+<label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
+<input id="inpaintPasses" type="range" min="1" max="14" value="5">
+<label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
+<input id="textThick" type="range" min="2" max="30" value="9">
+<div class="small">Draw the box around the text. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see exactly which pixels will be removed: if red covers the text, you are set; if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
 <div class="section">
@@ -350,6 +349,9 @@ function drawBase(ctx2,W,H){
 //  3) fill with a smooth push-pull inpaint of the REAL surrounding pixels
 //  4) add grain matched to the surrounding video so it is not a flat patch
 // =====================================================================
+const wrCache=new Map();
+let staticMask=null, staticBuilding=null, staticTimer=null;
+
 function wrKey(){
   const w=whiteRect; if(!w)return '';
   return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('textThick').value,$('trimStart').value,$('trimEnd').value,duration].join('|');
@@ -416,197 +418,40 @@ function sepFilter(src,w,h,r,useMax){
 // Finds white / light-grey TEXT pixels using a white top-hat: only bright structures that are
 // THINNER than a letter stroke survive. Big bright areas (tiles, white clothes, sky) and their
 // edges are part of the grey-scale opening and are therefore never touched.
-// =====================================================================
-// STRONG WHITE-TEXT REMOVAL
-// The selected rectangle is the ONLY region that can be modified.
-// We build a much stronger mask than the old top-hat-only detector:
-//   - bright neutral pixels (white/grey text)
-//   - local bright-vs-neighbour contrast
-//   - top-hat response for thin lettering
-//   - anti-aliased halo expansion
-//   - connected-component cleanup
-// Then we inpaint the complete mask with multi-pass neighbour diffusion.
-// =====================================================================
-const wrCache=new Map();
-let staticMask=null, staticBuilding=null, staticTimer=null;
-
-function wrKey(){
-  const w=whiteRect; if(!w)return '';
-  return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('textThick').value,$('inpaintPasses').value,$('aggressiveWhite')?.checked,$('trimStart').value,$('trimEnd').value,duration].join('|');
-}
-function invalidateWR(){
-  staticMask=null; wrCache.clear();
-  scheduleStaticMask(true);
-}
-function scheduleStaticMask(force){
-  if(force){clearTimeout(staticTimer);staticTimer=null;}
-  if(staticTimer||!whiteRect||!duration||exporting)return;
-  staticTimer=setTimeout(async()=>{
-    staticTimer=null;
-    if(exporting||!whiteRect||!duration)return;
-    if(staticMask&&staticMask.key===wrKey())return;
-    try{
-      video.pause();
-      setStatus('Analysing the selected text area…');
-      await buildStaticMask();
-      setStatus('Text area analysed — strong removal is ready.');
-    }catch(e){console.warn('text analysis failed',e)}
-    drawPreview();drawGeoPreview();
-  },force?250:450);
-}
-
-function dilateMask(m,w,h,g){
-  g=Math.max(0,Math.round(g));
-  if(!g)return m.slice();
-  const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
-  const pre=new Int32Array(Math.max(w,h)+1);
-  for(let y=0;y<h;y++){
-    pre[0]=0;for(let x=0;x<w;x++)pre[x+1]=pre[x]+m[y*w+x];
-    for(let x=0;x<w;x++){const a=Math.max(0,x-g),b=Math.min(w,x+g+1);tmp[y*w+x]=(pre[b]-pre[a])>0?1:0;}
-  }
-  for(let x=0;x<w;x++){
-    pre[0]=0;for(let y=0;y<h;y++)pre[y+1]=pre[y]+tmp[y*w+x];
-    for(let y=0;y<h;y++){const a=Math.max(0,y-g),b=Math.min(h,y+g+1);out[y*w+x]=(pre[b]-pre[a])>0?1:0;}
-  }
-  return out;
-}
-
-function erodeMask(m,w,h,g){
-  g=Math.max(0,Math.round(g));
-  if(!g)return m.slice();
-  const out=new Uint8Array(w*h);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    let ok=1;
-    for(let yy=Math.max(0,y-g);yy<=Math.min(h-1,y+g)&&ok;yy++)
-      for(let xx=Math.max(0,x-g);xx<=Math.min(w-1,x+g);xx++)if(!m[yy*w+xx]){ok=0;break;}
-    out[y*w+x]=ok;
-  }
-  return out;
-}
-
-// Min / max filter with a square window.
-function slidePass(src,dst,n,stride,lines,lineStep,r,useMax,dq){
-  for(let l=0;l<lines;l++){
-    const base=l*lineStep;let head=0,tail=0,nxt=0;
-    for(let i=0;i<n;i++){
-      const hi=Math.min(n-1,i+r);
-      while(nxt<=hi){
-        const v=src[base+nxt*stride];
-        if(useMax){while(tail>head&&src[base+dq[tail-1]*stride]<=v)tail--;}
-        else{while(tail>head&&src[base+dq[tail-1]*stride]>=v)tail--;}
-        dq[tail++]=nxt;nxt++;
-      }
-      while(dq[head]<i-r)head++;
-      dst[base+i*stride]=src[base+dq[head]*stride];
-    }
-  }
-}
-function sepFilter(src,w,h,r,useMax){
-  const tmp=new Float32Array(w*h),out=new Float32Array(w*h),dq=new Int32Array(Math.max(w,h)+1);
-  slidePass(src,tmp,w,1,h,w,r,useMax,dq);
-  slidePass(tmp,out,h,w,w,1,r,useMax,dq);
-  return out;
-}
-
-function localLuma(d,w,h,p){
-  const i=p*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-}
-
-// Stronger detector. The selection box is the safety boundary, so it is
-// deliberately more aggressive than the old detector.
 function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
   const N=w*h,lum=new Float32Array(N);
-  for(let p=0;p<N;p++)lum[p]=localLuma(d,w,h,p);
-  const radius=Math.max(1,Math.min(24,Math.round((thk||12)/2)));
-  const opened=sepFilter(sepFilter(lum,w,h,radius,false),w,h,radius,true);
-  const mask=new Uint8Array(N), weak=new Uint8Array(N);
-  let any=false;
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const r=Math.max(1,Math.floor((thk||8)/2));
+  const opened=sepFilter(sepFilter(lum,w,h,r,false),w,h,r,true);
+  const mask=new Uint8Array(N),weak=new Uint8Array(N);let any=false,strongN=0;
   x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);
-  const aggressive=$('aggressiveWhite')?.checked!==false;
-
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
     const p=y*w+x,i=p*4,L=lum[p];
+    if(L<t-90)continue;
     const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    const sat=mx-mn;
-    if(L<t-55)continue;
-
-    // Bright neutral/near-neutral pixels are strong candidates for white text.
-    const neutral=sat <= (aggressive?105:75);
-    const topHat=L-opened[p];
-
-    let nb=0,nc=0;
-    for(let yy=Math.max(y-2,0);yy<=Math.min(y+2,h-1);yy++){
-      for(let xx=Math.max(x-2,0);xx<=Math.min(x+2,w-1);xx++){
-        if(xx===x&&yy===y)continue;
-        nb+=lum[yy*w+xx];nc++;
-      }
-    }
-    const localAvg=nc?nb/nc:L;
-    const contrast=L-localAvg;
-
-    const core=(neutral&&L>=t&&topHat>=(aggressive?12:22));
-    const contrastCore=(neutral&&L>=t-12&&contrast>=(aggressive?14:24));
-    const soft=(neutral&&L>=t-28&&(topHat>=6||contrast>=8));
-
-    if(core||contrastCore){mask[p]=1;any=true;}
-    else if(soft)weak[p]=1;
+    if(mx-mn>85)continue;
+    const th=L-opened[p];
+    if(mx-mn<=70&&L>=t&&th>=25){mask[p]=1;any=true;strongN++;}
+    else if(th>=6)weak[p]=1;
   }
   if(!any)return null;
-
-  // Pull in anti-aliased edges and compression halos only when they touch
-  // a confirmed text pixel. This avoids deleting unrelated white objects.
-  const near=dilateMask(mask,w,h,Math.max(2,Math.min(4,Math.ceil((thk||12)/5))));
+  // Hunt for the faint outline / glow / compression halo, but ONLY close to real text strokes
+  const env=Math.max(3,Math.round(r*1.5));
+  const near=dilateMask(mask,w,h,env);
   for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
-
-  // A second tiny expansion catches white glyph outlines/halos.
-  return dilateMask(mask,w,h,aggressive?1:0);
+  mask.strongFrac=strongN/Math.max(1,(x1-x0)*(y1-y0));
+  return mask;
 }
 
-// Remove isolated specks while preserving connected text strokes.
-function cleanTextMask(mask,w,h){
-  const N=w*h,out=mask.slice();
-  const seen=new Uint8Array(N),stack=new Int32Array(Math.max(256,N>1000000?1000000:N));
-  const minKeep=3;
-  for(let p=0;p<N;p++){
-    if(!mask[p]||seen[p])continue;
-    let head=0,tail=0,count=0;stack[tail++]=p;seen[p]=1;
-    while(head<tail){
-      const q=stack[head++];count++;
-      const x=q%w,y=(q/w)|0;
-      const ns=[q-1,q+1,q-w,q+w];
-      for(const n of ns){
-        if(n<0||n>=N||seen[n])continue;
-        const nx=n%w;
-        if((n===q-1&&x===0)||(n===q+1&&x===w-1)||!mask[n])continue;
-        seen[n]=1;
-        if(tail<stack.length)stack[tail++]=n;
-      }
-    }
-    if(count<minKeep){
-      head=0;stack[head++]=p;
-      const local=[]; // tiny components are rare; clear by a second scan below
-      for(let q=0;q<N;q++)if(seen[q]&&mask[q]){ /* intentionally no-op */ }
-    }
-  }
-  return out;
-}
-
+// Scans frames across the trim range; pixels that are bright in most frames = static text.
 async function buildStaticMask(){
   while(staticBuilding){try{await staticBuilding}catch(e){}}
   if(!whiteRect||!duration)return null;
   const key=wrKey();
   if(staticMask&&staticMask.key===key)return staticMask;
-
-  // If the user says the text changes while playing, do NOT freeze a static
-  // mask into every frame. Dynamic detection is then used frame-by-frame.
-  if($('textChanges')?.checked){
-    staticMask={key,canvas:null,any:false,sc:{},dynamic:true};
-    return staticMask;
-  }
-
   const job=(async()=>{
     const wr={...whiteRect},r={...sourceRect()};
-    const t=+$('whiteThreshold').value||185;
+    const t=+$('whiteThreshold').value||115;
     const s0=clamp(+$('trimStart').value||0,0,duration);
     const e0=clamp(+$('trimEnd').value||duration,s0+.05,duration);
     const rw=Math.max(2,Math.round(wr.w)),rh=Math.max(2,Math.round(wr.h));
@@ -614,26 +459,28 @@ async function buildStaticMask(){
     const aw=Math.max(2,Math.round(rw*sc)),ah=Math.max(2,Math.round(rh*sc));
     const cv=document.createElement('canvas');cv.width=aw;cv.height=ah;
     const cx=cv.getContext('2d',{willReadFrequently:true});
-    const n=Math.min(18,Math.max(10,Math.ceil((e0-s0)/1.15)));
+    const n=Math.min(14,Math.max(8,Math.ceil((e0-s0)/1.5)));
     const count=new Uint16Array(aw*ah);
-    const saved=video.currentTime;video.pause();
+    const mr=Math.max(7,Math.round(r.w*sc/60));
+    const saved=video.currentTime;
+    video.pause();
     for(let i=0;i<n;i++){
       await seekVideo(s0+(e0-s0)*(i+.5)/n);
       cx.drawImage(video,r.x+wr.x,r.y+wr.y,wr.w,wr.h,0,0,aw,ah);
       const id=cx.getImageData(0,0,aw,ah);
-      const thk=Math.max(3,Math.round((+$('textThick').value||12)*(r.w*sc)/1080));
-      const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,Math.max(7,Math.round(r.w*sc/60)),thk);
+      const thk=Math.max(3,Math.round((+$('textThick').value||9)*(r.w*sc)/1080));
+      const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,mr,thk);
       if(m)for(let p=0;p<m.length;p++)if(m[p])count[p]++;
     }
     await seekVideo(saved);
-    const need=Math.max(2,Math.ceil(n*.35));
+    const need=Math.max(2,Math.ceil(n*.5));
     const out=document.createElement('canvas');out.width=aw;out.height=ah;
     const ox=out.getContext('2d'),oi=ox.createImageData(aw,ah);let any=false;
     for(let p=0;p<count.length;p++)if(count[p]>=need){
       const i=p*4;oi.data[i]=oi.data[i+1]=oi.data[i+2]=255;oi.data[i+3]=255;any=true;
     }
     ox.putImageData(oi,0,0);
-    staticMask={key,canvas:out,any,sc:{},dynamic:false};
+    staticMask={key,canvas:out,any,sc:{}};
   })();
   staticBuilding=job;
   try{await job}finally{staticBuilding=null}
@@ -641,7 +488,6 @@ async function buildStaticMask(){
 }
 
 function scaledStatic(sm,w,h){
-  if(!sm?.canvas)return null;
   const k=w+'x'+h;if(sm.sc[k])return sm.sc[k];
   const c=document.createElement('canvas');c.width=w;c.height=h;
   const cx=c.getContext('2d',{willReadFrequently:true});
@@ -651,307 +497,177 @@ function scaledStatic(sm,w,h){
   sm.sc[k]=m;return m;
 }
 
-// Multi-pass diffusion inpainting. Unlike the old broad blur, each pass
-// copies information inward from the real boundary. This removes the white
-// rectangle/flat patch look and keeps local gradients much better.
+// Push-pull inpaint: smooth fill from the real surrounding pixels, then a few
+// relaxation passes so the edge of the fill matches its neighbours exactly,
+// then grain matched to the surrounding video so it does not look like a flat patch.
 function inpaintHole(d,w,h,hole,strength){
-  // =====================================================================
-  // TRUE EXEMPLAR / NEIGHBOUR-PIXEL INPAINTING
-  // =====================================================================
-  // Do NOT blur the text area. Do NOT average the whole hole. Do NOT add
-  // synthetic grain. Instead, progressively cover the detected text with
-  // small patches copied from real, visible neighbouring pixels.
-  //
-  // The important difference from the previous version is that a destination
-  // pixel is selected from a COMPLETE source PATCH which matches the visible
-  // pixels around that destination. This preserves floor/tile edges, fabric,
-  // walls and other local texture much better than one-pixel diffusion.
-  // =====================================================================
   const N=w*h;
-  let remaining=0;
-  for(let p=0;p<N;p++)if(hole[p])remaining++;
-  if(!remaining||remaining===N)return;
+  let hn=0;for(let p=0;p<N;p++)if(hole[p])hn++;
+  if(!hn||hn===N)return;
 
-  const original=hole.slice();
-  const known=new Uint8Array(N);
-  for(let p=0;p<N;p++)known[p]=original[p]?0:1;
-
-  const strengthN=clamp(strength==null?1:strength,0,1);
-  const aggressive=$('aggressiveWhite')?.checked!==false;
-  const userPasses=Math.max(3,+$('inpaintPasses').value||9);
-
-  // Patch radius is deliberately small enough to preserve detail but large
-  // enough to recognise the texture surrounding a character.
-  const patchR=aggressive?3:2;                 // 7x7 or 5x5 comparison patch
-  const patchD=patchR*2+1;
-  const patchArea=patchD*patchD;
-  const searchR=Math.max(18,Math.min(64,Math.round(8+userPasses*4)));
-  const maxCandidates=aggressive?80:45;
-  const dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
-
-  function inside(x,y){return x>=0&&y>=0&&x<w&&y<h;}
-  function idx(x,y){return y*w+x;}
-  function isKnown(x,y){return inside(x,y)&&known[idx(x,y)]!==0;}
-
-  // Find the visible boundary of the remaining hole. Processing the outside
-  // first gives every new pixel a real neighbourhood before it is used as a
-  // reference for deeper pixels.
-  function boundaryPixels(){
-    const out=[];
-    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-      const p=idx(x,y);
-      if(!original[p]||known[p])continue;
-      let b=false;
-      for(const [dx,dy] of dirs){
-        if(isKnown(x+dx,y+dy)){b=true;break;}
-      }
-      if(b)out.push(p);
-    }
-    return out;
-  }
-
-  // A source patch must be completely outside the original text mask. This
-  // is critical: we never copy another white/text pixel into the repair.
-  function patchIsUsable(sx,sy){
-    if(sx-patchR<0||sy-patchR<0||sx+patchR>=w||sy+patchR>=h)return false;
-    for(let yy=sy-patchR;yy<=sy+patchR;yy++){
-      for(let xx=sx-patchR;xx<=sx+patchR;xx++){
-        if(original[idx(xx,yy)])return false;
-      }
-    }
-    return true;
-  }
-
-  // Compare ONLY pixels that are currently known around the target. The
-  // candidate itself is never blended with the target: after selection the
-  // actual RGB values are copied directly from the source patch.
-  function patchScore(tx,ty,sx,sy){
-    let score=0,weight=0,seen=0;
-    for(let dy=-patchR;dy<=patchR;dy++){
-      for(let dx=-patchR;dx<=patchR;dx++){
-        if(dx*dx+dy*dy>patchR*patchR)continue;
-        const ax=tx+dx,ay=ty+dy,bx=sx+dx,by=sy+dy;
-        if(!inside(ax,ay)||!inside(bx,by))continue;
-        const ap=idx(ax,ay),bp=idx(bx,by);
-        if(!known[ap]||original[ap])continue;
-        // Candidate patch is guaranteed to be outside original hole.
-        const ai=ap*4,bi=bp*4;
-        const dr=d[ai]-d[bi], dg=d[ai+1]-d[bi+1], db=d[ai+2]-d[bi+2];
-        // Strongly favour luminance/edge continuity, then colour.
-        const dl=dr*.299+dg*.587+db*.114;
-        const edge=(Math.abs(dx)+Math.abs(dy)<=1)?2.5:1;
-        score+=(dl*dl*.60+(dr*dr+dg*dg+db*db)*.40)*edge;
-        weight+=edge;seen++;
-      }
-    }
-    if(!seen)return 1e30;
-    return score/weight;
-  }
-
-  // Build candidate source locations in rings around the destination. We
-  // prefer the same direction/offset because it naturally extends straight
-  // tile seams, floor lines and wall boundaries through the text.
-  function candidatesFor(tx,ty){
-    const a=[];
-    const seen=new Set();
-    const add=(sx,sy,bonus)=>{
-      if(!inside(sx,sy)||!patchIsUsable(sx,sy))return;
-      const p=idx(sx,sy);if(seen.has(p))return;
-      seen.add(p);a.push([sx,sy,bonus]);
-    };
-
-    // First: mirrored / translated positions immediately outside the hole.
-    for(let dist=2;dist<=searchR&&a.length<maxCandidates;dist++){
-      add(tx-dist,ty,0);
-      add(tx+dist,ty,0);
-      add(tx,ty-dist,0);
-      add(tx,ty+dist,0);
-      if(dist%2===0){
-        add(tx-dist,ty-dist,1.5);
-        add(tx+dist,ty-dist,1.5);
-        add(tx-dist,ty+dist,1.5);
-        add(tx+dist,ty+dist,1.5);
-      }
-    }
-
-    // Second: a sparse local ring. This catches texture when the nearest
-    // straight line happens to cross another object.
-    for(let dy=-searchR;dy<=searchR&&a.length<maxCandidates;dy+=2){
-      for(let dx=-searchR;dx<=searchR&&a.length<maxCandidates;dx+=2){
-        const dist=Math.hypot(dx,dy);
-        if(dist<5||dist>searchR)continue;
-        add(tx+dx,ty+dy,dist*.08);
-      }
-    }
-    return a;
-  }
-
-  // Copy the COMPLETE source patch into the target patch only for destination
-  // pixels that are still inside the hole. This is the key visual improvement:
-  // texture is copied, not blurred into the hole.
-  function copyPatch(tx,ty,sx,sy){
-    const copies=[];
-    for(let dy=-patchR;dy<=patchR;dy++){
-      for(let dx=-patchR;dx<=patchR;dx++){
-        const ax=tx+dx,ay=ty+dy;
-        if(!inside(ax,ay))continue;
-        const ap=idx(ax,ay);
-        if(!original[ap]||known[ap])continue;
-        const bx=sx+dx,by=sy+dy;
-        if(!inside(bx,by)||original[idx(bx,by)])continue;
-        copies.push([ap,idx(bx,by)]);
-      }
-    }
-    for(const [ap,bp] of copies){
-      const ai=ap*4,bi=bp*4;
-      // Exact byte-for-byte RGB copy from the real neighbouring frame.
-      d[ai]=d[bi]; d[ai+1]=d[bi+1]; d[ai+2]=d[bi+2];
-      known[ap]=1; remaining--;
+  // ---- push: level 1 is built straight from the known pixels
+  const levels=[null];
+  let cw=(w+1)>>1,ch=(h+1)>>1,val=new Float32Array(cw*ch*3),wt=new Float32Array(cw*ch);
+  for(let y=0;y<h;y++){
+    const qy=(y>>1)*cw;
+    for(let x=0;x<w;x++){
+      const p=y*w+x;
+      if(!hole[p]){const q=qy+(x>>1),i=p*4;wt[q]++;val[q*3]+=d[i];val[q*3+1]+=d[i+1];val[q*3+2]+=d[i+2];}
     }
   }
-
-  // Limit work per iteration so a large 1080p frame does not freeze Chrome.
-  // The loop continues until the entire detected text mask is covered.
-  let guard=0;
-  const maxRounds=Math.max(20,userPasses*6);
-  while(remaining>0&&guard++<maxRounds){
-    const boundary=boundaryPixels();
-    if(!boundary.length)break;
-
-    // Work from the most constrained boundary pixels first: these have the
-    // greatest number of known neighbours and therefore the best patch match.
-    boundary.sort((a,b)=>{
-      const count=(p)=>{
-        const x=p%w,y=(p/w)|0;let n=0;
-        for(const [dx,dy] of dirs)if(isKnown(x+dx,y+dy))n++;
-        return n;
-      };
-      return count(b)-count(a);
-    });
-
-    const limit=Math.min(boundary.length, aggressive?14000:9000);
-    for(let bi=0;bi<limit&&remaining>0;bi++){
-      const p=boundary[bi],tx=p%w,ty=(p/w)|0;
-      if(known[p])continue;
-      const candidates=candidatesFor(tx,ty);
-      let best=null,bestScore=1e30;
-      for(const [sx,sy,bonus] of candidates){
-        const sc=patchScore(tx,ty,sx,sy)+bonus;
-        if(sc<bestScore){bestScore=sc;best=[sx,sy];}
+  levels.push({w:cw,h:ch,val,wt});
+  while(cw>1||ch>1){
+    const nw=(cw+1)>>1,nh=(ch+1)>>1,nv=new Float32Array(nw*nh*3),nwt=new Float32Array(nw*nh);
+    for(let y=0;y<ch;y++){
+      const qy=(y>>1)*nw;
+      for(let x=0;x<cw;x++){
+        const p=y*cw+x,wp=wt[p];
+        if(wp>0){const q=qy+(x>>1);nwt[q]+=wp;nv[q*3]+=val[p*3];nv[q*3+1]+=val[p*3+1];nv[q*3+2]+=val[p*3+2];}
       }
-      if(best)copyPatch(tx,ty,best[0],best[1]);
     }
+    val=nv;wt=nwt;cw=nw;ch=nh;levels.push({w:cw,h:ch,val,wt});
+  }
 
-    // If the text is unusually large, force at least one-pixel inward progress
-    // with the nearest known source. Still an exact real-pixel copy.
-    if(boundary.length&&remaining>0){
-      let progressed=false;
-      for(const p of boundary){
-        if(known[p])continue;
-        const tx=p%w,ty=(p/w)|0;
-        let source=-1,bestD=1e9;
-        for(let r=1;r<=searchR&&source<0;r++){
-          for(const [dx,dy] of dirs){
-            const sx=tx+dx*r,sy=ty+dy*r;
-            if(!inside(sx,sy))continue;
-            const sp=idx(sx,sy);
-            if(known[sp]&&patchIsUsable(sx,sy)){source=sp;break;}
-          }
-          if(source>=0){bestD=r;break;}
-        }
-        if(source>=0){
-          const di=p*4,si=source*4;
-          d[di]=d[si];d[di+1]=d[si+1];d[di+2]=d[si+2];
-          known[p]=1;remaining--;progressed=true;
-          if(bestD>patchR)break;
+  // ---- pull: coarse -> fine with bilinear upsampling
+  const top=levels[levels.length-1];
+  let col=new Float32Array([top.val[0]/top.wt[0],top.val[1]/top.wt[0],top.val[2]/top.wt[0]]);
+  for(let k=levels.length-2;k>=1;k--){
+    const L=levels[k],lw=L.w,lh=L.h,pw=levels[k+1].w,ph=levels[k+1].h,full=Math.pow(4,k);
+    const nc=new Float32Array(lw*lh*3);
+    for(let y=0;y<lh;y++){
+      const fy=(y+.5)/2-.5,y0=Math.floor(fy),ty=fy-y0,ya=Math.max(0,Math.min(ph-1,y0)),yb=Math.max(0,Math.min(ph-1,y0+1));
+      for(let x=0;x<lw;x++){
+        const fx=(x+.5)/2-.5,x0=Math.floor(fx),tx=fx-x0,xa=Math.max(0,Math.min(pw-1,x0)),xb=Math.max(0,Math.min(pw-1,x0+1));
+        const p=y*lw+x,wp=L.wt[p],c=wp>0?Math.min(1,wp/full):0;
+        for(let q=0;q<3;q++){
+          const up=(col[(ya*pw+xa)*3+q]*(1-tx)+col[(ya*pw+xb)*3+q]*tx)*(1-ty)+
+                   (col[(yb*pw+xa)*3+q]*(1-tx)+col[(yb*pw+xb)*3+q]*tx)*ty;
+          nc[p*3+q]=c>0?(L.val[p*3+q]/wp)*c+up*(1-c):up;
         }
       }
-      if(!progressed)break;
+    }
+    col=nc;
+  }
+  // level 0: known pixels keep their value, hole pixels get the interpolated colour
+  const fill=new Float32Array(N*3);
+  {
+    const pw=levels[1].w,ph=levels[1].h;
+    for(let y=0;y<h;y++){
+      const fy=(y+.5)/2-.5,y0=Math.floor(fy),ty=fy-y0,ya=Math.max(0,Math.min(ph-1,y0)),yb=Math.max(0,Math.min(ph-1,y0+1));
+      for(let x=0;x<w;x++){
+        const p=y*w+x;
+        if(!hole[p]){const i=p*4;fill[p*3]=d[i];fill[p*3+1]=d[i+1];fill[p*3+2]=d[i+2];continue;}
+        const fx=(x+.5)/2-.5,x0=Math.floor(fx),tx=fx-x0,xa=Math.max(0,Math.min(pw-1,x0)),xb=Math.max(0,Math.min(pw-1,x0+1));
+        for(let q=0;q<3;q++){
+          fill[p*3+q]=(col[(ya*pw+xa)*3+q]*(1-tx)+col[(ya*pw+xb)*3+q]*tx)*(1-ty)+
+                      (col[(yb*pw+xa)*3+q]*(1-tx)+col[(yb*pw+xb)*3+q]*tx)*ty;
+        }
+      }
     }
   }
 
-  // Final exact-copy fill for any isolated pixels. Never blur them.
-  if(remaining){
-    for(let p=0;p<N;p++){
-      if(!original[p]||known[p])continue;
-      const x=p%w,y=(p/w)|0;
-      let source=-1;
-      for(let r=1;r<=searchR&&source<0;r++){
-        for(const [dx,dy] of dirs){
-          const sx=x+dx*r,sy=y+dy*r;
-          if(!inside(sx,sy))continue;
-          const sp=idx(sx,sy);
-          if(known[sp]){source=sp;break;}
-        }
-      }
-      if(source>=0){
-        const di=p*4,si=source*4;
-        d[di]=d[si];d[di+1]=d[si+1];d[di+2]=d[si+2];
-        known[p]=1;remaining--;
-      }
+  // ---- relax so the fill edge matches the real pixels around it
+  const idx=new Int32Array(hn);let j0=0;
+  for(let p=0;p<N;p++)if(hole[p])idx[j0++]=p;
+  for(let it=0;it<10;it++){
+    for(let j=0;j<hn;j++){
+      const p=idx[j],x=p%w,y=(p/w)|0;let c=0,a=0,b=0,e=0;
+      if(x>0){const n=(p-1)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(x<w-1){const n=(p+1)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(y>0){const n=(p-w)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(y<h-1){const n=(p+w)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(c){fill[p*3]=a/c;fill[p*3+1]=b/c;fill[p*3+2]=e/c;}
+    }
+  }
+
+  // ---- measure real grain around the hole (robust median of high-pass luma)
+  const lum=new Float32Array(N);
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const hist=new Uint32Array(64);let hc=0;
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+    const p=y*w+x;
+    if(hole[p]||hole[p-1]||hole[p+1]||hole[p-w]||hole[p+w])continue;
+    const hp=Math.abs(lum[p]-(lum[p-1]+lum[p+1]+lum[p-w]+lum[p+w])/4);
+    hist[Math.min(63,Math.round(hp))]++;hc++;
+  }
+  let sigma=0.6;
+  if(hc>50){let acc=0,mi=0;for(;mi<64;mi++){acc+=hist[mi];if(acc>=hc/2)break;}sigma=Math.min(6,(mi+.3)/.754);}
+  const amp=sigma*0.85;
+
+  // ---- write fill + matching grain
+  for(let j=0;j<hn;j++){
+    const p=idx[j],i=p*4;
+    const g=(Math.random()+Math.random()+Math.random()+Math.random()-2)*1.732*amp;
+    for(let q=0;q<3;q++){
+      let v=fill[p*3+q]+g;v=v<0?0:v>255?255:v;
+      d[i+q]=d[i+q]*(1-strength)+v*strength;
     }
   }
 }
+
 function removeWhiteFromCanvas(ctx2,W,H,rect){
   if(!rect)return;
   const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
   const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
   if(rx1-rx0<2||ry1-ry0<2)return;
 
-  const t=+$('whiteThreshold').value||185;
+  const t=+$('whiteThreshold').value||115;
   const strength=(+$('removeOpacity').value||100)/100;
-  const aggressive=$('aggressiveWhite')?.checked!==false;
-  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||9)*W/1080*.85));
-  const thk=Math.max(3,Math.round((+$('textThick').value||12)*W/1080));
+  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*W/1080*0.9));
+  const thk=Math.max(3,Math.round((+$('textThick').value||9)*W/1080));
   const dynamic=$('textChanges').checked;
   const key=wrKey();
   const sm=(staticMask&&staticMask.key===key)?staticMask:null;
   if(!sm&&!exporting&&!staticBuilding)scheduleStaticMask(false);
-  const useStatic=!!(sm&&sm.any&&!sm.dynamic);
+  const useStatic=!!(sm&&sm.any);
+
   const showMask=$('showMask').checked&&!exporting;
   const cacheable=!exporting&&video.paused&&!showMask;
   let ckey=null;
   if(cacheable){
-    ckey=[W,H,rx0,ry0,rx1,ry1,t,thk,strength,grow,dynamic,aggressive,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
-    const hit=wrCache.get(ckey);if(hit){ctx2.putImageData(hit.img,hit.x0,hit.y0);return;}
+    ckey=[W,H,rx0,ry0,rx1,ry1,t,thk,strength,grow,dynamic,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
+    const hit=wrCache.get(ckey);
+    if(hit){ctx2.putImageData(hit.img,hit.x0,hit.y0);return;}
   }
 
-  const pad=Math.round(Math.max(20,Math.min(64,W/30)))+grow;
+  const pad=Math.round(Math.max(16,Math.min(48,W/36)))+grow;
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
 
+  // build the text mask
   let hole=new Uint8Array(N),any=false;
-  const rectArea=Math.max(1,(rx1-rx0)*(ry1-ry0));
-
-  // Static masks are used only when the user says the text does not change.
+  const rectArea=(rx1-rx0)*(ry1-ry0);
+  let staticTooBig=false;
   if(useStatic){
     const rw=rx1-rx0,rh=ry1-ry0,sc=scaledStatic(sm,rw,rh);
-    if(sc){
-      for(let y=0;y<rh;y++)for(let x=0;x<rw;x++)if(sc[y*rw+x])hole[(y+ry0-y0)*w+(x+rx0-x0)]=1;
-      any=true;
-    }
+    let c=0;
+    for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;c++;}}
+    if(c/rectArea>0.25){hole.fill(0);staticTooBig=true;}else if(c)any=true;
   }
-
-  // Dynamic detection is always performed when text changes, and is also
-  // used as a safety net for static text.
-  if(dynamic||!useStatic){
-    const det=detectWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
+  if(dynamic||!useStatic||staticTooBig){
+    // safety cap: if "text" covers a big part of the box it is not text -> raise the bar, never smear the scene
+    let tt=t,det=null;
+    for(let k=0;k<5;k++){
+      det=detectWhite(d,w,h,tt,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
+      if(!det)break;
+      if(det.strongFrac<=0.10)break;
+      if(k===4)det=null;
+      tt+=20;
+    }
     if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
   }
-
   if(showMask){
     let c=0;
     if(any)for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;c++;}
     ctx2.putImageData(img,x0,y0);
-    setStatus('Exemplar mask: '+(c/rectArea*100).toFixed(2)+'% of selected box. Red = removed/reconstructed pixels.');
+    setStatus('Detected text pixels: '+(c/rectArea*100).toFixed(2)+'% of the selected box (red = will be removed).');
     return;
   }
   if(!any)return;
 
-  // Strong halo cleanup, but NEVER outside the user selection.
+  // widen to swallow glow / anti-aliasing / compression halo, keep inside the selection
   hole=dilateMask(hole,w,h,grow);
-  if(aggressive)hole=dilateMask(hole,w,h,Math.max(1,Math.round(grow*.45)));
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const gx=x+x0,gy=y+y0;
     if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
@@ -1203,7 +919,6 @@ $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').v
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
 $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
-$('aggressiveWhite').onchange=()=>{invalidateWR();drawPreview();drawGeoPreview()}
 $('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 $('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 

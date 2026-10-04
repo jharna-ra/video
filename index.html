@@ -957,52 +957,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
     if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
   }
 
-  // First pass: remove the main detected text using the pixel-patch method.
   inpaintHole(d,w,h,hole,strength);
-
-  // SECOND PASS — remove only faint white/grey remnants that survived the
-  // main detector. This is deliberately conservative: a residue pixel must
-  // be very bright, nearly neutral, and sit immediately beside the pixels we
-  // already removed. Nothing else in the selected scene is targeted.
-  {
-    const residue=new Uint8Array(N);
-    const nearRemoved=dilateMask(hole,w,h,3);
-    const base=new Uint8ClampedArray(img.data);
-    let residueCount=0;
-    const residueThreshold=Math.max(178,Math.min(235,t-5));
-    for(let y=ry0-y0;y<ry1-y0;y++){
-      for(let x=rx0-x0;x<rx1-x0;x++){
-        const p=y*w+x;
-        if(hole[p]||!nearRemoved[p])continue;
-        const i=p*4;
-        const r=base[i],g=base[i+1],b=base[i+2];
-        const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
-        const L=r*.299+g*.587+b*.114;
-        const sat=mx-mn;
-        if(L<residueThreshold||sat>55)continue;
-
-        // Require the pixel to look like a bright text edge, not just a
-        // random bright background pixel. Compare it with its local neighbours.
-        let sum=0,n=0;
-        for(let yy=Math.max(0,y-2);yy<=Math.min(h-1,y+2);yy++){
-          for(let xx=Math.max(0,x-2);xx<=Math.min(w-1,x+2);xx++){
-            if(xx===x&&yy===y)continue;
-            const q=(yy*w+xx)*4;
-            sum+=base[q]*.299+base[q+1]*.587+base[q+2]*.114;n++;
-          }
-        }
-        const local=n?sum/n:L;
-        if(L-local<10)continue;
-        residue[p]=1;residueCount++;
-      }
-    }
-
-    if(residueCount){
-      // Keep the cleanup tiny: only the faint pixels themselves are rebuilt.
-      inpaintHole(d,w,h,residue,1);
-    }
-  }
-
   ctx2.putImageData(img,x0,y0);
   if(cacheable){
     wrCache.set(ckey,{img,x0,y0});

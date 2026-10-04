@@ -24,8 +24,6 @@ input[type=range]{width:100%}
 .stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
 #viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
-#geoStage{position:relative}
-#geoTextSelection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none;z-index:20;box-sizing:border-box}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
@@ -60,7 +58,6 @@ input[type=range]{width:100%}
 #geoSection .geoOptionCard input[type=range]{margin:0 0 2px;}
 #geoSection .geoInfoGrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:12px;align-items:start;}
 #geoSection .geoFields3{display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;}
-#geoSection .geoFormatFields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
 #geoSection .geoInfoGrid .card{min-width:0;}
 #geoSection textarea{min-height:48px;}
 #geoSection label{margin:4px 0 2px;}
@@ -73,23 +70,6 @@ input[type=range]{width:100%}
 #geoSection #mapPreview{height:90px;margin-top:8px;}
 #geoSection .geoActions{border-top:1px solid #263440;margin-top:14px;padding-top:10px;}
 #geoSection .geoActions button{margin-right:4px;}
-
-#geoSection .ocrCard{padding:12px;}
-#geoSection .ocrToolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
-#geoSection .ocrList{display:flex;flex-direction:column;gap:7px;max-height:300px;overflow:auto;}
-#geoSection .ocrItem{display:grid;grid-template-columns:24px minmax(0,1fr) minmax(0,1fr);gap:7px;align-items:center;background:#0d151d;border:1px solid #293744;border-radius:8px;padding:7px;}
-#geoSection .ocrItem input[type=text]{min-width:0;padding:7px;}
-#geoSection .ocrMeta{font-size:10px;color:#7f909e;grid-column:2 / -1;}
-#geoSection .ocrEmpty{padding:10px;color:#7f909e;background:#0d151d;border-radius:8px;}
-#geoSection .ocrScanBox{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px;}
-#geoSection .ocrScanBox button{width:100%;}
-#geoSection .inlineTextEditor{position:absolute;display:none;z-index:50;min-width:220px;max-width:420px;background:#101820;border:1px solid #4d6474;border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.45);padding:7px;}
-#geoSection .inlineTextToolbar{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
-#geoSection .inlineTextToolbar button{padding:5px 9px;min-width:32px;}
-#geoSection .inlineTextToolbar input[type=range]{width:85px;}
-#geoSection .inlineTextToolbar select{background:#0b1117;color:#fff;border:1px solid #3a4b58;border-radius:5px;padding:4px;}
-#geoSection .inlineTextInput{min-height:32px;max-height:110px;overflow:auto;background:#fff;color:#111;border-radius:6px;padding:7px;outline:none;white-space:pre-wrap;font-family:Arial,sans-serif;}
-#geoSection .inlineTextHint{font-size:10px;color:#93a3af;margin-top:4px;}
 
 @media(max-width:900px){
   #geoSection .geoOptionGrid{grid-template-columns:1fr 1fr;}
@@ -128,7 +108,6 @@ input[type=range]{width:100%}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
 </head>
 <body>
 <header>
@@ -180,12 +159,12 @@ input[type=range]{width:100%}
 <button id="removeWhite" disabled>Remove White Text</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
 <label>White detection sensitivity <b id="whiteVal">115</b></label>
-<input id="whiteThreshold" type="range" min="80" max="245" value="145">
+<input id="whiteThreshold" type="range" min="80" max="245" value="115">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
-<input id="inpaintPasses" type="range" min="1" max="10" value="7">
-<div class="small">If white text is still visible, increase the detection sensitivity/threshold and increase Edge expand. The remover targets neutral white/light-gray pixels inside only the selected rectangles, then fills them with surrounding video pixels.</div>
+<input id="inpaintPasses" type="range" min="1" max="8" value="5">
+<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get cloned over with real neighbouring pixels, so nothing else is blurred.</div>
 </div>
 
 <div class="section">
@@ -232,79 +211,31 @@ input[type=range]{width:100%}
           <h2>GeoTag Preview</h2>
           <div id="geoCounter" class="badge">Video not ready</div>
         </div>
-        <div class="geoPreviewHint">Drag the map to move/resize it. Drag any white GeoTag text line to move that line independently.</div>
+        <div class="geoPreviewHint">Drag the map on the preview to move it. Drag its bottom-right corner to resize it.</div>
       </div>
-      <div class="stage" id="geoStage"><canvas id="geoCanvas"></canvas><div id="inlineTextEditor" class="inlineTextEditor">
-  <div class="inlineTextToolbar">
-    <button id="inlineBold" type="button"><b>B</b></button>
-    <span style="font-size:10px;color:#9aa8b2">Size</span><input id="inlineSize" type="range" min="60" max="180" value="100">
-    <span id="inlineSizeVal" style="font-size:10px">100%</span>
-    <span style="font-size:10px;color:#9aa8b2">Thick</span><input id="inlineWeight" type="range" min="300" max="900" step="100" value="700">
-    <span id="inlineWeightVal" style="font-size:10px">700</span>
-    <button id="inlineDone" type="button">Enter ✓</button>
-  </div>
-  <div id="inlineTextInput" class="inlineTextInput" contenteditable="true" spellcheck="false"></div>
-  <div class="inlineTextHint">Double-click text to edit • Enter = apply • Shift+Enter = new line • Esc = cancel</div>
-</div><div id="geoTextSelection"></div></div>
+      <div class="stage"><canvas id="geoCanvas"></canvas></div>
       <div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
     </main>
 
-    <!-- Simple real-GeoTag controls: map + four independent text lines -->
+    <!-- Overlay + logo directly below the video -->
     <div class="geoOptionGrid">
       <div class="card geoOptionCard">
-        <h3>Map</h3>
+        <h3>Overlay</h3>
+        <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
         <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
-        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">28%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
-        <div class="sliderTop"><span>Map height</span><b id="mapHVal">30%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
-        <div class="small">Drag the map on the video. Drag its bottom-right handle to resize it.</div>
+        <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
+        <div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
+        <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
+        <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
       </div>
 
       <div class="card geoOptionCard">
-        <h3>GeoTag Text</h3>
-        <div class="sliderTop"><span>Text size</span><b id="gTextSizeVal">100%</b></div><input id="gTextSize" type="range" min="40" max="220" value="100">
-        <div class="sliderTop"><span>Text thickness</span><b id="gTextWeightVal">700</b></div><input id="gTextWeight" type="range" min="300" max="900" step="100" value="700">
-        <div class="sliderTop"><span>Text opacity</span><b id="gTextOpacityVal">100%</b></div><input id="gTextOpacity" type="range" min="0" max="100" value="100">
-        <div class="small">Drag Line 1, Line 2, Line 3 and Line 4 independently on the preview.</div>
+        <h3>Blue Camera Logo Position</h3>
+        <div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
+        <div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
+        <div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
       </div>
-    </div>
-
-    <div class="card" style="margin-top:12px">
-      <h3>Camera-style text format</h3>
-      <div class="small" style="margin-bottom:8px">The visible order is fixed to match the reference: Date/Time, Heading, Place, Division, State, Altitude, Speed, Index number. The complete block is right-aligned and compact.</div>
-      <div class="row">
-        <div><label>Line 1</label><input value="Date / Time" readonly></div>
-        <div><label>Line 2</label><input value="Heading" readonly></div>
-        <div><label>Line 3</label><input value="Place" readonly></div>
-        <div><label>Line 4</label><input value="Division" readonly></div>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <div><label>Line 5</label><input value="State" readonly></div>
-        <div><label>Line 6</label><input value="Altitude" readonly></div>
-        <div><label>Line 7</label><input value="Speed" readonly></div>
-        <div><label>Line 8</label><input value="Index number" readonly></div>
-      </div>
-    </div>
-
-    <div class="card ocrCard">
-      <h3>Replace GeoTag Text</h3>
-      <div class="small">Click Find Location first. Then draw one rectangle around the GeoTag text you want to replace. The scanner reads only that area. The replacement is automatically taken from the location returned by Find Location — you do not type replacement text.</div>
-      <div class="ocrScanBox">
-        <button id="textAreaMode">▣ Select Text Area</button>
-        <button id="ocrScan" disabled>🔎 Scan Selected Area</button>
-        <button id="ocrClear" class="secondary">Clear</button>
-      </div>
-      <div id="ocrStatus" class="small" style="margin-top:8px">Find a location first, then draw a rectangle around the GeoTag text.</div>
-      <div class="ocrList" id="ocrList">
-        <div class="ocrEmpty">No text area selected.</div>
-      </div>
-      <div style="margin-top:9px;padding:9px;border:1px solid #293744;border-radius:8px;background:#0d151d">
-        <div style="font-size:11px;color:#7f909e">Replacement from Find Location</div>
-        <div id="foundLocationText" style="margin-top:4px;font-weight:700">No location found yet.</div>
-      </div>
-      <div class="sliderTop" style="margin-top:9px"><span>Replacement text size</span><b id="ocrSizeVal">100%</b></div>
-      <input id="ocrSize" type="range" min="60" max="160" value="100">
-      <div class="sliderTop"><span>Replacement text thickness</span><b id="ocrWeightVal">700</b></div>
-      <input id="ocrWeight" type="range" min="300" max="900" step="100" value="700">
     </div>
 
     <!-- Compact location/date controls below the main options -->
@@ -314,13 +245,8 @@ input[type=range]{width:100%}
         <div class="geoFields3">
           <div><label>State</label><input id="gState" type="text" value="Jammu and Kashmir"></div>
           <div><label>District / Town</label><input id="gPlace" type="text" value="Beerwah"></div>
-          <div><label>Address / Location — used for map</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
+          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
         </div>
-        <div class="geoFormatFields">
-          <div><label>Division</label><input id="gDivision" type="text" value=""></div>
-          <div><label>Altitude (m)</label><input id="gAltitude" type="text" value=""></div>
-        </div>
-        <div class="small" style="margin-top:7px">The generated GeoTag follows the camera-style format: date/time → heading → place → division → state → altitude → speed → index number.</div>
         <button id="findLocation">📍 Find Location</button>
         <div id="gCoords" class="status">Enter a location and press Find Location.</div>
         <div class="runningBox">
@@ -373,22 +299,16 @@ if(!wctx) throw new Error('Export canvas context unavailable');
 const stage=$('stage'), selBox=$('selection');
 
 let file=null, videoURL=null, duration=0, playing=false;
-let crop=null, cropMode=false, whiteRects=[], removeMode=false, textRect=null, textAreaMode=false, selecting=false, sx=0, sy=0;
+let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
 let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
-let ocrItems=[]; let ocrDetectedBoxes=[]; let ocrWorker=null; let ocrScanning=false; let geoTextSelecting=false, geoTextSX=0, geoTextSY=0;
-let inlineEditingIndex=-1, inlineEditBackup=null;
-let foundLocationText='';
-let foundDivision='';
 
 const state={
- gMapO:100,gMapW:30,mapX:0,mapY:65,mapW:30,mapH:35,
- gTextSize:100,gTextWeight:700,gTextOpacity:100,
- line1X:97,line1Y:65, line2X:97,line2Y:70, line3X:97,line3Y:75, line4X:97,line4Y:80,
- line5X:97,line5Y:85, line6X:97,line6Y:90, line7X:97,line7Y:95, line8X:97,line8Y:99.5
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:30,mapH:35,
+ logoX:90,logoY:50,logoSize:70
 };
 
 function fmt(n){return Number(n||0).toFixed(1)}
@@ -429,12 +349,48 @@ function isWhite(data,i,t){
  return neutral && (mx>=t || brightness>=t-15);
 }
 function removeWhiteFromCanvas(ctx2,W,H,rect){
-  // Preview and export use the same strong white-text removal algorithm.
-  // Keeping one implementation prevents the preview from looking different
-  // from the final downloaded video.
-  removeWhiteFromCanvasExport(ctx2,W,H,rect);
+ if(!rect)return;
+ const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
+ const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
+ if(x1<=x0||y1<=y0)return;
+ const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
+ const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
+ const W2=x1-x0,H2=y1-y0,N=W2*H2;
+ const mask=new Uint8Array(N);
+ for(let y=0;y<H2;y++){
+   for(let x=0;x<W2;x++){
+     const p=y*W2+x,i=p*4;
+     if(isWhite(d,i,t)) mask[p]=1;
+   }
+ }
+ const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
+ const expanded=new Uint8Array(mask);
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x; if(mask[p]){
+     for(let dy=-grow;dy<=grow;dy++) for(let dx=-grow;dx<=grow;dx++){
+       if(dx*dx+dy*dy>grow*grow+1)continue;
+       const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
+     }
+   }
+ }
+ const out=new Uint8ClampedArray(d);
+ const maxSearch=60;
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x; if(!expanded[p])continue;
+   let sr=0,sg=0,sb=0,n=0;
+   for(let k=1;k<=maxSearch;k++){const xx=x-k;if(xx<0)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const xx=x+k;if(xx>=W2)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const yy=y-k;if(yy<0)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const yy=y+k;if(yy>=H2)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   if(n){
+     const i=p*4,a=strength;
+     out[i]=d[i]*(1-a)+(sr/n)*a;
+     out[i+1]=d[i+1]*(1-a)+(sg/n)*a;
+     out[i+2]=d[i+2]*(1-a)+(sb/n)*a;
+   }
+ }
+ ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
 }
-
 function drawPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();
@@ -442,27 +398,21 @@ function drawPreview(){
  view.width=Math.round(r.w*s);view.height=Math.round(r.h*s);
  vctx.clearRect(0,0,view.width,view.height);
  vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
- if(whiteRects.length){
-   whiteRects.forEach((wr,i)=>{
-     removeWhiteFromCanvas(vctx,view.width,view.height,{
-       x:wr.x/r.w*view.width,
-       y:wr.y/r.h*view.height,
-       w:wr.w/r.w*view.width,
-       h:wr.h/r.h*view.height
-     });
-     if(removeMode){
-       vctx.save(); vctx.strokeStyle='rgba(255,70,70,.9)'; vctx.lineWidth=2; vctx.setLineDash([6,4]);
-       vctx.strokeRect(wr.x/r.w*view.width,wr.y/r.h*view.height,wr.w/r.w*view.width,wr.h/r.h*view.height);
-       vctx.setLineDash([]); vctx.fillStyle='#fff'; vctx.font='bold 12px Arial'; vctx.fillText('Line '+(i+1),wr.x/r.w*view.width+4,wr.y/r.h*view.height+14); vctx.restore();
-     }
+ if(whiteRect){
+   const wr=whiteRect;
+   removeWhiteFromCanvas(vctx,view.width,view.height,{
+     x:wr.x/r.w*view.width,
+     y:wr.y/r.h*view.height,
+     w:wr.w/r.w*view.width,
+     h:wr.h/r.h*view.height
    });
  }
 }
 function updateSelectionBox(){
- if(!selecting && !whiteRects.length && !crop)return;
+ if(!selecting && !whiteRect && !crop)return;
  const r=sourceRect();
  const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- let q=textRect||(whiteRects.length?whiteRects[whiteRects.length-1]:null)||crop;
+ let q=whiteRect||crop;
  if(!q){selBox.style.display='none';return}
  const x=C.left-R.left+q.x/r.w*C.width;
  const y=C.top-R.top+q.y/r.h*C.height;
@@ -474,7 +424,7 @@ function pointerPos(e){
  return {x:clamp((e.clientX-R.left)/R.width*r.w,0,r.w),y:clamp((e.clientY-R.top)/R.height*r.h,0,r.h)}
 }
 view.addEventListener('pointerdown',e=>{
- if(!cropMode&&!removeMode&&!textAreaMode)return;
+ if(!cropMode&&!removeMode)return;
  selecting=true;view.setPointerCapture(e.pointerId);
  const p=pointerPos(e);sx=p.x;sy=p.y;selBox.style.display='block';
 });
@@ -492,14 +442,7 @@ view.addEventListener('pointerup',e=>{
  const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
  if(q.w<5||q.h<5){return}
  if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
- if(removeMode){whiteRects.push({...q});$('removeWhite').disabled=false;setStatus(`White text line ${whiteRects.length} selected. Draw the next line, or click Remove White Text when all lines are selected.`)}
- if(textAreaMode){
-   textRect={...q};
-   ocrItems=[];
-   $('ocrScan').disabled=false;
-   $('ocrStatus').textContent='Text area selected. Click Scan Selected Area.';
-   $('ocrList').innerHTML='<div class="ocrEmpty">Ready to scan the selected area.</div>';
- }
+ if(removeMode){whiteRect={...q};$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
  updateSelectionBox();
 });
 
@@ -665,10 +608,10 @@ $('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.cur
 $('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
 $('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
 $('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
-$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRects=[];$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
-$('resetCrop').onclick=()=>{crop=null;whiteRects=[];$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
-$('removeWhite').onclick=()=>{if(!whiteRects.length)return;setStatus(`White-text removal will be applied line-by-line to ${whiteRects.length} selected line(s) on every exported frame.`);drawPreview()}
-$('clearWhite').onclick=()=>{whiteRects=[];$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('All white-text line selections cleared.')}
+$('applyCrop').onclick=()=>{if(!crop)return;const old=sourceRect();crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
+$('removeWhite').onclick=()=>{if(!whiteRect)return;setStatus('White-text removal will be applied to every frame during export.');drawPreview()}
+$('clearWhite').onclick=()=>{whiteRect=null;$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
 $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;drawPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;drawPreview()}
@@ -722,23 +665,14 @@ async function findLocation(){
  try{
   const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
   const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
-  lat=+j[0].lat;lon=+j[0].lon;
-  foundLocationText=(j[0].display_name||[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ')).trim();
-  const a=j[0].address||{};
-  foundDivision=(a.state_district||a.county||a.city_district||'').trim();
-  if(foundDivision && !/division$/i.test(foundDivision)) foundDivision += ' Division';
-  if($('gDivision') && !$('gDivision').value.trim()) $('gDivision').value=foundDivision;
-  if($('gAddress'))$('gAddress').value=foundLocationText;
-  if($('foundLocationText'))$('foundLocationText').textContent=foundLocationText;
-  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
+  lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
   if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
   gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
   mapImg=await makeMap(lat,lon);
   loadRealGPSRoute();drawGeoPreview();
- }catch(e){lat=lon=null;mapImg=null;foundLocationText='';if($('foundLocationText'))$('foundLocationText').textContent='No location found.';$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
+ }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
 }
 $('findLocation').onclick=findLocation;
-['gDivision','gAltitude'].forEach(id=>$(id).addEventListener('input',()=>drawGeoPreview()));
 
 function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
@@ -924,138 +858,123 @@ $('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat'
 $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
 
-function getHeadingText(seconds){
-  const c=getRunningCoords(seconds);
-  const d=0.25;
-  const n=getRunningCoords(seconds+d);
-  if(c.lat==null||c.lon==null||n.lat==null||n.lon==null) return '0° N';
-  const p1=c.lat*Math.PI/180,p2=n.lat*Math.PI/180,dl=(n.lon-c.lon)*Math.PI/180;
-  const y=Math.sin(dl)*Math.cos(p2);
-  const x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
-  let deg=(Math.atan2(y,x)*180/Math.PI+360)%360;
-  if(!Number.isFinite(deg))deg=0;
-  const dirs=['N','NE','E','SE','S','SW','W','NW'];
-  const dir=dirs[Math.round(deg/45)%8];
-  return `${Math.round(deg)}° ${dir}`;
-}
-function getSpeedText(seconds){
-  if(!gpsRouteTotal || !duration || gpsRouteTotal<1) return '0.0km/h';
-  const km=gpsRouteTotal/1000;
-  const hours=Math.max(duration,0.1)/3600;
-  return `${(km/hours).toFixed(1)}km/h`;
-}
-function getIndexText(seconds){
-  return String(Math.max(0,Math.floor(Math.max(0,seconds)*30)));
-}
-function getGeoTagLines(seconds){
-  const running=getRunningCoords(seconds);
-  const place=$('gPlace').value.trim()||'Location';
-  const division=($('gDivision').value.trim()||foundDivision||'Division');
-  const stateName=$('gState').value.trim()||'India';
-  const altitude=$('gAltitude').value.trim();
-  return [
-    `${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`,
-    getHeadingText(seconds),
-    place,
-    division,
-    stateName,
-    `Altitude:${altitude?altitude:'—'}msnm`,
-    `Speed:${getSpeedText(seconds)}`,
-    `Index number:${getIndexText(seconds)}`
-  ];
-}
-function drawAnimatedCompass(ctx,W,H,seconds){
-  // Camera-style compass. The outer dial stays fixed while the needle rotates
-  // with the calculated running heading, so it changes continuously during playback/export.
-  const c=getRunningCoords(seconds), n=getRunningCoords(seconds+0.25);
-  let deg=0;
-  if(c.lat!=null&&c.lon!=null&&n.lat!=null&&n.lon!=null){
-    const p1=c.lat*Math.PI/180,p2=n.lat*Math.PI/180,dl=(n.lon-c.lon)*Math.PI/180;
-    const yy=Math.sin(dl)*Math.cos(p2);
-    const xx=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
-    deg=(Math.atan2(yy,xx)*180/Math.PI+360)%360;
-  }
-  const size=Math.max(72,Math.min(128,Math.min(W,H)*0.105));
-  const cx=size*0.72, cy=size*0.72, r=size*0.43;
-  ctx.save();
-  ctx.globalAlpha=.82;
-  ctx.fillStyle='rgba(30,30,30,.58)';ctx.beginPath();ctx.arc(cx,cy,r+7,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='rgba(245,245,245,.72)';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
-  ctx.strokeStyle='rgba(40,40,40,.8)';ctx.lineWidth=2;ctx.stroke();
-  ctx.fillStyle='#333';ctx.font=`bold ${Math.max(10,size*.11)}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';
-  const labels=[['N',0],['E',90],['S',180],['W',270]];
-  for(const [lab,a] of labels){
-    const rr=r*.78, rad=(a-90)*Math.PI/180;
-    ctx.fillText(lab,cx+Math.cos(rad)*rr,cy+Math.sin(rad)*rr);
-  }
-  ctx.translate(cx,cy);ctx.rotate((deg-90)*Math.PI/180);
-  ctx.fillStyle='#11a9d5';ctx.beginPath();ctx.moveTo(r*.08,0);ctx.lineTo(r*.68,-r*.10);ctx.lineTo(r*.68,r*.10);ctx.closePath();ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.92)';ctx.beginPath();ctx.moveTo(r*.03,0);ctx.lineTo(-r*.55,-r*.10);ctx.lineTo(-r*.55,r*.10);ctx.closePath();ctx.fill();
-  ctx.restore();
-}
-
 function drawGeoFrame(baseCtx,W,H,seconds){
-  // Camera-style GeoTag matching the reference: compact right-side white text
-  // and a map in the lower-left corner.
+  // ================================================================
+  // GEO OVERLAY = TWO COMPLETELY INDEPENDENT BLOCKS
+  // 1) MAP BLOCK: its own position, width and height.
+  // 2) STAMP BLOCK: its own position, width and height, text and logo.
+  // The ONLY relationship is that the map bottom touches the stamp top.
+  // ================================================================
+  const stampOpacity=clamp(state.gOpacity/100,0,1);
   const mapOpacity=clamp(state.gMapO/100,0,1);
-  const textOpacity=clamp(state.gTextOpacity/100,0,1);
+
+  // ------------------------- STAMP BLOCK -------------------------
+  const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
+  const stampX=0;
+  const stampY=Math.round(H-stampH);
+  const stampW=W;
+  const stampRadius=Math.max(18,Math.round(stampH*.14));
+  const stampPad=Math.max(5,Math.round(stampH*.022));
+  const stampGap=Math.max(12,Math.round(stampH*.045));
+
+  // -------------------------- MAP BLOCK --------------------------
+  // The map has its OWN position and size. It can be dragged and resized
+  // directly on the video preview without changing the stamp block.
   const mapX=clamp(W*state.mapX/100,0,Math.max(0,W-20));
   const mapY=clamp(H*state.mapY/100,0,Math.max(0,H-20));
   const mapW=clamp(W*state.mapW/100,20,W-mapX);
   const mapH=clamp(H*state.mapH/100,20,H-mapY);
 
+  // Draw STAMP block first.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='rgba(0,0,0,.76)';
+  roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
+  baseCtx.fill();
+  baseCtx.restore();
+
+  // Draw MAP block on the LEFT side of the STAMP, at the EXACT same Y.
+  // The map and stamp have the same height and share the same top/bottom edges.
   if(mapImg){
     baseCtx.save();
-    baseCtx.globalAlpha=mapOpacity;
-    baseCtx.fillStyle='rgba(245,245,245,.96)';
-    baseCtx.fillRect(mapX,mapY,mapW,mapH);
-    baseCtx.beginPath();baseCtx.rect(mapX,mapY,mapW,mapH);baseCtx.clip();
+    baseCtx.globalAlpha=stampOpacity*mapOpacity;
+    baseCtx.beginPath();
+    baseCtx.rect(mapX,mapY,mapW,mapH);
+    baseCtx.clip();
     baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
     baseCtx.restore();
-    // Keep the map visibly separated from the video, like the reference.
-    baseCtx.save();
-    baseCtx.strokeStyle='rgba(255,255,255,.95)';
-    baseCtx.lineWidth=Math.max(2,2*W/Math.max(1,geo.width));
-    baseCtx.strokeRect(mapX,mapY,mapW,mapH);
-    baseCtx.restore();
   }
 
-  drawAnimatedCompass(baseCtx,W,H,seconds);
+  // Everything below belongs ONLY to the STAMP block.
+  const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
+  const logoCenterX=clamp(
+    W*state.logoX/100,
+    stampX+stampW*.72+logoSize/2,
+    stampX+stampW-logoSize/2-stampPad
+  );
+  const logoCenterY=clamp(
+    stampY+stampH*(state.logoY/100),
+    stampY+logoSize/2+stampPad,
+    stampY+stampH-logoSize/2-stampPad
+  );
+  const logoLeft=logoCenterX-logoSize/2;
 
-  const lines=getGeoTagLines(seconds);
-  const ocrActive=ocrItems.some(x=>x.enabled&&x.replacement.trim());
-  if(!ocrActive){
-    const baseFs=clamp(Math.min(W,H)*0.036,18,32)*(state.gTextSize/100);
-    const weight=clamp(Math.round(state.gTextWeight/100)*100,300,900);
-    baseCtx.save();
-    baseCtx.globalAlpha=textOpacity;
-    baseCtx.fillStyle='#fff';
-    baseCtx.textBaseline='alphabetic';
-    baseCtx.textAlign='right';
-    baseCtx.shadowColor='rgba(0,0,0,.72)';
-    baseCtx.shadowBlur=Math.max(1,baseFs*.10);
-    baseCtx.shadowOffsetX=1;baseCtx.shadowOffsetY=1;
-    baseCtx.font=`${weight} ${baseFs}px Arial, sans-serif`;
-    for(let i=0;i<lines.length;i++){
-      const xp=state['line'+(i+1)+'X']??97;
-      const yp=state['line'+(i+1)+'Y']??(63+i*5);
-      const x=clamp(W*xp/100,baseFs,W-baseFs*.2);
-      const y=clamp(H*yp/100,baseFs,H-baseFs*.2);
-      baseCtx.fillText(lines[i],x,y);
-    }
-    baseCtx.restore();
-  }
+  // STAMP text is independent from the map. The map can be moved/resized
+  // without changing the title/details position.
+  const textX=stampX+stampW*.255;
+  const textRight=logoLeft-stampGap;
+  const maxW=Math.max(150,textRight-textX);
+  const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
+  const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
+  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+  const address=$('gAddress').value.trim();
+  const running=getRunningCoords(seconds);
+  const coordText=`Lat ${running.lat==null?'—':running.lat.toFixed(6)}°  Long ${running.lon==null?'—':running.lon.toFixed(6)}°`;
+  updateRunningCoords(seconds);
+  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
 
+  // STAMP TEXT BLOCK ONLY.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='#fff';
+  baseCtx.textBaseline='alphabetic';
+  baseCtx.shadowColor='rgba(0,0,0,.30)';
+  baseCtx.shadowBlur=Math.max(1,stampH*.008);
+
+  baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
+  const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
+  let yy=stampY+stampPad+titleSize;
+  titleLines.forEach(line=>{baseCtx.fillText(line,textX,yy);yy+=titleSize*1.02});
+
+  baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
+  const lineGap=Math.max(3,detailSize*.25);
+  const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
+  addressLines.forEach(line=>{if(yy<=stampY+stampH-stampPad)baseCtx.fillText(line,textX,yy);yy+=detailSize+lineGap});
+  if(yy<=stampY+stampH-stampPad){baseCtx.fillText(coordText,textX,yy);yy+=detailSize+lineGap*1.05;}
+  if(yy<=stampY+stampH-stampPad)baseCtx.fillText(dateTime,textX,yy);
+  baseCtx.restore();
+
+  // STAMP LOGO BLOCK ONLY.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
+  baseCtx.restore();
+
+  // Preview-only map controls. They are never rendered into the exported video.
   if(baseCtx===gctx && mapImg){
     baseCtx.save();
     baseCtx.strokeStyle='rgba(255,255,255,.95)';
     baseCtx.lineWidth=Math.max(1,2*W/geo.width);
-    baseCtx.setLineDash([6,4]);baseCtx.strokeRect(mapX,mapY,mapW,mapH);baseCtx.setLineDash([]);
-    const hs=Math.max(8,12*W/geo.width);baseCtx.fillStyle='rgba(255,255,255,.95)';
+    baseCtx.setLineDash([6,4]);
+    baseCtx.strokeRect(mapX,mapY,mapW,mapH);
+    baseCtx.setLineDash([]);
+    const hs=Math.max(8,12*W/geo.width);
+    baseCtx.fillStyle='rgba(255,255,255,.95)';
     baseCtx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
     baseCtx.restore();
   }
 }
+
 function prepareOutput(){
  const r=sourceRect();
  outputW=Math.max(2,Math.round(r.w/2)*2);
@@ -1070,91 +989,43 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
   if(rw<2||rh<2)return;
 
   const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data;
-  const threshold=+$('whiteThreshold').value||145;
-  const strength=(+$('removeOpacity').value||100)/100;
-  const expand=Math.max(1,Math.min(10,+$('inpaintPasses').value||7));
-  const N=rw*rh;
-  const mask=new Uint8Array(N);
-  const work=new Uint8ClampedArray(d);
-
-  // Detect white/light-gray text, including compressed anti-aliased edges.
-  for(let p=0,i=0;p<N;p++,i+=4){
-    const r=d[i],g=d[i+1],b=d[i+2];
-    const mx=Math.max(r,g,b), mn=Math.min(r,g,b), avg=(r+g+b)/3;
-    const neutral=(mx-mn)<=105;
-    if(neutral && (mx>=threshold || avg>=threshold)) mask[p]=1;
-  }
-
-  // Expand the mask so the thin anti-aliased halo around letters is also removed.
-  let expanded=new Uint8Array(mask);
-  for(let pass=0;pass<expand;pass++){
-    const next=new Uint8Array(expanded);
-    for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-      const p=y*rw+x;
-      if(!expanded[p])continue;
-      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-        const xx=x+dx, yy=y+dy;
-        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) next[yy*rw+xx]=1;
-      }
+  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
+  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
+  for(let y=0;y<rh;y++){
+    for(let x=0;x<rw;x++){
+      const p=y*rw+x,i=p*4;
+      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
+      const neutral=(mx-mn)<=115;
+      const bright=(rr+gg+bb)/3;
+      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
     }
-    expanded=next;
   }
-
-  // Iteratively grow real neighbouring pixels into the removed text area.
-  // This is much stronger than replacing each white pixel from only one side.
-  const filled=new Uint8ClampedArray(work);
-  const filledMask=new Uint8Array(expanded);
-  const passes=Math.min(12,Math.max(2,expand+2));
-  for(let pass=0;pass<passes;pass++){
-    const nextPixels=new Uint8ClampedArray(filled);
-    const nextMask=new Uint8Array(filledMask);
-    for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-      const p=y*rw+x;
-      if(!filledMask[p])continue;
-      let sr=0,sg=0,sb=0,n=0;
-      const samples=[];
-      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-        if(dx===0&&dy===0)continue;
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(mask[p]){
+      for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
         const xx=x+dx,yy=y+dy;
-        if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
-        const q=yy*rw+xx;
-        if(!filledMask[q]){const j=q*4;samples.push(j);}
-      }
-      if(samples.length){
-        // Prefer the average of the actual surrounding background pixels.
-        for(const j of samples){sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];}
-        n=samples.length;
-      }else{
-        // For deeper pixels, sample a small ring from already-filled pixels.
-        for(let r=2;r<=Math.min(8,pass+3)&&n<8;r++){
-          const pts=[[x-r,y],[x+r,y],[x,y-r],[x,y+r],[x-r,y-r],[x+r,y-r],[x-r,y+r],[x+r,y+r]];
-          for(const [xx,yy] of pts){
-            if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
-            const q=yy*rw+xx;
-            if(!expanded[q]){const j=q*4;sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;}
-            if(n>=8)break;
-          }
-        }
-      }
-      if(n){
-        const i=p*4;
-        nextPixels[i]=filled[i]*(1-strength)+(sr/n)*strength;
-        nextPixels[i+1]=filled[i+1]*(1-strength)+(sg/n)*strength;
-        nextPixels[i+2]=filled[i+2]*(1-strength)+(sb/n)*strength;
-        nextPixels[i+3]=filled[i+3];
-        nextMask[p]=1;
+        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
       }
     }
-    filled.set(nextPixels);
-    filledMask.set(nextMask);
   }
 
-  // One small smoothing pass only inside the removed area to eliminate letter-shaped remnants.
-  const out=new Uint8ClampedArray(filled);
+  const maxSearch=Math.min(50,Math.max(24,Math.round(Math.max(rw,rh)/2)));
+  const filled=new Uint8ClampedArray(d);
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
     const p=y*rw+x;
     if(!expanded[p])continue;
+    let sr=0,sg=0,sb=0,n=0;
+    for(let k=1;k<=maxSearch;k++){const lx=x-k;if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const rx=x+k;if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const ty=y-k;if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const by=y+k;if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    if(n){const i=p*4;filled[i]=d[i]*(1-strength)+(sr/n)*strength;filled[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;filled[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
+  }
+
+  const out=new Uint8ClampedArray(filled);
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x; if(!expanded[p])continue;
     let sr=0,sg=0,sb=0,n=0;
     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
       const xx=x+dx,yy=y+dy;
@@ -1162,8 +1033,7 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
       const q=yy*rw+xx,j=q*4;
       sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;
     }
-    const i=p*4;
-    out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;
+    if(n){const i=p*4;out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;}
   }
   ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
 }
@@ -1267,287 +1137,9 @@ function drawWhiteRemovalGPU(rect){
 }
 
 function exportNeedsFrameProcessing(){
-  // OCR replacements also require per-frame processing.
-  return whiteRects.length>0 || ocrItems.some(x=>x.enabled && x.replacement.trim()) || (lat!=null && lon!=null);
-}
-
-function getOCRRectsForCanvas(srcRect,W,H){
-  if(!ocrItems.length)return [];
-  const out=[];
-  for(const item of ocrItems){
-    if(!item.enabled)return;
-    const b=item.bbox;
-    const ix=Math.max(srcRect.x,b.x), iy=Math.max(srcRect.y,b.y);
-    const ix2=Math.min(srcRect.x+srcRect.w,b.x+b.w), iy2=Math.min(srcRect.y+srcRect.h,b.y+b.h);
-    if(ix2<=ix||iy2<=iy)continue;
-    out.push({
-      item,
-      x:(ix-srcRect.x)/srcRect.w*W,
-      y:(iy-srcRect.y)/srcRect.h*H,
-      w:(ix2-ix)/srcRect.w*W,
-      h:(iy2-iy)/srcRect.h*H
-    });
-  }
-  return out;
-}
-
-function applyOCRRemoval(ctx2,W,H,srcRect){
-  // Remove every OCR-detected word/line separately. The final replacement is
-  // drawn only once over the whole selected GeoTag area.
-  if(ocrDetectedBoxes.length){
-    for(const b of ocrDetectedBoxes){
-      const x=b.x/srcRect.w*W, y=b.y/srcRect.h*H, w=b.w/srcRect.w*W, h=b.h/srcRect.h*H;
-      removeWhiteFromCanvasExport(ctx2,W,H,{x,y,w,h});
-    }
-    return;
-  }
-  const rects=getOCRRectsForCanvas(srcRect,W,H);
-  for(const r of rects){
-    if(!r.item.replacement.trim())continue;
-    removeWhiteFromCanvasExport(ctx2,W,H,{x:r.x,y:r.y,w:r.w,h:r.h});
-  }
-}
-
-function drawOCRReplacements(ctx2,W,H,srcRect,preview=false){
-  const active=ocrItems.filter(x=>x.enabled&&String(x.replacement||'').trim());
-  if(!active.length)return;
-
-  // The replacement is intentionally positioned as a camera-style block at the
-  // bottom-right of the video, independent of the rectangle used to erase the
-  // original text. This keeps the format stable and prevents a large selection
-  // rectangle from making the new text huge.
-  // ONE global size/thickness setting controls every GeoTag line.
-  // Do not use per-line size/weight here; this keeps the entire stamp uniform.
-  const defaultSizeScale=clamp((+(state.gTextSize||$('ocrSize').value||100))/100,.4,2.2);
-  const defaultWeight=clamp(+(state.gTextWeight||$('ocrWeight').value||700),300,900);
-  const baseFs=clamp(Math.min(W,H)*0.036,18,32);
-  const rightX=W*0.985;
-  const bottomY=H*0.992;
-  const maxWidth=W*0.48;
-
-  ctx2.save();
-  ctx2.fillStyle='#fff';
-  ctx2.textBaseline='alphabetic';
-  ctx2.textAlign='right';
-  ctx2.shadowColor='rgba(0,0,0,.78)';
-  ctx2.shadowBlur=Math.max(1,baseFs*.10);
-  ctx2.shadowOffsetX=1;ctx2.shadowOffsetY=1;
-
-  // Work upward from the bottom so the last line always sits against the
-  // bottom edge, matching the reference camera GeoTag.
-  let y=bottomY;
-  for(let i=active.length-1;i>=0;i--){
-    const item=active[i];
-    const sizeScale=defaultSizeScale;
-    const weight=defaultWeight;
-    const fs=clamp(baseFs*sizeScale,12,40);
-    ctx2.font=`${weight} ${fs}px Arial, sans-serif`;
-    const text=String(item.replacement||'').trim();
-    ctx2.fillText(text,rightX,y);
-    y-=fs*1.08;
-  }
-  ctx2.restore();
-}
-
-function groupOCRWords(words,videoW,videoH){
-  const good=(words||[]).filter(w=>w.text&&w.text.trim()&&Number(w.confidence??w.conf??0)>=35&&w.bbox);
-  if(!good.length)return [];
-  good.sort((a,b)=>((a.bbox.y0+a.bbox.y1)/2)-((b.bbox.y0+b.bbox.y1)/2)||a.bbox.x0-b.bbox.x0);
-  const lines=[];
-  for(const w of good){
-    const cy=(w.bbox.y0+w.bbox.y1)/2, h=Math.max(1,w.bbox.y1-w.bbox.y0);
-    let line=lines.find(l=>Math.abs(l.cy-cy)<=Math.max(10,h*.65));
-    if(!line){line={cy,words:[]};lines.push(line)}
-    line.words.push(w);
-    line.cy=line.words.reduce((s,q)=>s+(q.bbox.y0+q.bbox.y1)/2,0)/line.words.length;
-  }
-  return lines.map(line=>{
-    line.words.sort((a,b)=>a.bbox.x0-b.bbox.x0);
-    const x0=Math.max(0,Math.min(...line.words.map(w=>w.bbox.x0))-3);
-    const y0=Math.max(0,Math.min(...line.words.map(w=>w.bbox.y0))-3);
-    const x1=Math.min(videoW,Math.max(...line.words.map(w=>w.bbox.x1))+3);
-    const y1=Math.min(videoH,Math.max(...line.words.map(w=>w.bbox.y1))+3);
-    const text=line.words.map(w=>w.text.trim()).filter(Boolean).join(' ');
-    const confidence=Math.round(line.words.reduce((s,w)=>s+Number(w.confidence??w.conf??0),0)/line.words.length);
-    return {text,replacement:text,bbox:{x:x0,y:y0,w:x1-x0,h:y1-y0},confidence,enabled:true};
-  }).filter(x=>x.bbox.w>=8&&x.bbox.h>=6&&x.text.length>=2);
-}
-
-function renderOCRList(){
-  const box=$('ocrList');
-  if(!ocrItems.length){
-    box.innerHTML='<div class="ocrEmpty">No detected text yet.</div>';
-    return;
-  }
-  box.innerHTML='';
-  ocrItems.forEach((item,i)=>{
-    const row=document.createElement('div');row.className='ocrItem';
-    const cb=document.createElement('input');cb.type='checkbox';cb.checked=item.enabled;cb.title='Replace this detected text';
-    cb.onchange=()=>{item.enabled=cb.checked;drawGeoPreview()};
-    const orig=document.createElement('div');orig.textContent=`Detected: ${item.text}`;orig.title=item.text;
-    const repl=document.createElement('div');repl.textContent=`→ ${item.replacement}`;repl.title=item.replacement;
-    const meta=document.createElement('div');meta.className='ocrMeta';
-    meta.textContent=`Selected area • ${item.confidence}% scan confidence • x:${Math.round(item.bbox.x)} y:${Math.round(item.bbox.y)} w:${Math.round(item.bbox.w)} h:${Math.round(item.bbox.h)}`;
-    row.append(cb,orig,repl,meta);box.appendChild(row);
-  });
-}
-
-async function scanOCR(){
-  if(ocrScanning||!video.videoWidth)return;
-  if(!textRect){$('ocrStatus').textContent='Find a location first, then draw a rectangle around the GeoTag text.';return}
-  if(typeof Tesseract==='undefined'){$('ocrStatus').textContent='Text scanner could not load. Connect to the internet and reload.';return}
-  ocrScanning=true;$('ocrScan').disabled=true;
-  ocrItems=[];ocrDetectedBoxes=[];drawGeoPreview();
-  try{
-    const tr=textRect;
-    const c=document.createElement('canvas');
-    c.width=Math.max(1,Math.round(tr.w));c.height=Math.max(1,Math.round(tr.h));
-    const cctx=c.getContext('2d',{willReadFrequently:true});
-    cctx.drawImage(video,tr.x,tr.y,tr.w,tr.h,0,0,c.width,c.height);
-    $('ocrStatus').textContent='Scanning selected GeoTag area: preparing OCR… 0%';
-    if(!ocrWorker)ocrWorker=await Tesseract.createWorker('eng',1,{logger:m=>{
-      if(m&&m.status){const pct=m.progress!=null?Math.round(m.progress*100):0;$('ocrStatus').textContent=`Scanning every detected text region: ${m.status} ${pct}%`;}
-    }});
-    const result=await ocrWorker.recognize(c);
-    const words=result?.data?.words||[];
-    // Keep EVERY readable detected word, then group only for display/removal.
-    const goodWords=words.filter(w=>w.text&&w.text.trim()&&Number(w.confidence??w.conf??0)>=25&&w.bbox);
-    if(!goodWords.length){
-      $('ocrItems').innerHTML='';
-      $('ocrList').innerHTML='<div class="ocrEmpty">No readable text found. Draw a tighter rectangle around the existing GeoTag text and scan again.</div>';
-      $('ocrStatus').textContent='Scan finished: 0 text regions found.';
-      drawGeoPreview();return;
-    }
-    const localItems=groupOCRWords(goodWords,c.width,c.height);
-    // Remove the original white GeoTag line-by-line. OCR still reads every word,
-    // but the actual removal boxes are grouped into clean line rectangles so the
-    // old white text cannot remain between individual word boxes.
-    const localLines=groupOCRWords(goodWords,c.width,c.height);
-    ocrDetectedBoxes=localLines.map(line=>({
-      x:Math.max(0,tr.x+line.bbox.x-4),
-      y:Math.max(0,tr.y+line.bbox.y-4),
-      w:Math.max(6,line.bbox.w+8),
-      h:Math.max(6,line.bbox.h+8),
-      text:line.text,confidence:line.confidence
-    }));
-    const confidence=Math.round(goodWords.reduce((a,w)=>a+Number(w.confidence??w.conf??0),0)/goodWords.length);
-    const elapsed=Math.max(0,video.currentTime-(+$('trimStart').value||0));
-    const replacementLines=getGeoTagLines(elapsed);
-    const lineCount=replacementLines.length;
-    const lineH=tr.h/lineCount;
-    ocrItems=replacementLines.map((replacement,i)=>({
-      text:(localItems[i]?.text||'Detected GeoTag line'),
-      replacement,
-      bbox:{x:tr.x,y:tr.y+i*lineH,w:tr.w,h:lineH},
-      confidence,
-      enabled:true,sizeScale:(state.gTextSize||100)/100,weight:state.gTextWeight||700,bold:false
-    }));
-    // Leave selection mode automatically so the changed text becomes visible immediately.
-    textAreaMode=false;geoTextSelecting=false;
-    $('textAreaMode').textContent='▣ Select Text Area';
-    const gs=$('geoTextSelection');if(gs)gs.style.display='none';
-    renderOCRList();
-    drawGeoPreview();
-    $('ocrStatus').textContent=`✓ Scan complete — found ${goodWords.length} text region(s) across ${localItems.length} line(s). The old text has been removed and the new location text is now visible. Double-click the new text to edit it.`;
-  }catch(err){
-    console.error('Selected-area OCR failed',err);$('ocrStatus').textContent='Scan failed: '+(err.message||err);
-  }finally{$('ocrScan').disabled=!textRect;ocrScanning=false;}
-}
-$('textAreaMode').onclick=()=>{
-  textAreaMode=!textAreaMode;
-  cropMode=false;removeMode=false;
-  $('cropMode').textContent='Crop: OFF';
-  $('removeMode').textContent='Select White Text Area';
-  $('textAreaMode').textContent=textAreaMode?'Drawing Text Area…':'▣ Select Text Area';
-  $('ocrStatus').textContent=textAreaMode?'Draw a rectangle directly on the GeoTag preview around the existing text.':'Text-area selection mode off.';
-  const gs=$('geoTextSelection');
-  if(!textAreaMode){gs.style.display='none';geoTextSelecting=false;}
-  if(textAreaMode){setStatus('Draw a rectangle on the GeoTag preview around the existing text you want to replace.');drawGeoPreview();}
-};
-$('ocrScan').onclick=scanOCR;
-$('ocrClear').onclick=()=>{
-  ocrItems=[];ocrDetectedBoxes=[];textRect=null;$('ocrScan').disabled=true;
-  $('ocrList').innerHTML='<div class="ocrEmpty">No text area selected.</div>';
-  $('ocrStatus').textContent='Find a location first, then draw a rectangle around the GeoTag text.';
-  updateSelectionBox();drawGeoPreview();
-};
-function closeInlineEditor(apply=true){
-  const ed=$('inlineTextEditor');
-  if(inlineEditingIndex<0){ed.style.display='none';return;}
-  const item=ocrItems[inlineEditingIndex];
-  if(apply && item){
-    item.replacement=$('inlineTextInput').innerText.replace(/\r/g,'').trim();
-    const globalSize=(+$('inlineSize').value||100)/100;
-    const globalWeight=+$('inlineWeight').value||700;
-    state.gTextSize=globalSize*100; state.gTextWeight=globalWeight;
-    $('gTextSize').value=state.gTextSize; $('gTextSizeVal').textContent=state.gTextSize+'%';
-    $('ocrSize').value=state.gTextSize; $('ocrSizeVal').textContent=state.gTextSize+'%';
-    $('gTextWeight').value=globalWeight; $('gTextWeightVal').textContent=globalWeight;
-    $('ocrWeight').value=globalWeight; $('ocrWeightVal').textContent=globalWeight;
-    ocrItems.forEach(it=>{it.sizeScale=globalSize;it.weight=globalWeight;});
-    item.bold=$('inlineBold').dataset.active==='1';
-    renderOCRList();
-    drawGeoPreview();
-  }else if(item && inlineEditBackup){
-    Object.assign(item,inlineEditBackup);
-    drawGeoPreview();
-  }
-  inlineEditingIndex=-1;inlineEditBackup=null;ed.style.display='none';
-}
-function openInlineEditor(index){
-  const item=ocrItems[index]; if(!item)return;
-  inlineEditingIndex=index;
-  inlineEditBackup={replacement:item.replacement,sizeScale:item.sizeScale,weight:item.weight,bold:item.bold};
-  $('inlineTextInput').innerText=item.replacement||'';
-  $('inlineSize').value=Math.round((item.sizeScale||1)*100);
-  $('inlineSizeVal').textContent=$('inlineSize').value+'%';
-  $('inlineWeight').value=item.weight||700;
-  $('inlineWeightVal').textContent=$('inlineWeight').value;
-  $('inlineBold').dataset.active=item.bold?'1':'0';
-  $('inlineBold').classList.toggle('active',!!item.bold);
-  const gr=$('geoStage').getBoundingClientRect(), cr=geo.getBoundingClientRect();
-  const sx=cr.left-gr.left+(item.bbox.x/geo.width)*cr.width;
-  const sy=cr.top-gr.top+(item.bbox.y/geo.height)*cr.height;
-  const ed=$('inlineTextEditor'); ed.style.display='block';
-  ed.style.left=Math.max(4,Math.min(gr.width-230,sx))+'px';
-  ed.style.top=Math.max(4,sy-94)+'px';
-  requestAnimationFrame(()=>{$('inlineTextInput').focus();document.execCommand('selectAll',false,null);});
-}
-$('inlineDone').onclick=()=>closeInlineEditor(true);
-$('inlineBold').onclick=()=>{const b=$('inlineBold');const on=b.dataset.active!=='1';b.dataset.active=on?'1':'0';b.classList.toggle('active',on);$('inlineTextInput').focus();};
-$('inlineSize').oninput=()=>{
-  const v=+$('inlineSize').value||100;
-  $('inlineSizeVal').textContent=v+'%';
-  state.gTextSize=v; $('gTextSize').value=v; $('gTextSizeVal').textContent=v+'%';
-  $('ocrSize').value=v; $('ocrSizeVal').textContent=v+'%';
-  if(ocrItems.length)ocrItems.forEach(item=>item.sizeScale=v/100);
-  drawGeoPreview();
-};
-$('inlineWeight').oninput=()=>{
-  const v=+$('inlineWeight').value||700;
-  $('inlineWeightVal').textContent=v;
-  state.gTextWeight=v; $('gTextWeight').value=v; $('gTextWeightVal').textContent=v;
-  $('ocrWeight').value=v; $('ocrWeightVal').textContent=v;
-  if(ocrItems.length)ocrItems.forEach(item=>item.weight=v);
-  drawGeoPreview();
-};
-$('inlineTextInput').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeInlineEditor(false);}else if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();closeInlineEditor(true);}});
-$('inlineTextInput').addEventListener('input',()=>{if(inlineEditingIndex>=0){ocrItems[inlineEditingIndex].replacement=$('inlineTextInput').innerText.replace(/\r/g,'');drawGeoPreview();}});
-$('ocrSize').oninput=()=>{
-  $('ocrSizeVal').textContent=$('ocrSize').value+'%';
-  if(ocrItems.length)ocrItems.forEach(item=>item.sizeScale=(+$('ocrSize').value||100)/100);
-  $('gTextSize').value=$('ocrSize').value; $('gTextSizeVal').textContent=$('ocrSize').value+'%'; state.gTextSize=+$('ocrSize').value||100;
-  drawGeoPreview();
-};
-$('ocrWeight').oninput=()=>{
-  $('ocrWeightVal').textContent=$('ocrWeight').value;
-  if(ocrItems.length)ocrItems.forEach(item=>item.weight=+$('ocrWeight').value||700);
-  $('gTextWeight').value=$('ocrWeight').value; $('gTextWeightVal').textContent=$('ocrWeight').value; state.gTextWeight=+$('ocrWeight').value||700;
-  drawGeoPreview();
-};
-
-function escapeHtml(v){
-  return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  // Crop/trim are represented by sourceRect()/start-end below. Only run
+  // expensive per-pixel/overlay work when the user actually enabled it.
+  return !!whiteRect || (lat!=null && lon!=null);
 }
 
 function drawExportFrame(elapsedOverride){
@@ -1557,22 +1149,17 @@ function drawExportFrame(elapsedOverride){
 
   // White-text removal is completely skipped when no white-text area was
   // selected. This avoids getImageData/putImageData on every exported frame.
-  if(whiteRects.length){
-    // Each selected GeoTag line is removed independently.
-    for(const wr of whiteRects){
-      const rectOnOutput={
-        x:wr.x/r.w*outputW,y:wr.y/r.h*outputH,
-        w:wr.w/r.w*outputW,h:wr.h/r.h*outputH
-      };
-      removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
-    }
-  }
-
-  // OCR-selected text is removed from its detected bounding boxes, then
-  // replaced with the user's editable text at the same location.
-  if(ocrItems.some(x=>x.enabled&&x.replacement.trim())){
-    applyOCRRemoval(wctx,outputW,outputH,r);
-    drawOCRReplacements(wctx,outputW,outputH,r,false);
+  if(whiteRect){
+    const rectOnOutput={
+      x:whiteRect.x/r.w*outputW,
+      y:whiteRect.y/r.h*outputH,
+      w:whiteRect.w/r.w*outputW,
+      h:whiteRect.h/r.h*outputH
+    };
+    // Use the export-grade inpainting routine here. The ultra-fast 4-neighbour
+    // version can leave the middle of thick white letters untouched because
+    // those pixels have no immediate non-white neighbour.
+    removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
   }
 
   // GeoTag/map/logo are skipped entirely unless a location has actually
@@ -1704,7 +1291,7 @@ async function exportVideoFrameAccurate(){
 
     restoreMute=video.muted;
     video.muted=true;
-    video.playbackRate=4.0; // aggressively decode faster; encoded timestamps still preserve normal output duration
+    video.playbackRate=2.5; // decode faster; encoded timestamps still preserve normal output duration
 
     const hasRVFC=typeof video.requestVideoFrameCallback==='function';
     let frameIndex=0;
@@ -1837,7 +1424,7 @@ async function exportVideoFrameAccurate(){
         bitrate:128000
       });
 
-      const chunkSize=65536; // much fewer AudioData objects = substantially faster audio encoding
+      const chunkSize=8192;
       const totalSamples=Math.max(1,s1-s0);
       for(let s=s0;s<s1;s+=chunkSize){
         const n=Math.min(chunkSize,s1-s);
@@ -1856,23 +1443,14 @@ async function exportVideoFrameAccurate(){
         });
         audioEncoder.encode(audioData);
         audioData.close();
-        // Prevent an enormous audio encoder queue from making the final 99%
-        // appear frozen. Drain in larger batches instead of waiting only at flush().
-        if(audioEncoder.encodeQueueSize>24){
-          const waitStart=performance.now();
-          while(audioEncoder.encodeQueueSize>8){
-            if(performance.now()-waitStart>4000) break;
-            await new Promise(r=>setTimeout(r,4));
-          }
-        }
         const pct=94+Math.round(((s-s0)/totalSamples)*5);
         $('exportStatus').textContent='Encoding audio… '+Math.min(98,pct)+'%';
       }
 
-      $('exportStatus').textContent='Finishing audio… 99% (draining encoder)';
+      $('exportStatus').textContent='Finishing audio… 99%';
       await Promise.race([
         audioEncoder.flush(),
-        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out after 8 seconds.')),8000))
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out.')),15000))
       ]);
       audioEncoder.close();
     }
@@ -2043,25 +1621,16 @@ $('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection')
 $('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
 $('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
-for(const id of ['gMapO','gMapW','mapH','gTextSize','gTextWeight','gTextOpacity']){
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
  $(id).oninput=()=>{
-   if(id==='gMapO') state.gMapO=+$(id).value;
-   if(id==='gMapW'){ state.gMapW=+$(id).value; state.mapW=+$(id).value; }
+   state[id]=+$(id).value;
+   if(id==='gMapW') state.mapW=+$(id).value;
    if(id==='mapH') state.mapH=+$(id).value;
-   if(id==='gTextSize') state.gTextSize=+$(id).value;
-   if(id==='gTextWeight') state.gTextWeight=+$(id).value;
-   if(id==='gTextOpacity') state.gTextOpacity=+$(id).value;
-   // When OCR replacement is active, keep the main GeoTag size/thickness
-   // controls connected to the visible replacement text too.
-   if(id==='gTextSize' && ocrItems.length){ ocrItems.forEach(item=>item.sizeScale=(+$(id).value||100)/100); $('ocrSize').value=$(id).value; $('ocrSizeVal').textContent=$(id).value+'%'; }
-   if(id==='gTextWeight' && ocrItems.length){ ocrItems.forEach(item=>item.weight=+$(id).value||700); $('ocrWeight').value=$(id).value; $('ocrWeightVal').textContent=$(id).value; }
-   $(id+'Val').textContent=(id==='gTextWeight'?$(id).value:$(id).value+'%');
+   $(id+'Val').textContent=$(id).value+'%';
    drawGeoPreview();
  }
 }
-
 let mapDrag=null;
-let textDrag=null;
 function getMapRectOnPreview(){
  if(!geo.width||!geo.height)return null;
  const W=geo.width,H=geo.height;
@@ -2075,145 +1644,39 @@ function mapPointerPos(e){
  const r=geo.getBoundingClientRect();
  return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};
 }
-function getTextLinesForHit(W,H){
- const baseSize=Math.max(10,Math.min(W,H)*0.036)*(state.gTextSize/100);
- const weight=clamp(Math.round(state.gTextWeight/100)*100,300,900);
- const texts=getGeoTagLines(Math.max(0,video.currentTime-(+$('trimStart').value||0)));
- const out=[];const fs=`${weight} ${baseSize}px Arial, sans-serif`;
- gctx.save();gctx.font=fs;gctx.textAlign='right';
- texts.forEach((text,i)=>{
-   const x=W*state['line'+(i+1)+'X']/100, y=H*state['line'+(i+1)+'Y']/100;
-   const width=Math.max(30,gctx.measureText(text||' ').width);
-   out.push({i,x:x-width,y:y-baseSize,w:width+8,h:baseSize*1.5,text});
- });
- gctx.restore();return out;
-}
-geo.addEventListener('dblclick',e=>{
-  if(textAreaMode || !ocrItems.length)return;
-  const p=mapPointerPos(e);
-  for(let i=ocrItems.length-1;i>=0;i--){
-    const b=ocrItems[i].bbox;
-    if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h){e.preventDefault();openInlineEditor(i);return;}
-  }
-});
 geo.addEventListener('pointerdown',e=>{
- if(!geo.width)return;
- if(textAreaMode){
-   e.preventDefault();
-   geoTextSelecting=true;
-   geo.setPointerCapture(e.pointerId);
-   const p=mapPointerPos(e); geoTextSX=p.x; geoTextSY=p.y;
-   const box=$('geoTextSelection'),gr=$('geoStage').getBoundingClientRect(),cr=geo.getBoundingClientRect();
-   box.style.display='block';
-   box.style.left=(cr.left-gr.left+p.x*(cr.width/geo.width))+'px';
-   box.style.top=(cr.top-gr.top+p.y*(cr.height/geo.height))+'px';
-   box.style.width='0px';box.style.height='0px';
-   return;
- }
- const p=mapPointerPos(e); const r=getMapRectOnPreview();
- const hs=Math.max(10,16*geo.width/Math.max(1,geo.getBoundingClientRect().width));
- if(mapImg && r){
-   const resize=Math.abs(p.x-(r.x+r.w))<=hs && Math.abs(p.y-(r.y+r.h))<=hs;
-   if(resize || (p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h)){
-     e.preventDefault(); geo.setPointerCapture(e.pointerId);
-     mapDrag={mode:resize?'resize':'move',startX:p.x,startY:p.y,x:r.x,y:r.y,w:r.w,h:r.h,W:r.W,H:r.H};
-     textDrag=null;
-     return;
-   }
- }
- // Text hit test. Last matching line wins so a line on top can be selected.
- // OCR replacement hit-test first when OCR mode is active.
- const ocrHits=getOCRRectsForCanvas(sourceRect(),geo.width,geo.height)
-   .filter(r=>p.x>=r.x-8&&p.x<=r.x+r.w+8&&p.y>=r.y-8&&p.y<=r.y+r.h+8);
- const ocrHit=ocrHits.pop();
- if(ocrHit){
+ if(!mapImg||!geo.width)return;
+ const r=getMapRectOnPreview(); if(!r)return;
+ const p=mapPointerPos(e); const hs=Math.max(10,16*geo.width/Math.max(1,geo.getBoundingClientRect().width));
+ const resize=Math.abs(p.x-(r.x+r.w))<=hs && Math.abs(p.y-(r.y+r.h))<=hs;
+ if(resize || (p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h)){
    e.preventDefault(); geo.setPointerCapture(e.pointerId);
-   textDrag={ocrItem:ocrHit.item,startX:p.x,startY:p.y,x:ocrHit.x,y:ocrHit.y,W:geo.width,H:geo.height};
-   return;
- }
- const hit=getTextLinesForHit(geo.width,geo.height).filter(t=>p.x>=t.x-8&&p.x<=t.x+t.w+8&&p.y>=t.y-t.h/2&&p.y<=t.y+t.h/2).pop();
- if(hit){
-   e.preventDefault(); geo.setPointerCapture(e.pointerId);
-   textDrag={i:hit.i,startX:p.x,startY:p.y,x:hit.x,y:hit.y,W:geo.width,H:geo.height};
+   mapDrag={mode:resize?'resize':'move',startX:p.x,startY:p.y,x:r.x,y:r.y,w:r.w,h:r.h,W:r.W,H:r.H};
  }
 });
 geo.addEventListener('pointermove',e=>{
- if(geoTextSelecting){
-   const p=mapPointerPos(e);
-   const x=Math.min(geoTextSX,p.x),y=Math.min(geoTextSY,p.y),w=Math.abs(p.x-geoTextSX),h=Math.abs(p.y-geoTextSY);
-   const box=$('geoTextSelection'),gr=$('geoStage').getBoundingClientRect(),cr=geo.getBoundingClientRect();
-   box.style.left=(cr.left-gr.left+x*(cr.width/geo.width))+'px';
-   box.style.top=(cr.top-gr.top+y*(cr.height/geo.height))+'px';
-   box.style.width=(w*(cr.width/geo.width))+'px';box.style.height=(h*(cr.height/geo.height))+'px';
-   return;
+ if(!mapDrag)return;
+ const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
+ if(mapDrag.mode==='move'){
+   state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
+   state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
+ }else{
+   state.mapW=clamp((mapDrag.w+dx)/mapDrag.W*100,5,100-state.mapX);
+   state.mapH=clamp((mapDrag.h+dy)/mapDrag.H*100,5,100-state.mapY);
+   $('gMapW').value=Math.round(state.mapW); $('gMapWVal').textContent=Math.round(state.mapW)+'%';
+   $('mapH').value=Math.round(state.mapH); $('mapHVal').textContent=Math.round(state.mapH)+'%';
  }
- if(mapDrag){
-   const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
-   if(mapDrag.mode==='move'){
-     state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
-     state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
-   }else{
-     state.mapW=clamp((mapDrag.w+dx)/mapDrag.W*100,5,100-state.mapX);
-     state.mapH=clamp((mapDrag.h+dy)/mapDrag.H*100,5,100-state.mapY);
-     $('gMapW').value=Math.round(state.mapW); $('gMapWVal').textContent=Math.round(state.mapW)+'%';
-     $('mapH').value=Math.round(state.mapH); $('mapHVal').textContent=Math.round(state.mapH)+'%';
-   }
-   drawGeoPreview();
-   return;
- }
- if(textDrag){
-   const p=mapPointerPos(e); const dx=p.x-textDrag.startX,dy=p.y-textDrag.startY;
-   if(textDrag.ocrItem){
-     const src=sourceRect();
-     textDrag.ocrItem.bbox.x=clamp(src.x+(textDrag.x+dx)/textDrag.W*src.w,0,video.videoWidth-textDrag.ocrItem.bbox.w);
-     textDrag.ocrItem.bbox.y=clamp(src.y+(textDrag.y+dy)/textDrag.H*src.h,0,video.videoHeight-textDrag.ocrItem.bbox.h);
-   }else{
-     const n=textDrag.i+1;
-     state['line'+n+'X']=clamp((textDrag.x+dx)/textDrag.W*100,0,100);
-     state['line'+n+'Y']=clamp((textDrag.y+dy)/textDrag.H*100,0,100);
-   }
-   drawGeoPreview();
- }
+ drawGeoPreview();
 });
-function endGeoDrag(e){
- if(geoTextSelecting){
-   const p=mapPointerPos(e);
-   const x=Math.min(geoTextSX,p.x),y=Math.min(geoTextSY,p.y),w=Math.abs(p.x-geoTextSX),h=Math.abs(p.y-geoTextSY);
-   geoTextSelecting=false;
-   if(w>=8&&h>=8){
-     const sr=sourceRect();
-     textRect={x:sr.x+x/geo.width*sr.w,y:sr.y+y/geo.height*sr.h,w:w/geo.width*sr.w,h:h/geo.height*sr.h};
-     $('ocrScan').disabled=false;
-     $('ocrStatus').textContent='Text area selected. Starting scan…';
-     $('ocrList').innerHTML='<div class=\"ocrEmpty\">Scanning every detected word and line…</div>';
-     // Start OCR automatically as soon as the rectangle is released.
-     setTimeout(()=>scanOCR(),30);
-   } else {
-     $('ocrStatus').textContent='Draw a larger rectangle around the text.';
-   }
-   drawGeoPreview();
-   return;
- }
- mapDrag=null;textDrag=null;
-}
-geo.addEventListener('pointerup',endGeoDrag); geo.addEventListener('pointercancel',e=>endGeoDrag(e)); geo.addEventListener('pointerleave',()=>{if(mapDrag||textDrag)endGeoDrag({clientX:-999999,clientY:-999999});});
+function endMapDrag(){mapDrag=null;}
+geo.addEventListener('pointerup',endMapDrag); geo.addEventListener('pointercancel',endMapDrag); geo.addEventListener('pointerleave',()=>{if(mapDrag)endMapDrag();});
 
 function drawGeoPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
- // While selecting the source text, show the untouched video frame so the user can
- // draw the rectangle precisely over the original GeoTag text.
- if(!textAreaMode){
-   for(const wr of whiteRects){
-     removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:wr.x/r.w*geo.width,y:wr.y/r.h*geo.height,w:wr.w/r.w*geo.width,h:wr.h/r.h*geo.height});
-   }
-   if(ocrItems.some(x=>x.enabled&&x.replacement.trim())){
-     applyOCRRemoval(gctx,geo.width,geo.height,r);
-     drawOCRReplacements(gctx,geo.width,geo.height,r,true);
-   }
-   if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
- }
+ if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
+ if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{
  if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}
@@ -2249,20 +1712,7 @@ $('downloadGeo').onclick=()=>{
 };
 
 video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
-let geoAnimRAF=0;
-function animateGeoPreview(){
-  if(geoAnimRAF)return;
-  const tick=()=>{
-    geoAnimRAF=0;
-    if(video.videoWidth && !video.paused && $('geoSection').style.display!=='none'){
-      drawPreview();drawGeoPreview();geoAnimRAF=requestAnimationFrame(tick);
-    }
-  };
-  geoAnimRAF=requestAnimationFrame(tick);
-}
-video.addEventListener('play',animateGeoPreview);
-video.addEventListener('pause',()=>{if(geoAnimRAF){cancelAnimationFrame(geoAnimRAF);geoAnimRAF=0;}});
-setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none' && video.paused)drawGeoPreview()}},250);
+setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
 </script>
 </body>
 </html>

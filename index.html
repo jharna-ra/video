@@ -105,7 +105,7 @@ input[type=range]{width:100%}
   .timelineArrow{width:26px;height:36px;top:50px;font-size:20px;line-height:32px}
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
 </head>
 <body>
 <header>
@@ -124,7 +124,11 @@ input[type=range]{width:100%}
 <aside class="card">
 <h2>Video</h2>
 <label>Choose MP4 / WebM / MOV</label>
-<input id="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska,video/*">
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <button id="chooseVideoBtn" type="button">Choose Video</button>
+  <span id="pickerReady" class="badge">Video picker ready</span>
+</div>
+<input id="videoFile" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi" style="margin-top:8px">
 
 <div class="queue"><span id="fileName">No video selected</span><span id="durationBadge">0.0 s</span></div>
 
@@ -291,57 +295,75 @@ input[type=range]{width:100%}
 
 <video id="video" playsinline preload="auto" style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
 <script>
-/* Independent video-picker bootstrap.
-   It is intentionally separate from the editor script so a later editor error
-   cannot leave the picker stuck on "No video selected". */
+/* V3 picker: no dependency on the editor script or the muxer library. */
 (function(){
-  const input=document.getElementById('videoFile');
-  const vid=document.getElementById('video');
-  const nameEl=document.getElementById('fileName');
-  const durEl=document.getElementById('durationBadge');
-  if(!input||!vid)return;
-  let pickerURL=null;
-  function report(msg){
-    const st=document.getElementById('editStatus');
-    if(st)st.textContent=msg;
-  }
-  function pick(){
-    const f=input.files&&input.files[0];
-    if(!f){
-      window.__selectedVideoFile=null;
-      if(nameEl)nameEl.textContent='No video selected';
-      if(durEl)durEl.textContent='0.0 s';
-      report('No video selected.');
-      return;
+  function initVideoPicker(){
+    const input=document.getElementById('videoFile');
+    const btn=document.getElementById('chooseVideoBtn');
+    const vid=document.getElementById('video');
+    const nameEl=document.getElementById('fileName');
+    const durEl=document.getElementById('durationBadge');
+    const readyEl=document.getElementById('pickerReady');
+    const statusEl=document.getElementById('editStatus');
+    if(!input||!vid)return;
+    let pickerURL=null;
+    function status(msg){ if(statusEl) statusEl.textContent=msg; }
+    function pick(e){
+      const f=input.files && input.files.length ? input.files[0] : null;
+      if(!f){
+        if(nameEl) nameEl.textContent='No video selected';
+        if(durEl) durEl.textContent='0.0 s';
+        window.__selectedVideoFile=null;
+        status('No video selected.');
+        return;
+      }
+      window.__selectedVideoFile=f;
+      if(readyEl) readyEl.textContent='Video selected';
+      if(nameEl) nameEl.textContent=f.name;
+      if(durEl) durEl.textContent='Loading…';
+      status('Selected: '+f.name+' — loading…');
+      if(pickerURL) URL.revokeObjectURL(pickerURL);
+      pickerURL=URL.createObjectURL(f);
+      try{ vid.pause(); }catch(_){}
+      try{ vid.removeAttribute('src'); vid.load(); }catch(_){}
+      vid.src=pickerURL;
+      try{ vid.load(); }catch(_){}
+      window.dispatchEvent(new CustomEvent('video-file-picked',{detail:{file:f}}));
     }
-    window.__selectedVideoFile=f;
-    if(pickerURL)URL.revokeObjectURL(pickerURL);
-    pickerURL=URL.createObjectURL(f);
-    if(nameEl)nameEl.textContent=f.name;
-    if(durEl)durEl.textContent='Loading…';
-    report('Selected: '+f.name+' — loading video…');
-    vid.pause();
-    vid.removeAttribute('src');
-    try{vid.load();}catch(e){}
-    vid.src=pickerURL;
-    try{vid.load();}catch(e){}
-    window.dispatchEvent(new CustomEvent('video-file-picked',{detail:{file:f}}));
-  }
-  input.addEventListener('change',pick);
-  input.addEventListener('input',pick);
-  vid.addEventListener('loadedmetadata',function(){
-    if(window.__selectedVideoFile && durEl){
-      durEl.textContent=(Number(vid.duration)||0).toFixed(1)+' s';
-      report('Video loaded: '+window.__selectedVideoFile.name);
+    if(btn){
+      btn.addEventListener('click',function(){
+        // Reset first so selecting the same video again still fires change.
+        try{input.value='';}catch(_){}
+        input.click();
+      });
     }
-  });
-  vid.addEventListener('error',function(){
-    if(!window.__selectedVideoFile)return;
-    const c=vid.error&&vid.error.code;
-    report(c===4 ? 'Video selected, but this browser cannot decode this video format/codec.' : 'Video selected, but the browser could not read the video.');
-    if(durEl)durEl.textContent='Error';
-  });
-  window.__videoPickerReady=true;
+    input.addEventListener('change',pick);
+    input.addEventListener('input',pick);
+    input.addEventListener('cancel',function(){status('Video selection cancelled.');});
+    vid.addEventListener('loadedmetadata',function(){
+      const f=window.__selectedVideoFile;
+      if(!f)return;
+      if(durEl)durEl.textContent=(Number(vid.duration)||0).toFixed(1)+' s';
+      status('Video loaded: '+f.name);
+      if(readyEl)readyEl.textContent='Video loaded';
+    });
+    vid.addEventListener('loadeddata',function(){
+      const f=window.__selectedVideoFile;
+      if(f && readyEl)readyEl.textContent='Video ready';
+    });
+    vid.addEventListener('error',function(){
+      const f=window.__selectedVideoFile;
+      if(!f)return;
+      const c=vid.error&&vid.error.code;
+      status(c===4 ? 'Video selected, but this browser cannot decode this codec.' : 'Video selected, but the browser could not read it.');
+      if(durEl)durEl.textContent='Error';
+      if(readyEl)readyEl.textContent='Codec/read error';
+    });
+    window.__videoPickerReady=true;
+    if(readyEl)readyEl.textContent='Video picker ready';
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initVideoPicker,{once:true});
+  else initVideoPicker();
 })();
 </script>
 <canvas id="workCanvas" style="display:none"></canvas>
@@ -1032,19 +1054,11 @@ document.querySelectorAll('.quickTrim').forEach(btn=>btn.addEventListener('click
  $('trimStart').value='0.0'; $('trimEnd').value=fmt(Math.min(duration,+btn.dataset.sec)); video.currentTime=0; drawTimeline();
 }));
 $('videoFile').addEventListener('change',async(e)=>{
- const input=e.currentTarget;
- const selected=(input.files&&input.files.length?input.files[0]:null)||window.__selectedVideoFile||null;
- if(!selected){
-   file=null;
-   $('fileName').textContent='No video selected';
-   setStatus('No video selected.');
-   return;
- }
+ const selected=(e.currentTarget.files&&e.currentTarget.files[0])||window.__selectedVideoFile||null;
+ if(!selected){ file=null; $('fileName').textContent='No video selected'; setStatus('No video selected.'); return; }
  file=selected;
  if(videoURL){URL.revokeObjectURL(videoURL);videoURL=null;}
- video.pause();
- video.removeAttribute('src');
- video.load();
+ video.pause(); video.removeAttribute('src');
  videoURL=URL.createObjectURL(file);
  video.src=videoURL;
  video.load();
@@ -1052,10 +1066,8 @@ $('videoFile').addEventListener('change',async(e)=>{
  $('durationBadge').textContent='Loading…';
  $('downloadVideo').disabled=true;
  $('goGeo').disabled=true;
- exportBlob=null;
- staticMask=null; wrCache.clear();
+ exportBlob=null; staticMask=null; wrCache.clear();
  setStatus('Loading video preview…');
- console.log('Selected video:',file.name,file.type,file.size);
 });
 window.addEventListener('video-file-picked',e=>{
   if(e&&e.detail&&e.detail.file) file=e.detail.file;

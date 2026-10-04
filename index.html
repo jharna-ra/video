@@ -441,6 +441,32 @@ function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
   return mask;
 }
 
+// Conservative second pass for faint anti-aliased white text.  It only fires
+// inside the user's selected box and only when a low-chroma pixel is brighter
+// than its local surroundings.  This catches the thin white remnants that the
+// main detector intentionally ignores.
+function detectFaintWhite(d,w,h,t,x0,y0,x1,y1){
+  const mask=new Uint8Array(w*h); let any=false;
+  x0=Math.max(1,x0);y0=Math.max(1,y0);x1=Math.min(w-1,x1);y1=Math.min(h-1,y1);
+  const floor=Math.max(125,t-72);
+  for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){
+    const p=y*w+x,i=p*4;
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    const L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
+    if(L<floor || mx-mn>62) continue;
+    let sum=0,n=0,bright=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++) if(dx||dy){
+      const q=(y+dy)*w+(x+dx),qi=q*4;
+      const qL=d[qi]*.299+d[qi+1]*.587+d[qi+2]*.114;
+      sum+=qL;n++;if(qL<L-7)bright++;
+    }
+    const avg=sum/n;
+    // Require a small bright core plus at least two darker neighbours.
+    if(L-avg>=8 && bright>=2){mask[p]=1;any=true;}
+  }
+  return any?mask:null;
+}
+
 // Scans frames across the trim range; pixels that are bright in most frames = static text.
 async function buildStaticMask(){
   while(staticBuilding){try{await staticBuilding}catch(e){}}
@@ -499,106 +525,104 @@ function scaledStatic(sm,w,h){
 // relaxation passes so the edge of the fill matches its neighbours exactly,
 // then grain matched to the surrounding video so it does not look like a flat patch.
 function inpaintHole(d,w,h,hole,strength){
-  // Fast, strictly local exemplar reconstruction.
-  // Only the hole is modified. Source pixels always come from the original frame.
-  const N=w*h;
-  let hn=0;
-  for(let p=0;p<N;p++) if(hole[p]) hn++;
-  if(!hn) return;
+  // Fast local exemplar fill.  Only pixels inside `hole` are changed.
+  // Source pixels are ALWAYS taken from the original frame, never from a
+  // previously reconstructed pixel.  This prevents streaks and feedback.
+  const N=w*h, original=new Uint8ClampedArray(d);
+  let holeCount=0;
+  for(let p=0;p<N;p++) if(hole[p]) holeCount++;
+  if(!holeCount) return;
 
-  const original=new Uint8ClampedArray(d);
-  const filled=new Uint8Array(N);
+  // Distance from the intact boundary.  We process outside -> inside so that
+  // every target has a nearby real boundary to use as its guide.
   const dist=new Uint16Array(N); dist.fill(65535);
-  const queue=new Int32Array(Math.min(N,hn*3+1024));
+  const q=new Int32Array(Math.max(1024,Math.min(N,holeCount+1024)));
   let qh=0,qt=0;
-
-  // Boundary seeds: hole pixels touching real pixels.
   for(let y=0;y<h;y++) for(let x=0;x<w;x++){
     const p=y*w+x;
     if(!hole[p]) continue;
-    let boundary=false;
-    if(x>0&&!hole[p-1]) boundary=true;
-    else if(x<w-1&&!hole[p+1]) boundary=true;
-    else if(y>0&&!hole[p-w]) boundary=true;
-    else if(y<h-1&&!hole[p+w]) boundary=true;
-    if(boundary){dist[p]=0; if(qt<queue.length) queue[qt++]=p;}
+    const boundary=(x>0&&!hole[p-1])||(x<w-1&&!hole[p+1])||(y>0&&!hole[p-w])||(y<h-1&&!hole[p+w]);
+    if(boundary){dist[p]=0;if(qt<q.length)q[qt++]=p;}
   }
-  // Small chamfer distance. This gives us an inside-out processing order.
   while(qh<qt){
-    const p=queue[qh++],x=p%w,y=(p/w)|0,nd=dist[p]+1;
-    if(x>0){const n=p-1;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<queue.length)queue[qt++]=n;}}
-    if(x<w-1){const n=p+1;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<queue.length)queue[qt++]=n;}}
-    if(y>0){const n=p-w;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<queue.length)queue[qt++]=n;}}
-    if(y<h-1){const n=p+w;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<queue.length)queue[qt++]=n;}}
+    const p=q[qh++],x=p%w,y=(p/w)|0,nd=dist[p]+1;
+    if(x>0){const n=p-1;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<q.length)q[qt++]=n;}}
+    if(x<w-1){const n=p+1;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<q.length)q[qt++]=n;}}
+    if(y>0){const n=p-w;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<q.length)q[qt++]=n;}}
+    if(y<h-1){const n=p+w;if(hole[n]&&dist[n]>nd){dist[n]=nd;if(qt<q.length)q[qt++]=n;}}
   }
 
-  const order=[];
-  for(let p=0;p<N;p++) if(hole[p]) order.push(p);
-  order.sort((a,b)=>dist[a]-dist[b]);
+  // Buckets are much faster than sorting every hole pixel.
+  let maxD=0;
+  for(let p=0;p<N;p++) if(hole[p]&&dist[p]<65535&&dist[p]>maxD) maxD=dist[p];
+  const buckets=Array.from({length:maxD+1},()=>[]);
+  for(let p=0;p<N;p++) if(hole[p]&&dist[p]<65535) buckets[dist[p]].push(p);
 
-  const R=7, half=1;
-  const isKnown=(p)=>!hole[p];
-  const lum=(i)=>original[i]*.299+original[i+1]*.587+original[i+2]*.114;
+  const half=2, R=10;
+  const lum=(p)=>{
+    const i=p*4; return original[i]*.299+original[i+1]*.587+original[i+2]*.114;
+  };
+  const chroma=(p)=>{
+    const i=p*4; return Math.max(original[i],original[i+1],original[i+2])-Math.min(original[i],original[i+1],original[i+2]);
+  };
+  const validSource=(sx,sy)=>{
+    if(sx<half||sx>=w-half||sy<half||sy>=h-half) return false;
+    return !hole[sy*w+sx];
+  };
 
-  function patchScore(tx,ty,sx,sy){
-    let score=0,n=0;
-    for(let dy=-half;dy<=half;dy++){
-      const ay=ty+dy,by=sy+dy;
-      if(ay<0||ay>=h||by<0||by>=h)return 1e12;
-      for(let dx=-half;dx<=half;dx++){
-        const ax=tx+dx,bx=sx+dx;
-        if(ax<0||ax>=w||bx<0||bx>=w)return 1e12;
-        const tp=ay*w+ax,sp=by*w+bx;
-        if(hole[tp] || !isKnown(sp)) return 1e12;
-        const ti=tp*4,si=sp*4;
-        const dr=original[ti]-original[si],dg=original[ti+1]-original[si+1],db=original[ti+2]-original[si+2];
-        score+=dr*dr*.30+dg*dg*.59+db*db*.11;
-        n++;
-      }
+  // Compare only the ORIGINAL known pixels around the target.  Unknown text
+  // pixels are ignored instead of making the candidate invalid.
+  function score(tx,ty,sx,sy){
+    let sc=0,weightSum=0,known=0;
+    for(let dy=-half;dy<=half;dy++) for(let dx=-half;dx<=half;dx++){
+      const tp=(ty+dy)*w+(tx+dx);
+      if(hole[tp]) continue;
+      const sp=(sy+dy)*w+(sx+dx);
+      const ti=tp*4,si=sp*4;
+      const dr=original[ti]-original[si],dg=original[ti+1]-original[si+1],db=original[ti+2]-original[si+2];
+      const wt=(dx===0&&dy===0)?1.5:1;
+      sc+=(dr*dr*.30+dg*dg*.59+db*db*.11)*wt;
+      weightSum+=wt; known++;
     }
-    return n?score/n:1e12;
+    if(known<4) return 1e9;
+    return sc/weightSum;
   }
 
-  // Candidate directions are deliberately local; this prevents horizontal streaks.
   const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
-  for(const p of order){
-    const x=p%w,y=(p/w)|0;
-    let best=-1,bestScore=1e12;
+  for(let layer=0;layer<=maxD;layer++){
+    const list=buckets[layer];
+    for(const p of list){
+      const x=p%w,y=(p/w)|0;
+      let best=-1,bestScore=1e9;
 
-    // Prefer the nearest intact neighbourhood, not a whole row/column.
-    for(const [dx,dy] of dirs){
-      for(let r=1;r<=R;r++){
-        const sx=x+dx*r,sy=y+dy*r;
-        if(sx<half||sx>=w-half||sy<half||sy>=h-half) continue;
-        const sp=sy*w+sx;
-        if(hole[sp]) continue;
-        const sc=patchScore(x,y,sx,sy)+r*.9;
-        if(sc<bestScore){bestScore=sc;best=sp;}
-        // Once a very close match is found, don't waste time searching farther.
-        if(r>=3&&bestScore<55) break;
-      }
-    }
-
-    // Fallback: nearest intact pixel, still local.
-    if(best<0){
-      outer:for(let r=1;r<=R;r++){
-        for(const [dx,dy] of dirs){
+      // For each target, search a tiny local window.  No row copying.
+      for(const [dx,dy] of dirs){
+        for(let r=1;r<=R;r++){
           const sx=x+dx*r,sy=y+dy*r;
-          if(sx<0||sx>=w||sy<0||sy>=h)continue;
+          if(!validSource(sx,sy)) continue;
           const sp=sy*w+sx;
-          if(!hole[sp]){best=sp;break outer;}
+          const s=score(x,y,sx,sy)+r*0.65;
+          if(s<bestScore){bestScore=s;best=sp;}
         }
       }
-    }
-    if(best<0) continue;
 
-    const di=p*4,si=best*4;
-    // Copy only the central pixel. This avoids blocky patches and keeps detail sharp.
-    for(let c=0;c<3;c++){
-      const v=original[si+c];
-      d[di+c]=Math.round(original[di+c]*(1-strength)+v*strength);
+      // Small square fallback, still local and original-only.
+      if(best<0){
+        for(let oy=-R;oy<=R&&best<0;oy++) for(let ox=-R;ox<=R;ox++){
+          if(Math.abs(ox)+Math.abs(oy)>R) continue;
+          const sx=x+ox,sy=y+oy;
+          if(!validSource(sx,sy)) continue;
+          const sp=sy*w+sx,s=score(x,y,sx,sy)+(Math.abs(ox)+Math.abs(oy))*0.65;
+          if(s<bestScore){bestScore=s;best=sp;}
+        }
+      }
+      if(best<0) continue;
+
+      const di=p*4,si=best*4;
+      // Full-strength copy: the faint text must not remain blended into the
+      // result.  Alpha is preserved exactly.
+      d[di]=original[si];d[di+1]=original[si+1];d[di+2]=original[si+2];d[di+3]=original[di+3];
     }
-    d[di+3]=original[di+3];
   }
 }
 
@@ -610,7 +634,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
 
   const t=+$('whiteThreshold').value||200;
   const strength=(+$('removeOpacity').value||100)/100;
-  const grow=Math.max(1,Math.min(3,Math.round((+$('inpaintPasses').value||3)*W/1080*0.45)));
+  const grow=Math.max(1,Math.min(2,Math.round((+$('inpaintPasses').value||3)*W/1080*0.30)));
   const thk=Math.max(3,Math.round((+$('textThick').value||9)*W/1080));
   const dynamic=$('textChanges').checked;
   const key=wrKey();
@@ -654,6 +678,9 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
       tt+=20;
     }
     if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
+    // Second pass: pick up only thin, locally brighter white remnants.
+    const faint=detectFaintWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0);
+    if(faint)for(let p=0;p<N;p++)if(faint[p]){hole[p]=1;any=true;}
   }
   if(showMask){
     let c=0;
@@ -1428,9 +1455,9 @@ async function exportVideoFrameAccurate(){
     video.pause();restoreMute=video.muted;video.muted=true;
     await seekVideo(start);
     const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
-    let rate=needsFrameProcessing?1.35:2,maxRate=2.5,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
+    let rate=1,maxRate=1,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
     const tBegin=performance.now();
-    video.playbackRate=rate;
+    video.playbackRate=1;
     await new Promise((resolve,reject)=>{
       rejectEncoding=reject;
       let finished=false,lastCb=performance.now(),dog=null;
@@ -1459,13 +1486,6 @@ async function exportVideoFrameAccurate(){
               // Keep the output timeline tied to the video's real media time.
               // Do not synthesize long runs of repeated frames: those can make the
               // downloaded file appear frozen or play with visible jumps.
-              if(lastMT>=0){
-                const gap=(mt-lastMT)*fps;
-                if(gap>2.5){
-                  rate=Math.max(1,rate*.85);
-                  video.playbackRate=rate;
-                }
-              }
               drawExportFrame(rel);
               encodeCanvas(rel);
               prevRel=rel;
@@ -1473,12 +1493,6 @@ async function exportVideoFrameAccurate(){
             lastMT=mt;
             const proc=performance.now()-t0;
             procEMA=procEMA?procEMA*.8+proc*.2:proc;
-            if(++sinceAdj>=8){
-              sinceAdj=0;
-              const target=clamp((1000/fps)/(procEMA*1.5+3),1,maxRate);
-              rate=clamp(rate*.5+target*.5,1,maxRate);
-              video.playbackRate=rate;
-            }
             if(n%5===0){
               const pct=Math.min(99,Math.round(rel/length*99));
               $('exportStatus').textContent='Rendering… '+pct+'% ('+n+' frames, '+Math.round((performance.now()-tBegin)/1000)+'s) — keep this tab open';

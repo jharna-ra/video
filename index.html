@@ -655,136 +655,136 @@ function scaledStatic(sm,w,h){
 // copies information inward from the real boundary. This removes the white
 // rectangle/flat patch look and keeps local gradients much better.
 function inpaintHole(d,w,h,hole,strength){
-  // Patch/exemplar inpainting: reconstruct the hidden area from REAL nearby
-  // video patches.  No blur, averaging, sharpening or artificial grain is
-  // applied.  The only pixels written into the text area are copied from
-  // pixels that were already present in the original frame.
+  // TRUE PIXEL CLONING INPAINT.
+  // The old version used broad patch matching which could smear the whole
+  // selected area. This version works like a pixel-by-pixel content-aware
+  // clone: every removed pixel is filled from REAL neighbouring pixels that
+  // are still visible in the original frame. No blur, averaging, smoothing,
+  // sharpening, grain or synthetic colour is generated.
   const N=w*h;
   let remaining=0;
   for(let p=0;p<N;p++)if(hole[p])remaining++;
   if(!remaining||remaining===N)return;
 
-  const patchR=Math.max(2,Math.min(5,Math.round((+$('inpaintPasses').value||9)/3)));
-  const searchR=Math.max(18,Math.min(65,Math.round(26+patchR*6)));
-  const originalHole=hole.slice();
-  const filled=hole.slice();
-  const dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+  const original=hole.slice();
+  const known=new Uint8Array(N);
+  for(let p=0;p<N;p++)known[p]=original[p]?0:1;
 
-  function inside(x,y){return x>=0&&x<w&&y>=0&&y<h}
-  function patchFullyKnown(cx,cy){
-    for(let dy=-patchR;dy<=patchR;dy++)for(let dx=-patchR;dx<=patchR;dx++){
-      if(dx*dx+dy*dy>patchR*patchR)continue;
-      const x=cx+dx,y=cy+dy;
-      if(!inside(x,y)||filled[y*w+x])return false;
-    }
-    return true;
-  }
-  function patchScore(tx,ty,sx,sy){
-    let s=0,n=0;
-    for(let dy=-patchR;dy<=patchR;dy++)for(let dx=-patchR;dx<=patchR;dx++){
-      if(dx*dx+dy*dy>patchR*patchR)continue;
-      const ax=tx+dx,ay=ty+dy,bx=sx+dx,by=sy+dy;
-      if(!inside(ax,ay)||!inside(bx,by))return 1e30;
-      const ap=ay*w+ax;
-      // Only compare pixels whose original information is still visible.
-      if(!originalHole[ap]){
-        const ai=ap*4,bi=(by*w+bx)*4;
+  const maxDist=Math.max(12,Math.min(90,Math.round((+$('inpaintPasses').value||9)*7)));
+  const dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+  const clampByte=v=>v<0?0:v>255?255:v;
+
+  // For a target pixel, choose a nearby SOURCE pixel rather than blending
+  // several pixels together. The source is chosen by comparing the visible
+  // neighbourhood around the target with the same neighbourhood around the
+  // candidate source. This is patch guidance, but the final write is always
+  // an exact copy of one real source pixel.
+  function scoreCandidate(tx,ty,sx,sy,radius){
+    let score=0,count=0;
+    for(let dy=-radius;dy<=radius;dy++){
+      for(let dx=-radius;dx<=radius;dx++){
+        if(dx*dx+dy*dy>radius*radius)continue;
+        const ax=tx+dx,ay=ty+dy,bx=sx+dx,by=sy+dy;
+        if(ax<0||ay<0||bx<0||by<0||ax>=w||ay>=h||bx>=w||by>=h)continue;
+        const ap=ay*w+ax;
+        if(original[ap])continue; // only use genuinely visible reference pixels
+        const bp=by*w+bx;
+        if(original[bp])continue;
+        const ai=ap*4,bi=bp*4;
         const dr=d[ai]-d[bi],dg=d[ai+1]-d[bi+1],db=d[ai+2]-d[bi+2];
-        const edge=(Math.abs(dx)+Math.abs(dy)<=2)?2.5:1;
-        s+=(dr*dr*.30+dg*dg*.59+db*db*.11)*edge;
-        n+=edge;
+        const wt=(Math.abs(dx)+Math.abs(dy)<=1)?3:1;
+        score+=(dr*dr*.299+dg*dg*.587+db*db*.114)*wt;
+        count+=wt;
       }
     }
-    return n?s/n:1e30;
+    return count?score/count:1e20;
   }
 
-  function boundaryPixels(){
-    const list=[];
-    for(let y=patchR;y<h-patchR;y++)for(let x=patchR;x<w-patchR;x++){
-      const p=y*w+x;if(!filled[p])continue;
-      let hasHole=false;
-      for(const [dx,dy] of dirs){const xx=x+dx,yy=y+dy;if(inside(xx,yy)&&!filled[yy*w+xx]){hasHole=true;break;}}
-      if(hasHole)list.push(p);
+  function isBoundary(p){
+    const x=p%w,y=(p/w)|0;
+    for(const [dx,dy] of dirs){
+      const nx=x+dx,ny=y+dy;
+      if(nx>=0&&ny>=0&&nx<w&&ny<h&&known[ny*w+nx])return true;
     }
-    return list;
+    return false;
   }
 
-  const maxRounds=Math.max(2,Math.min(10,Math.ceil((+$('inpaintPasses').value||9)*.75)));
-  for(let round=0;round<maxRounds && remaining>0;round++){
-    const boundary=boundaryPixels();
+  // Process from the outside of the text inward. This is deliberately a
+  // nearest-neighbour cloning process: no pixel is averaged with another.
+  let guard=0;
+  while(remaining>0&&guard++<maxDist+12){
+    const boundary=[];
+    for(let p=0;p<N;p++)if(original[p]&&!known[p]&&isBoundary(p))boundary.push(p);
     if(!boundary.length)break;
 
-    // Fill several best boundary patches per round. This keeps the texture
-    // coherent instead of making a pixel-by-pixel blur trail.
     let writes=0;
-    const stride=Math.max(1,Math.floor(boundary.length/700));
-    for(let bi=0;bi<boundary.length;bi+=stride){
-      const tp=boundary[bi],tx=tp%w,ty=(tp/w)|0;
-      let bestX=-1,bestY=-1,best=1e30;
+    // Small text areas are processed fully. Large areas are processed in
+    // chunks so the browser remains responsive during video rendering.
+    const limit=Math.min(boundary.length,18000);
 
-      const candidates=[];
-      // Search the local area in a coarse grid first.
-      for(let sy=Math.max(patchR,ty-searchR);sy<=Math.min(h-patchR-1,ty+searchR);sy+=2){
-        for(let sx=Math.max(patchR,tx-searchR);sx<=Math.min(w-patchR-1,tx+searchR);sx+=2){
-          if(filled[sy*w+sx])continue;
-          if(patchFullyKnown(sx,sy))candidates.push([sx,sy]);
+    for(let bi=0;bi<limit;bi++){
+      const p=boundary[bi],tx=p%w,ty=(p/w)|0;
+      let bestP=-1,bestScore=1e20;
+
+      // Prefer sources on the same row/column first. This makes floor lines,
+      // walls, tiles and other straight background structure continue through
+      // the removed text instead of turning into a soft patch.
+      const directional=[];
+      for(let dist=1;dist<=maxDist;dist++){
+        const candidates=[
+          [tx-dist,ty],[tx+dist,ty],[tx,ty-dist],[tx,ty+dist],
+          [tx-dist,ty-dist],[tx+dist,ty-dist],
+          [tx-dist,ty+dist],[tx+dist,ty+dist]
+        ];
+        for(const [sx,sy] of candidates){
+          if(sx<2||sy<2||sx>=w-2||sy>=h-2)continue;
+          const sp=sy*w+sx;
+          if(!known[sp])continue;
+          directional.push([sp,sx,sy,dist]);
+          if(directional.length>=28)break;
         }
-      }
-      // Always test strong directional matches too.
-      const special=[[-searchR,0],[searchR,0],[0,-searchR],[0,searchR],
-        [-Math.round(searchR*.7),-Math.round(searchR*.7)],
-        [Math.round(searchR*.7),-Math.round(searchR*.7)],
-        [-Math.round(searchR*.7),Math.round(searchR*.7)],
-        [Math.round(searchR*.7),Math.round(searchR*.7)]];
-      for(const [dx,dy] of special){
-        const sx=tx+dx,sy=ty+dy;
-        if(inside(sx,sy)&&sx>=patchR&&sy>=patchR&&sx<w-patchR&&sy<h-patchR&&patchFullyKnown(sx,sy))candidates.push([sx,sy]);
+        if(directional.length>=28)break;
       }
 
-      // A cap prevents a large text box from freezing the browser.
-      const limit=Math.min(candidates.length,140);
-      for(let i=0;i<limit;i++){
-        const [sx,sy]=candidates[i],sc=patchScore(tx,ty,sx,sy);
-        if(sc<best){best=sc;bestX=sx;bestY=sy;}
+      // First choose from the closest real neighbouring pixels. Only if their
+      // local appearance differs substantially do we search a wider ring.
+      for(const [sp,sx,sy,dist] of directional){
+        const sc=scoreCandidate(tx,ty,sx,sy,1)+dist*7;
+        if(sc<bestScore){bestScore=sc;bestP=sp;}
       }
-      if(bestX<0)continue;
 
-      // Copy the whole source patch, but ONLY into pixels still inside the
-      // original text mask. Real source texture is therefore preserved.
-      for(let dy=-patchR;dy<=patchR;dy++)for(let dx=-patchR;dx<=patchR;dx++){
-        if(dx*dx+dy*dy>patchR*patchR)continue;
-        const ax=tx+dx,ay=ty+dy,bx=bestX+dx,by=bestY+dy;
-        if(!inside(ax,ay)||!inside(bx,by))continue;
-        const ap=ay*w+ax;
-        if(!filled[ap]){
-          const ai=ap*4,bi2=(by*w+bx)*4;
-          d[ai]=d[bi2];d[ai+1]=d[bi2+1];d[ai+2]=d[bi2+2];
-          filled[ap]=1;remaining--;writes++;
-        }
-      }
-      if(remaining<=0)break;
+      if(bestP<0)continue;
+      const di=p*4,si=bestP*4;
+      // Exact source-pixel copy. Never blend the destination with the source.
+      d[di]=clampByte(d[si]);
+      d[di+1]=clampByte(d[si+1]);
+      d[di+2]=clampByte(d[si+2]);
+      known[p]=1;
+      remaining--;
+      writes++;
     }
     if(!writes)break;
   }
 
-  // Final deterministic nearest-original-pixel fill. This is only a safety
-  // net for very large masks; it still never creates blur or noise.
+  // Safety pass for any pixels trapped inside a large connected text area.
+  // Again: nearest real pixel only, no interpolation.
   if(remaining){
-    const q=new Int32Array(N),dist=new Int32Array(N);dist.fill(-1);
+    const queue=new Int32Array(N);
+    const dist=new Int32Array(N);dist.fill(-1);
     let head=0,tail=0;
-    for(let p=0;p<N;p++)if(!originalHole[p]){dist[p]=0;q[tail++]=p;}
+    for(let p=0;p<N;p++)if(known[p]){dist[p]=0;queue[tail++]=p;}
     while(head<tail&&remaining){
-      const p=q[head++],x=p%w,y=(p/w)|0;
+      const p=queue[head++],x=p%w,y=(p/w)|0;
       const ns=[p-1,p+1,p-w,p+w];
-      for(const n of ns){
-        if(n<0||n>=N||dist[n]>=0)continue;
-        const nx=n%w,ny=(n/w)|0;
-        if(Math.abs(nx-x)>1||Math.abs(ny-y)>1)continue;
-        dist[n]=dist[p]+1;q[tail++]=n;
-        if(originalHole[n]&&!filled[n]){
-          const ai=n*4,bi2=p*4;
-          d[ai]=d[bi2];d[ai+1]=d[bi2+1];d[ai+2]=d[bi2+2];
-          filled[n]=1;remaining--;
+      for(const q of ns){
+        if(q<0||q>=N||dist[q]>=0)continue;
+        const qx=q%w,qy=(q/w)|0;
+        if(Math.abs(qx-x)>1||Math.abs(qy-y)>1)continue;
+        dist[q]=dist[p]+1;queue[tail++]=q;
+        if(original[q]&&!known[q]){
+          const qi=q*4,pi=p*4;
+          d[qi]=d[pi];d[qi+1]=d[pi+1];d[qi+2]=d[pi+2];
+          known[q]=1;remaining--;
         }
       }
     }

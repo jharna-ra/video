@@ -303,7 +303,7 @@ let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
-let outputW=0, outputH=0;
+let outputW=0, outputH=0, exporting=false, prevOff=null;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
@@ -386,7 +386,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   const t=+$('whiteThreshold').value||115;
   const strength=(+$('removeOpacity').value||100)/100;
   const scale=Math.max(1,W/640);
-  const grow=Math.max(1,Math.round((+$('inpaintPasses').value||5)*scale*0.6));
+  const grow=Math.max(1,Math.round((+$('inpaintPasses').value||5)*scale*0.45));
 
   // brightness + local average (integral image) to catch faint/compressed text too
   const lum=new Float32Array(N);
@@ -400,15 +400,20 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   };
 
   // 1) strong text detection (inside the selection only)
-  const mask=new Uint8Array(N);let any=false;
+  const mask=new Uint8Array(N),weak=new Uint8Array(N);let any=false;
   for(let y=ry0;y<ry1;y++)for(let x=rx0;x<rx1;x++){
     const lx=x-x0,ly=y-y0,p=ly*w+lx,i=p*4;
     const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
     const spread=mx-mn,L=lum[p];
     // text = bright, nearly colourless AND clearly brighter than its surroundings
-    if(spread<=60 && L>=t && (L-meanAt(lx,ly)>=22 || mn>=200)){mask[p]=1;any=true;}
+    const loc=L-meanAt(lx,ly);
+    if(spread<=60 && L>=t && (loc>=22 || mn>=200)){mask[p]=1;any=true;}
+    else if(spread<=75 && L>=t-30 && loc>=10)weak[p]=1;
   }
   if(!any)return;
+  // deep pass: faint edge/compression pixels touching real text are text too
+  const near=dilateMask(mask,w,h,2);
+  for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
 
   // 2) grow to swallow anti-aliased halo + stray bright dots
   const hole=dilateMask(mask,w,h,grow);
@@ -441,7 +446,8 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   for(let oi=0;oi<order.length;oi++){
     const p=order[oi],px=p%w,py=(p/w)|0;
     let best=1e18,bx=-1,by=-1;
-    const tryC=(cx,cy)=>{
+    const po=(prevOff&&prevOff.x0===x0&&prevOff.y0===y0&&prevOff.w===w&&prevOff.h===h)?prevOff:null;
+    const tryC=(cx,cy,bias)=>{
       if(cx<ph||cy<ph||cx>=w-ph||cy>=h-ph)return;
       if(!valid[cy*w+cx])return;
       let s=0,n=0;
@@ -454,9 +460,11 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
         s+=a*a+b*b+c2*c2;n++;
       }
       if(n<3)return;
-      s=s/n+((cx-px)*(cx-px)+(cy-py)*(cy-py))*0.02; // prefer nearby source
+      s=(s/n+((cx-px)*(cx-px)+(cy-py)*(cy-py))*0.02)*(bias||1); // prefer nearby source
       if(s<best){best=s;bx=cx;by=cy;}
     };
+    // keep the same source as the previous frame (no shimmer between frames)
+    if(po&&po.has[p])tryC(px+po.ox[p],py+po.oy[p],0.8);
     // reuse neighbours' sources so copied texture stays coherent
     if(px>0&&hasOff[p-1])tryC(px+offX[p-1],py+offY[p-1]);
     if(px<w-1&&hasOff[p+1])tryC(px+offX[p+1],py+offY[p+1]);
@@ -530,6 +538,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
     }
   }
   ctx2.putImageData(img,x0,y0);
+  prevOff={x0,y0,w,h,ox:offX,oy:offY,has:hasOff};
   wrCache.set(ckey,{img,x0,y0});
   if(wrCache.size>6)wrCache.delete(wrCache.keys().next().value);
 }
@@ -537,7 +546,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
 
 function drawPreview(){
- if(!video.videoWidth)return;
+ if(exporting||!video.videoWidth)return;
  const r=sourceRect();
  const s=Math.min(1,1100/r.w);
  view.width=Math.round(r.w*s);view.height=Math.round(r.h*s);
@@ -596,6 +605,7 @@ function timelineFmt(sec){
   return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
 }
 function drawTimeline(){
+  if(exporting)return;
   const c=$('timelineCanvas'),ctx=c.getContext('2d');
   const W=c.width,H=c.height; ctx.clearRect(0,0,W,H);
   ctx.fillStyle='#05090d';ctx.fillRect(0,0,W,H);
@@ -1162,6 +1172,7 @@ function drawExportFrame(elapsedOverride){
 function seekVideo(target){
   return new Promise(resolve=>{
     const t=clamp(target,0,duration||target);
+    if(Math.abs(video.currentTime-t)<1e-4&&!video.seeking){requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));return;}
     let done=false;
     const finish=()=>{
       if(done)return; done=true;
@@ -1201,12 +1212,37 @@ async function pickVideoCodec(width,height,fps){
   return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
 }
 
+async function estimateFps(){
+  const std=[23.976,24,25,29.97,30,48,50,59.94,60];
+  if(typeof video.requestVideoFrameCallback!=='function')return 30;
+  const saved=video.currentTime,muted=video.muted;
+  const times=[];
+  await new Promise(resolve=>{
+    let id=null,done=false;
+    const fin=()=>{if(done)return;done=true;try{video.pause()}catch(e){}resolve()};
+    const cb=(now,m)=>{times.push(m.mediaTime);if(times.length>=14){fin();return}id=video.requestVideoFrameCallback(cb)};
+    video.muted=true;
+    id=video.requestVideoFrameCallback(cb);
+    video.play().catch(fin);
+    setTimeout(fin,2000);
+  });
+  video.muted=muted;
+  await seekVideo(saved);
+  const diffs=[];for(let i=1;i<times.length;i++){const d=times[i]-times[i-1];if(d>0.004&&d<0.2)diffs.push(d)}
+  if(diffs.length<4)return 30;
+  diffs.sort((a,b)=>a-b);
+  const fps=1/diffs[Math.floor(diffs.length/2)];
+  let best=std[0];for(const v of std)if(Math.abs(v-fps)<Math.abs(best-fps))best=v;
+  return Math.abs(best-fps)<2?best:Math.round(fps);
+}
+
 async function exportVideoFrameAccurate(){
   const start=clamp(+$('trimStart').value||0,0,duration);
   const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
   const length=Math.max(0.05,end-start);
-  const fps=30;
-  const frameCount=Math.max(1,Math.ceil(length*fps));
+  $('exportStatus').textContent='Detecting video frame rate…';
+  const fps=await estimateFps();
+  const frameCount=Math.max(1,Math.round(length*fps));
 
   prepareOutput();
   video.pause();
@@ -1276,112 +1312,34 @@ async function exportVideoFrameAccurate(){
     $('exportStatus').textContent=needsFrameProcessing
       ? 'Rendering selected changes… 0% (accelerated)'
       : 'Rendering crop/trim only… 0% (accelerated)';
-    await seekVideo(start);
-
+    // Frame-by-frame export: jump to EVERY source frame, process it, encode it.
+    // (The old version played the video fast and skipped frames when processing
+    // was slow, which made the result look like a slideshow.)
+    prevOff=null;
+    video.pause();
     restoreMute=video.muted;
     video.muted=true;
-    video.playbackRate=2.5; // decode faster; encoded timestamps still preserve normal output duration
-
-    const hasRVFC=typeof video.requestVideoFrameCallback==='function';
-    let frameIndex=0;
-    let firstFrameTimestamp=null;
-    let callbackId=null;
-    let rafId=0;
-
-    await new Promise((resolve,reject)=>{
-      rejectEncoding=reject;
-      let finished=false;
-
-      const cleanup=()=>{
-        if(callbackId!==null && video.cancelVideoFrameCallback){
-          try{video.cancelVideoFrameCallback(callbackId)}catch(e){}
+    const frameDur=Math.round(1e6/fps);
+    const keyEvery=Math.max(1,Math.round(fps*2));
+    for(let i=0;i<frameCount;i++){
+      if(encoderFailed)throw encoderFailed;
+      await seekVideo(Math.min(end-0.0005,start+(i+0.5)/fps));
+      drawExportFrame(i/fps);
+      const vf=new VideoFrame(work,{timestamp:Math.round(i*1e6/fps),duration:frameDur});
+      videoEncoder.encode(vf,{keyFrame:i%keyEvery===0});
+      vf.close();
+      if(videoEncoder.encodeQueueSize>=24){
+        const qs=performance.now();
+        while(videoEncoder.encodeQueueSize>=8&&!encoderFailed){
+          if(performance.now()-qs>5000)throw new Error('Video encoder is not draining.');
+          await new Promise(r=>setTimeout(r,10));
         }
-        if(rafId)cancelAnimationFrame(rafId);
-        video.removeEventListener('ended',onEnded);
-      };
-
-      const finish=()=>{
-        if(finished)return;
-        finished=true;
-        cleanup();
-        try{video.pause()}catch(e){}
-        resolve();
-      };
-
-      const fail=(err)=>{
-        if(finished)return;
-        finished=true;
-        cleanup();
-        try{video.pause()}catch(e){}
-        reject(err);
-      };
-
-      const onEnded=()=>finish();
-
-      const scheduleNext=()=>{
-        if(finished)return;
-        if(hasRVFC){
-          callbackId=video.requestVideoFrameCallback(onFrame);
-        }else{
-          rafId=requestAnimationFrame(()=>onFrame(performance.now(),null));
-        }
-      };
-
-      const onFrame=async(now,metadata)=>{
-        if(finished)return;
-        try{
-          const mediaTime=(metadata&&metadata.mediaTime!=null)
-            ?metadata.mediaTime
-            :video.currentTime;
-
-          if(firstFrameTimestamp===null)firstFrameTimestamp=mediaTime;
-          const elapsed=Math.max(0,mediaTime-firstFrameTimestamp);
-
-          // Draw one final frame before finishing.
-          const clampedElapsed=Math.min(length,elapsed);
-          if(frameIndex>=frameCount || elapsed>=length-0.005){
-            drawExportFrame(length);
-            finish();
-            return;
-          }
-
-          drawExportFrame(clampedElapsed);
-          const timestamp=Math.max(0,Math.round((clampedElapsed)*1e6));
-          const vf=new VideoFrame(work,{timestamp});
-          videoEncoder.encode(vf,{keyFrame:frameIndex===0 || frameIndex%(fps*4)===0});
-          vf.close();
-          frameIndex++;
-
-          // Apply backpressure without calling flush() during frame capture.
-          // flush() waits for the entire encoder queue and can make the render
-          // look frozen around 88–89%. Instead, briefly wait for the queue to
-          // drain below a safe level, with a hard timeout.
-          if(videoEncoder.encodeQueueSize>=96){
-            $('exportStatus').textContent='Encoding video… '+Math.min(99,Math.max(1,Math.round((clampedElapsed/length)*99)))+'%';
-            const queueWaitStart=performance.now();
-            while(videoEncoder.encodeQueueSize>=32 && !encoderFailed){
-              if(performance.now()-queueWaitStart>3000){
-                throw new Error('Video encoder is not draining. Switching to stable export.');
-              }
-              await new Promise(r=>setTimeout(r,10));
-            }
-            if(encoderFailed)throw encoderFailed;
-          }
-
-          const pct=Math.min(99,Math.max(1,Math.round((clampedElapsed/length)*99)));
-          $('exportStatus').textContent=(needsFrameProcessing?'Rendering selected changes… ':'Rendering crop/trim only… ')+pct+'%';
-          scheduleNext();
-        }catch(err){
-          fail(err);
-        }
-      };
-
-      video.addEventListener('ended',onEnded,{once:true});
-      scheduleNext();
-      video.play().catch(fail);
-    });
-
-    video.playbackRate=1;
+      }
+      if(i%3===0||i===frameCount-1){
+        $('exportStatus').textContent=(needsFrameProcessing?'Rendering frame ':'Copying frame ')+(i+1)+' / '+frameCount+' ('+fps+' fps) — '+Math.min(99,Math.round((i+1)/frameCount*99))+'%';
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
     video.muted=restoreMute;
 
     if(encoderFailed)throw encoderFailed;
@@ -1568,6 +1526,10 @@ async function exportVideo(){
   $('downloadVideo').disabled=false;
 }
 async function doExport(){
+  exporting=true;
+  try{ await doExportInner(); } finally { exporting=false; prevOff=null; drawPreview(); drawGeoPreview(); drawTimeline(); }
+}
+async function doExportInner(){
   const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
   if(hasWebCodecs){
     try{
@@ -1661,7 +1623,7 @@ function endMapDrag(){mapDrag=null;}
 geo.addEventListener('pointerup',endMapDrag); geo.addEventListener('pointercancel',endMapDrag); geo.addEventListener('pointerleave',()=>{if(mapDrag)endMapDrag();});
 
 function drawGeoPreview(){
- if(!video.videoWidth)return;
+ if(exporting||!video.videoWidth)return;
  const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});

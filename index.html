@@ -163,7 +163,9 @@ input[type=range]{width:100%}
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
-<div class="small">Draw the box tightly around the text. The tool first scans the whole trimmed video to find text that stays on screen, then on every frame it detects the bright text, widens it slightly to swallow the glow/edges, and fills it with a smooth blend of the real surrounding pixels plus matching video grain. If any text is still visible, lower the sensitivity number or raise Edge expand. If it removes too much, raise the sensitivity number.</div>
+<label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
+<input id="textThick" type="range" min="2" max="30" value="9">
+<div class="small">Draw the box around the text. Only thin bright strokes (letters) are changed — big bright areas such as floor tiles, clothes or sky inside the box are left exactly as they are, so every other pixel stays identical to the original video. If part of a letter is left behind (bold text), raise <b>Max text stroke thickness</b>. If letters are still visible, lower the sensitivity number or raise Edge expand.</div>
 </div>
 
 <div class="section">
@@ -351,7 +353,7 @@ let staticMask=null, staticBuilding=null, staticTimer=null;
 
 function wrKey(){
   const w=whiteRect; if(!w)return '';
-  return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('trimStart').value,$('trimEnd').value,duration].join('|');
+  return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('textThick').value,$('trimStart').value,$('trimEnd').value,duration].join('|');
 }
 function invalidateWR(){
   staticMask=null; wrCache.clear();
@@ -388,28 +390,51 @@ function dilateMask(m,w,h,g){
   return out;
 }
 
-// Finds white / light-grey text pixels (colourful bright things like yellow vests are ignored).
-function detectWhite(d,w,h,t,x0,y0,x1,y1,mr){
+// Min / max filter with a square window (separable, O(1) per pixel via monotone queue).
+function slidePass(src,dst,n,stride,lines,lineStep,r,useMax,dq){
+  for(let l=0;l<lines;l++){
+    const base=l*lineStep;let head=0,tail=0,nxt=0;
+    for(let i=0;i<n;i++){
+      const hi=Math.min(n-1,i+r);
+      while(nxt<=hi){
+        const v=src[base+nxt*stride];
+        if(useMax){while(tail>head&&src[base+dq[tail-1]*stride]<=v)tail--;}
+        else{while(tail>head&&src[base+dq[tail-1]*stride]>=v)tail--;}
+        dq[tail++]=nxt;nxt++;
+      }
+      while(dq[head]<i-r)head++;
+      dst[base+i*stride]=src[base+dq[head]*stride];
+    }
+  }
+}
+function sepFilter(src,w,h,r,useMax){
+  const tmp=new Float32Array(w*h),out=new Float32Array(w*h),dq=new Int32Array(Math.max(w,h)+1);
+  slidePass(src,tmp,w,1,h,w,r,useMax,dq);
+  slidePass(tmp,out,h,w,w,1,r,useMax,dq);
+  return out;
+}
+
+// Finds white / light-grey TEXT pixels using a white top-hat: only bright structures that are
+// THINNER than a letter stroke survive. Big bright areas (tiles, white clothes, sky) and their
+// edges are part of the grey-scale opening and are therefore never touched.
+function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
   const N=w*h,lum=new Float32Array(N);
   for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  const iw=w+1,ii=new Float64Array(iw*(h+1));
-  for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=lum[y*w+x];ii[(y+1)*iw+x+1]=ii[y*iw+x+1]+row;}}
-  const mean=(x,y)=>{
-    const a=Math.max(0,x-mr),b=Math.min(w,x+mr+1),c=Math.max(0,y-mr),e=Math.min(h,y+mr+1);
-    return (ii[e*iw+b]-ii[c*iw+b]-ii[e*iw+a]+ii[c*iw+a])/((b-a)*(e-c));
-  };
+  const r=Math.max(1,Math.floor((thk||8)/2));
+  const opened=sepFilter(sepFilter(lum,w,h,r,false),w,h,r,true);
   const mask=new Uint8Array(N),weak=new Uint8Array(N);let any=false;
   x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-    const p=y*w+x,i=p*4;
+    const p=y*w+x,i=p*4,L=lum[p];
+    if(L<t-35)continue;
     const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    const spread=mx-mn,L=lum[p];
-    if(L<t-35||spread>85)continue;
-    const loc=L-mean(x,y);
-    if(spread<=70&&L>=t&&(loc>=20||(mn>=215&&loc>=8))){mask[p]=1;any=true;}
-    else if(L>=t-35&&loc>=8)weak[p]=1;
+    if(mx-mn>85)continue;
+    const th=L-opened[p];
+    if(mx-mn<=70&&L>=t&&th>=25){mask[p]=1;any=true;}
+    else if(th>=8)weak[p]=1;
   }
   if(!any)return null;
+  // anti-aliased edge pixels right next to a letter stroke
   const near=dilateMask(mask,w,h,2);
   for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
   return mask;
@@ -440,7 +465,8 @@ async function buildStaticMask(){
       await seekVideo(s0+(e0-s0)*(i+.5)/n);
       cx.drawImage(video,r.x+wr.x,r.y+wr.y,wr.w,wr.h,0,0,aw,ah);
       const id=cx.getImageData(0,0,aw,ah);
-      const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,mr);
+      const thk=Math.max(2,Math.round((+$('textThick').value||9)*(r.w*sc)/1080));
+      const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,mr,thk);
       if(m)for(let p=0;p<m.length;p++)if(m[p])count[p]++;
     }
     await seekVideo(saved);
@@ -476,10 +502,16 @@ function inpaintHole(d,w,h,hole,strength){
   let hn=0;for(let p=0;p<N;p++)if(hole[p])hn++;
   if(!hn||hn===N)return;
 
-  // ---- push (build pyramid of known pixels)
-  const levels=[];
-  let cw=w,ch=h,val=new Float32Array(N*3),wt=new Float32Array(N);
-  for(let p=0;p<N;p++)if(!hole[p]){wt[p]=1;const i=p*4;val[p*3]=d[i];val[p*3+1]=d[i+1];val[p*3+2]=d[i+2];}
+  // ---- push: level 1 is built straight from the known pixels
+  const levels=[null];
+  let cw=(w+1)>>1,ch=(h+1)>>1,val=new Float32Array(cw*ch*3),wt=new Float32Array(cw*ch);
+  for(let y=0;y<h;y++){
+    const qy=(y>>1)*cw;
+    for(let x=0;x<w;x++){
+      const p=y*w+x;
+      if(!hole[p]){const q=qy+(x>>1),i=p*4;wt[q]++;val[q*3]+=d[i];val[q*3+1]+=d[i+1];val[q*3+2]+=d[i+2];}
+    }
+  }
   levels.push({w:cw,h:ch,val,wt});
   while(cw>1||ch>1){
     const nw=(cw+1)>>1,nh=(ch+1)>>1,nv=new Float32Array(nw*nh*3),nwt=new Float32Array(nw*nh);
@@ -493,10 +525,10 @@ function inpaintHole(d,w,h,hole,strength){
     val=nv;wt=nwt;cw=nw;ch=nh;levels.push({w:cw,h:ch,val,wt});
   }
 
-  // ---- pull (fill from coarse to fine with bilinear upsampling)
+  // ---- pull: coarse -> fine with bilinear upsampling
   const top=levels[levels.length-1];
   let col=new Float32Array([top.val[0]/top.wt[0],top.val[1]/top.wt[0],top.val[2]/top.wt[0]]);
-  for(let k=levels.length-2;k>=0;k--){
+  for(let k=levels.length-2;k>=1;k--){
     const L=levels[k],lw=L.w,lh=L.h,pw=levels[k+1].w,ph=levels[k+1].h,full=Math.pow(4,k);
     const nc=new Float32Array(lw*lh*3);
     for(let y=0;y<lh;y++){
@@ -513,7 +545,23 @@ function inpaintHole(d,w,h,hole,strength){
     }
     col=nc;
   }
-  const fill=col;
+  // level 0: known pixels keep their value, hole pixels get the interpolated colour
+  const fill=new Float32Array(N*3);
+  {
+    const pw=levels[1].w,ph=levels[1].h;
+    for(let y=0;y<h;y++){
+      const fy=(y+.5)/2-.5,y0=Math.floor(fy),ty=fy-y0,ya=Math.max(0,Math.min(ph-1,y0)),yb=Math.max(0,Math.min(ph-1,y0+1));
+      for(let x=0;x<w;x++){
+        const p=y*w+x;
+        if(!hole[p]){const i=p*4;fill[p*3]=d[i];fill[p*3+1]=d[i+1];fill[p*3+2]=d[i+2];continue;}
+        const fx=(x+.5)/2-.5,x0=Math.floor(fx),tx=fx-x0,xa=Math.max(0,Math.min(pw-1,x0)),xb=Math.max(0,Math.min(pw-1,x0+1));
+        for(let q=0;q<3;q++){
+          fill[p*3+q]=(col[(ya*pw+xa)*3+q]*(1-tx)+col[(ya*pw+xb)*3+q]*tx)*(1-ty)+
+                      (col[(yb*pw+xa)*3+q]*(1-tx)+col[(yb*pw+xb)*3+q]*tx)*ty;
+        }
+      }
+    }
+  }
 
   // ---- relax so the fill edge matches the real pixels around it
   const idx=new Int32Array(hn);let j0=0;
@@ -562,7 +610,8 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
 
   const t=+$('whiteThreshold').value||115;
   const strength=(+$('removeOpacity').value||100)/100;
-  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*Math.max(1,W/640)*0.8));
+  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*Math.max(1,W/640)*0.5));
+  const thk=Math.max(2,Math.round((+$('textThick').value||9)*W/1080));
   const dynamic=$('textChanges').checked;
   const key=wrKey();
   const sm=(staticMask&&staticMask.key===key)?staticMask:null;
@@ -572,7 +621,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   const cacheable=!exporting&&video.paused;
   let ckey=null;
   if(cacheable){
-    ckey=[W,H,rx0,ry0,rx1,ry1,t,strength,grow,dynamic,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
+    ckey=[W,H,rx0,ry0,rx1,ry1,t,thk,strength,grow,dynamic,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
     const hit=wrCache.get(ckey);
     if(hit){ctx2.putImageData(hit.img,hit.x0,hit.y0);return;}
   }
@@ -589,7 +638,17 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
     for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;any=true;}}
   }
   if(dynamic||!useStatic){
-    const det=detectWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)));
+    // safety cap: if "text" covers a big part of the box it is not text -> raise the bar, never smear the scene
+    const rectArea=(rx1-rx0)*(ry1-ry0);
+    let tt=t,det=null;
+    for(let k=0;k<5;k++){
+      det=detectWhite(d,w,h,tt,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
+      if(!det)break;
+      let c=0;for(let p=0;p<N;p++)c+=det[p];
+      if(c/rectArea<=0.12)break;
+      if(k===4)det=null;
+      tt+=20;
+    }
     if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
   }
   if(!any)return;
@@ -846,6 +905,7 @@ $('clearWhite').onclick=()=>{whiteRect=null;invalidateWR();$('removeWhite').disa
 $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
+$('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
 $('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 
 function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}

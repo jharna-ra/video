@@ -329,6 +329,9 @@ input[type=range]{width:100%}
       vid.src=pickerURL;
       try{ vid.load(); }catch(_){}
       window.dispatchEvent(new CustomEvent('video-file-picked',{detail:{file:f}}));
+      // Force a few independent preview attempts; this does not play or export the video.
+      setTimeout(()=>{ if(window.__selectedVideoFile===f) { try{ scheduleVideoPreview(); }catch(_){} } },120);
+      setTimeout(()=>{ if(window.__selectedVideoFile===f) { try{ scheduleVideoPreview(); }catch(_){} } },500);
     }
     if(btn){
       btn.addEventListener('click',function(){
@@ -1072,27 +1075,42 @@ $('videoFile').addEventListener('change',async(e)=>{
 window.addEventListener('video-file-picked',e=>{
   if(e&&e.detail&&e.detail.file) file=e.detail.file;
 });
+function renderVideoPreviewNow(){
+  if(!video.videoWidth||!video.videoHeight)return false;
+  resizePreview();
+  try{ drawPreview(); drawTimeline(); drawGeoPreview(); }catch(err){ console.error('Preview draw failed',err); }
+  return true;
+}
+function scheduleVideoPreview(){
+  if(!video.videoWidth||!video.videoHeight)return;
+  renderVideoPreviewNow();
+  if(typeof video.requestVideoFrameCallback==='function'){
+    video.requestVideoFrameCallback(()=>renderVideoPreviewNow());
+  }else{
+    setTimeout(renderVideoPreviewNow,50);
+  }
+}
 video.addEventListener('loadstart',()=>{
   if(file) setStatus('Loading '+file.name+'…');
 });
-video.addEventListener('loadeddata',()=>{
-  if(!video.videoWidth||!video.videoHeight)return;
-  resizePreview();
-  drawPreview();
-  drawTimeline();
-});
 video.addEventListener('loadedmetadata',()=>{
- duration=video.duration||0;
+ duration=Number(video.duration)||0;
  $('durationBadge').textContent=fmt(duration)+' s';
  $('trimStart').value='0';$('trimEnd').value=fmt(duration);
  $('trimRange').max=duration; $('trimRange').value=0;
- resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
- $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
+ ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
+ $('goGeo').disabled=false; setStatus('Video loaded. Preparing first frame…');
  buildTimeline();
+ scheduleVideoPreview();
+ // Some Chrome builds report metadata before a decodable frame is exposed to canvas.
+ if(duration>0){
+   try{ video.currentTime=Math.min(0.05,Math.max(0,duration-0.001)); }catch(_){}
+ }
 });
-video.addEventListener('canplay',()=>{
-  if(video.videoWidth){ resizePreview(); drawPreview(); }
-});
+video.addEventListener('loadeddata',()=>scheduleVideoPreview());
+video.addEventListener('canplay',()=>scheduleVideoPreview());
+video.addEventListener('canplaythrough',()=>scheduleVideoPreview());
+video.addEventListener('seeked',()=>scheduleVideoPreview());
 video.addEventListener('error',()=>{
   const e=video.error;
   const code=e&&e.code;

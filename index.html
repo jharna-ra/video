@@ -20,6 +20,8 @@ button.secondary{background:#293643}button.danger{background:#b63b3b}button:disa
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .sliderTop{display:flex;justify-content:space-between;font-size:12px;color:#cbd4dc}.sliderTop b{color:#6fb1ff}
 input[type=range]{width:100%}
+.checkLine{display:flex;gap:8px;align-items:center;font-weight:600;margin:10px 0 4px;color:#cdd6de;cursor:pointer}
+.checkLine input{width:auto;margin:0}
 .status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
 .stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
 #viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -154,13 +156,14 @@ input[type=range]{width:100%}
 <button id="removeMode" class="secondary">Select White Text Area</button>
 <button id="removeWhite" disabled>Remove White Text</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
+<label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
 <label>White detection sensitivity <b id="whiteVal">115</b></label>
 <input id="whiteThreshold" type="range" min="80" max="245" value="115">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
-<input id="inpaintPasses" type="range" min="1" max="8" value="5">
-<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get filled from the real surrounding pixels, with matching video grain, so nothing else is blurred.</div>
+<input id="inpaintPasses" type="range" min="1" max="14" value="5">
+<div class="small">Draw the box tightly around the text. The tool first scans the whole trimmed video to find text that stays on screen, then on every frame it detects the bright text, widens it slightly to swallow the glow/edges, and fills it with a smooth blend of the real surrounding pixels plus matching video grain. If any text is still visible, lower the sensitivity number or raise Edge expand. If it removes too much, raise the sensitivity number.</div>
 </div>
 
 <div class="section">
@@ -283,7 +286,7 @@ input[type=range]{width:100%}
 </section>
 </div>
 
-<video id="video" playsinline preload="metadata" style="display:none"></video>
+<video id="video" playsinline preload="auto" style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
 <canvas id="workCanvas" style="display:none"></canvas>
 <canvas id="logoCanvas" width="200" height="120"></canvas>
 
@@ -300,9 +303,8 @@ let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
-let outputW=0, outputH=0, exporting=false, prevOff=null;
+let outputW=0, outputH=0, exporting=false;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
-let wrPlan=null;
 
 const state={
  gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:30,mapH:35,
@@ -336,15 +338,42 @@ function drawBase(ctx2,W,H){
  ctx2.clearRect(0,0,W,H);
  ctx2.drawImage(video,r.x,r.y,r.w,r.h,0,0,W,H);
 }
-function isWhite(data,i,t){
- const r=data[i],g=data[i+1],b=data[i+2];
- const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
- const neutral=(mx-mn)<=95;
- const brightness=(r+g+b)/3;
- return neutral && (mx>=t || brightness>=t-15);
+
+// =====================================================================
+//  CLEAN WHITE-TEXT REMOVAL
+//  1) scan the trimmed video once to find text that stays on screen
+//  2) every frame: detect bright text (+ optional changing text), widen it
+//  3) fill with a smooth push-pull inpaint of the REAL surrounding pixels
+//  4) add grain matched to the surrounding video so it is not a flat patch
+// =====================================================================
+const wrCache=new Map();
+let staticMask=null, staticBuilding=null, staticTimer=null;
+
+function wrKey(){
+  const w=whiteRect; if(!w)return '';
+  return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('trimStart').value,$('trimEnd').value,duration].join('|');
+}
+function invalidateWR(){
+  staticMask=null; wrCache.clear();
+  scheduleStaticMask(true);
+}
+function scheduleStaticMask(force){
+  if(force){clearTimeout(staticTimer);staticTimer=null;}
+  if(staticTimer||!whiteRect||!duration||exporting)return;
+  staticTimer=setTimeout(async()=>{
+    staticTimer=null;
+    if(exporting||!whiteRect||!duration)return;
+    if(staticMask&&staticMask.key===wrKey())return;
+    try{
+      video.pause();
+      setStatus('Analysing the text area across the video…');
+      await buildStaticMask();
+      setStatus('Text area analysed — the preview now shows the clean result.');
+    }catch(e){console.warn('text analysis failed',e)}
+    drawPreview();drawGeoPreview();
+  },force?250:450);
 }
 
-// ===== Natural white-text removal (pixel copy + matched grain) =====
 function dilateMask(m,w,h,g){
   const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
   const pre=new Int32Array(Math.max(w,h)+1);
@@ -359,187 +388,224 @@ function dilateMask(m,w,h,g){
   return out;
 }
 
-const wrCache=new Map();
+// Finds white / light-grey text pixels (colourful bright things like yellow vests are ignored).
+function detectWhite(d,w,h,t,x0,y0,x1,y1,mr){
+  const N=w*h,lum=new Float32Array(N);
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const iw=w+1,ii=new Float64Array(iw*(h+1));
+  for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=lum[y*w+x];ii[(y+1)*iw+x+1]=ii[y*iw+x+1]+row;}}
+  const mean=(x,y)=>{
+    const a=Math.max(0,x-mr),b=Math.min(w,x+mr+1),c=Math.max(0,y-mr),e=Math.min(h,y+mr+1);
+    return (ii[e*iw+b]-ii[c*iw+b]-ii[e*iw+a]+ii[c*iw+a])/((b-a)*(e-c));
+  };
+  const mask=new Uint8Array(N),weak=new Uint8Array(N);let any=false;
+  x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const p=y*w+x,i=p*4;
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    const spread=mx-mn,L=lum[p];
+    if(L<t-35||spread>85)continue;
+    const loc=L-mean(x,y);
+    if(spread<=70&&L>=t&&(loc>=20||(mn>=215&&loc>=8))){mask[p]=1;any=true;}
+    else if(L>=t-35&&loc>=8)weak[p]=1;
+  }
+  if(!any)return null;
+  const near=dilateMask(mask,w,h,2);
+  for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
+  return mask;
+}
+
+// Scans frames across the trim range; pixels that are bright in most frames = static text.
+async function buildStaticMask(){
+  while(staticBuilding){try{await staticBuilding}catch(e){}}
+  if(!whiteRect||!duration)return null;
+  const key=wrKey();
+  if(staticMask&&staticMask.key===key)return staticMask;
+  const job=(async()=>{
+    const wr={...whiteRect},r={...sourceRect()};
+    const t=+$('whiteThreshold').value||115;
+    const s0=clamp(+$('trimStart').value||0,0,duration);
+    const e0=clamp(+$('trimEnd').value||duration,s0+.05,duration);
+    const rw=Math.max(2,Math.round(wr.w)),rh=Math.max(2,Math.round(wr.h));
+    const sc=Math.min(1,1200/Math.max(rw,rh));
+    const aw=Math.max(2,Math.round(rw*sc)),ah=Math.max(2,Math.round(rh*sc));
+    const cv=document.createElement('canvas');cv.width=aw;cv.height=ah;
+    const cx=cv.getContext('2d',{willReadFrequently:true});
+    const n=Math.min(14,Math.max(8,Math.ceil((e0-s0)/1.5)));
+    const count=new Uint16Array(aw*ah);
+    const mr=Math.max(7,Math.round(r.w*sc/60));
+    const saved=video.currentTime;
+    video.pause();
+    for(let i=0;i<n;i++){
+      await seekVideo(s0+(e0-s0)*(i+.5)/n);
+      cx.drawImage(video,r.x+wr.x,r.y+wr.y,wr.w,wr.h,0,0,aw,ah);
+      const id=cx.getImageData(0,0,aw,ah);
+      const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,mr);
+      if(m)for(let p=0;p<m.length;p++)if(m[p])count[p]++;
+    }
+    await seekVideo(saved);
+    const need=Math.max(2,Math.ceil(n*.5));
+    const out=document.createElement('canvas');out.width=aw;out.height=ah;
+    const ox=out.getContext('2d'),oi=ox.createImageData(aw,ah);let any=false;
+    for(let p=0;p<count.length;p++)if(count[p]>=need){
+      const i=p*4;oi.data[i]=oi.data[i+1]=oi.data[i+2]=255;oi.data[i+3]=255;any=true;
+    }
+    ox.putImageData(oi,0,0);
+    staticMask={key,canvas:out,any,sc:{}};
+  })();
+  staticBuilding=job;
+  try{await job}finally{staticBuilding=null}
+  return staticMask;
+}
+
+function scaledStatic(sm,w,h){
+  const k=w+'x'+h;if(sm.sc[k])return sm.sc[k];
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const cx=c.getContext('2d',{willReadFrequently:true});
+  cx.imageSmoothingEnabled=true;cx.drawImage(sm.canvas,0,0,w,h);
+  const a=cx.getImageData(0,0,w,h).data,m=new Uint8Array(w*h);
+  for(let p=0;p<m.length;p++)m[p]=a[p*4+3]>70?1:0;
+  sm.sc[k]=m;return m;
+}
+
+// Push-pull inpaint: smooth fill from the real surrounding pixels, then a few
+// relaxation passes so the edge of the fill matches its neighbours exactly,
+// then grain matched to the surrounding video so it does not look like a flat patch.
+function inpaintHole(d,w,h,hole,strength){
+  const N=w*h;
+  let hn=0;for(let p=0;p<N;p++)if(hole[p])hn++;
+  if(!hn||hn===N)return;
+
+  // ---- push (build pyramid of known pixels)
+  const levels=[];
+  let cw=w,ch=h,val=new Float32Array(N*3),wt=new Float32Array(N);
+  for(let p=0;p<N;p++)if(!hole[p]){wt[p]=1;const i=p*4;val[p*3]=d[i];val[p*3+1]=d[i+1];val[p*3+2]=d[i+2];}
+  levels.push({w:cw,h:ch,val,wt});
+  while(cw>1||ch>1){
+    const nw=(cw+1)>>1,nh=(ch+1)>>1,nv=new Float32Array(nw*nh*3),nwt=new Float32Array(nw*nh);
+    for(let y=0;y<ch;y++){
+      const qy=(y>>1)*nw;
+      for(let x=0;x<cw;x++){
+        const p=y*cw+x,wp=wt[p];
+        if(wp>0){const q=qy+(x>>1);nwt[q]+=wp;nv[q*3]+=val[p*3];nv[q*3+1]+=val[p*3+1];nv[q*3+2]+=val[p*3+2];}
+      }
+    }
+    val=nv;wt=nwt;cw=nw;ch=nh;levels.push({w:cw,h:ch,val,wt});
+  }
+
+  // ---- pull (fill from coarse to fine with bilinear upsampling)
+  const top=levels[levels.length-1];
+  let col=new Float32Array([top.val[0]/top.wt[0],top.val[1]/top.wt[0],top.val[2]/top.wt[0]]);
+  for(let k=levels.length-2;k>=0;k--){
+    const L=levels[k],lw=L.w,lh=L.h,pw=levels[k+1].w,ph=levels[k+1].h,full=Math.pow(4,k);
+    const nc=new Float32Array(lw*lh*3);
+    for(let y=0;y<lh;y++){
+      const fy=(y+.5)/2-.5,y0=Math.floor(fy),ty=fy-y0,ya=Math.max(0,Math.min(ph-1,y0)),yb=Math.max(0,Math.min(ph-1,y0+1));
+      for(let x=0;x<lw;x++){
+        const fx=(x+.5)/2-.5,x0=Math.floor(fx),tx=fx-x0,xa=Math.max(0,Math.min(pw-1,x0)),xb=Math.max(0,Math.min(pw-1,x0+1));
+        const p=y*lw+x,wp=L.wt[p],c=wp>0?Math.min(1,wp/full):0;
+        for(let q=0;q<3;q++){
+          const up=(col[(ya*pw+xa)*3+q]*(1-tx)+col[(ya*pw+xb)*3+q]*tx)*(1-ty)+
+                   (col[(yb*pw+xa)*3+q]*(1-tx)+col[(yb*pw+xb)*3+q]*tx)*ty;
+          nc[p*3+q]=c>0?(L.val[p*3+q]/wp)*c+up*(1-c):up;
+        }
+      }
+    }
+    col=nc;
+  }
+  const fill=col;
+
+  // ---- relax so the fill edge matches the real pixels around it
+  const idx=new Int32Array(hn);let j0=0;
+  for(let p=0;p<N;p++)if(hole[p])idx[j0++]=p;
+  for(let it=0;it<10;it++){
+    for(let j=0;j<hn;j++){
+      const p=idx[j],x=p%w,y=(p/w)|0;let c=0,a=0,b=0,e=0;
+      if(x>0){const n=(p-1)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(x<w-1){const n=(p+1)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(y>0){const n=(p-w)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(y<h-1){const n=(p+w)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(c){fill[p*3]=a/c;fill[p*3+1]=b/c;fill[p*3+2]=e/c;}
+    }
+  }
+
+  // ---- measure real grain around the hole (robust median of high-pass luma)
+  const lum=new Float32Array(N);
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const hist=new Uint32Array(64);let hc=0;
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+    const p=y*w+x;
+    if(hole[p]||hole[p-1]||hole[p+1]||hole[p-w]||hole[p+w])continue;
+    const hp=Math.abs(lum[p]-(lum[p-1]+lum[p+1]+lum[p-w]+lum[p+w])/4);
+    hist[Math.min(63,Math.round(hp))]++;hc++;
+  }
+  let sigma=0.6;
+  if(hc>50){let acc=0,mi=0;for(;mi<64;mi++){acc+=hist[mi];if(acc>=hc/2)break;}sigma=Math.min(6,(mi+.3)/.754);}
+  const amp=sigma*0.85;
+
+  // ---- write fill + matching grain
+  for(let j=0;j<hn;j++){
+    const p=idx[j],i=p*4;
+    const g=(Math.random()+Math.random()+Math.random()+Math.random()-2)*1.732*amp;
+    for(let q=0;q<3;q++){
+      let v=fill[p*3+q]+g;v=v<0?0:v>255?255:v;
+      d[i+q]=d[i+q]*(1-strength)+v*strength;
+    }
+  }
+}
+
 function removeWhiteFromCanvas(ctx2,W,H,rect){
   if(!rect)return;
   const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
   const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
   if(rx1-rx0<2||ry1-ry0<2)return;
 
-  const pkey=[W,H,rx0,ry0,rx1,ry1,$('whiteThreshold').value,$('removeOpacity').value,$('inpaintPasses').value,JSON.stringify(crop)].join('|');
-  const ckey=[W,H,rx0,ry0,rx1,ry1,$('whiteThreshold').value,$('removeOpacity').value,$('inpaintPasses').value,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
-  const hit=wrCache.get(ckey);
-  if(hit){ctx2.putImageData(hit.img,hit.x0,hit.y0);return;}
-  const pad=Math.round(Math.max(14,Math.min(40,W/40)));
+  const t=+$('whiteThreshold').value||115;
+  const strength=(+$('removeOpacity').value||100)/100;
+  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*Math.max(1,W/640)*0.8));
+  const dynamic=$('textChanges').checked;
+  const key=wrKey();
+  const sm=(staticMask&&staticMask.key===key)?staticMask:null;
+  if(!sm&&!exporting&&!staticBuilding)scheduleStaticMask(false);
+  const useStatic=!!(sm&&sm.any);
+
+  const cacheable=!exporting&&video.paused;
+  let ckey=null;
+  if(cacheable){
+    ckey=[W,H,rx0,ry0,rx1,ry1,t,strength,grow,dynamic,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
+    const hit=wrCache.get(ckey);
+    if(hit){ctx2.putImageData(hit.img,hit.x0,hit.y0);return;}
+  }
+
+  const pad=Math.round(Math.max(16,Math.min(48,W/36)))+grow;
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
-  const t=+$('whiteThreshold').value||115;
-  const strength=(+$('removeOpacity').value||100)/100;
 
-  // FAST PATH: while playing/exporting reuse the source pixels found earlier
-  // (no new search, no shimmer between frames).
-  if((exporting||!video.paused)&&wrPlan&&wrPlan.k===pkey&&wrPlan.w===w&&wrPlan.h===h&&wrPlan.age<60){
-    const P=wrPlan;P.age++;
-    const cur=new Uint8ClampedArray(d);
-    for(let oi=0;oi<P.order.length;oi++){const p=P.order[oi];
-      if(P.hasOff[p]){const si=((((p/w)|0)+P.offY[p])*w+(p%w)+P.offX[p])*4,ti=p*4;
-        cur[ti]=d[si];cur[ti+1]=d[si+1];cur[ti+2]=d[si+2];}}
-    blendFill(P,cur,d,w,h,strength,6);
-    ctx2.putImageData(img,x0,y0);return;
+  // build the text mask
+  let hole=new Uint8Array(N),any=false;
+  if(useStatic){
+    const rw=rx1-rx0,rh=ry1-ry0,sc=scaledStatic(sm,rw,rh);
+    for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;any=true;}}
   }
-
-  const scale=Math.max(1,W/640);
-  const grow=Math.max(1,Math.round((+$('inpaintPasses').value||5)*scale*0.45));
-
-  const lum=new Float32Array(N);
-  for(let p=0;p<N;p++)lum[p]=d[p*4]*.299+d[p*4+1]*.587+d[p*4+2]*.114;
-  const iw=w+1,ii=new Float64Array(iw*(h+1));
-  for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=lum[y*w+x];ii[(y+1)*iw+x+1]=ii[y*iw+x+1]+row;}}
-  const mr=Math.max(7,Math.round(W/60));
-  const meanAt=(x,y)=>{
-    const a=Math.max(0,x-mr),b=Math.min(w,x+mr+1),c=Math.max(0,y-mr),e=Math.min(h,y+mr+1);
-    return (ii[e*iw+b]-ii[c*iw+b]-ii[e*iw+a]+ii[c*iw+a])/((b-a)*(e-c));
-  };
-
-  // 1) text detection (inside the selection only)
-  const mask=new Uint8Array(N),weak=new Uint8Array(N);let any=false;
-  for(let y=ry0;y<ry1;y++)for(let x=rx0;x<rx1;x++){
-    const lx=x-x0,ly=y-y0,p=ly*w+lx,i=p*4;
-    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    const spread=mx-mn,L=lum[p];
-    const loc=L-meanAt(lx,ly);
-    if(spread<=60 && L>=t && (loc>=22 || mn>=200)){mask[p]=1;any=true;}
-    else if(spread<=75 && L>=t-30 && loc>=10)weak[p]=1;
+  if(dynamic||!useStatic){
+    const det=detectWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)));
+    if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
   }
   if(!any)return;
-  const near=dilateMask(mask,w,h,2);
-  for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
 
-  // 2) grow to swallow halo
-  const hole=dilateMask(mask,w,h,grow);
+  // widen to swallow glow / anti-aliasing / compression halo, keep inside the selection
+  hole=dilateMask(hole,w,h,grow);
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const gx=x+x0,gy=y+y0;
     if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
   }
 
-  // 3) fill order: from hole edge inward
-  const valid=new Uint8Array(N),known=new Uint8Array(N);
-  for(let p=0;p<N;p++){valid[p]=hole[p]?0:1;known[p]=valid[p];}
-  const inQ=new Uint8Array(N),order=[];
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const p=y*w+x;if(!hole[p])continue;
-    if((x>0&&valid[p-1])||(x<w-1&&valid[p+1])||(y>0&&valid[p-w])||(y<h-1&&valid[p+w])){inQ[p]=1;order.push(p);}
-  }
-  if(!order.length)return;
-  for(let qi=0;qi<order.length;qi++){
-    const p=order[qi],x=p%w,y=(p/w)|0;
-    if(x>0&&hole[p-1]&&!inQ[p-1]){inQ[p-1]=1;order.push(p-1);}
-    if(x<w-1&&hole[p+1]&&!inQ[p+1]){inQ[p+1]=1;order.push(p+1);}
-    if(y>0&&hole[p-w]&&!inQ[p-w]){inQ[p-w]=1;order.push(p-w);}
-    if(y<h-1&&hole[p+w]&&!inQ[p+w]){inQ[p+w]=1;order.push(p+w);}
-  }
-
-  // 4) copy real pixels from the best-matching nearby patch
-  const cur=new Uint8ClampedArray(d);
-  const offX=new Int16Array(N),offY=new Int16Array(N),hasOff=new Uint8Array(N);
-  const R=Math.max(20,Math.min(70,Math.round(W/12))),K=20,ph=2;
-  for(let oi=0;oi<order.length;oi++){
-    const p=order[oi],px=p%w,py=(p/w)|0;
-    let best=1e18,bx=-1,by=-1;
-    const po=(prevOff&&prevOff.x0===x0&&prevOff.y0===y0&&prevOff.w===w&&prevOff.h===h)?prevOff:null;
-    const tryC=(cx,cy,bias)=>{
-      if(cx<ph||cy<ph||cx>=w-ph||cy>=h-ph)return;
-      if(!valid[cy*w+cx])return;
-      let s=0,n=0;
-      for(let oy=-ph;oy<=ph;oy++)for(let ox=-ph;ox<=ph;ox++){
-        const tx=px+ox,ty=py+oy;if(tx<0||ty<0||tx>=w||ty>=h)continue;
-        const tp=ty*w+tx;if(!known[tp])continue;
-        const sp=(cy+oy)*w+cx+ox;if(!valid[sp])continue;
-        const ti=tp*4,si=sp*4;
-        const a=cur[ti]-d[si],b=cur[ti+1]-d[si+1],c2=cur[ti+2]-d[si+2];
-        s+=a*a+b*b+c2*c2;n++;
-      }
-      if(n<3)return;
-      s=(s/n+((cx-px)*(cx-px)+(cy-py)*(cy-py))*0.02)*(bias||1);
-      if(s<best){best=s;bx=cx;by=cy;}
-    };
-    if(po&&po.has[p])tryC(px+po.ox[p],py+po.oy[p],0.8);
-    if(px>0&&hasOff[p-1])tryC(px+offX[p-1],py+offY[p-1]);
-    if(px<w-1&&hasOff[p+1])tryC(px+offX[p+1],py+offY[p+1]);
-    if(py>0&&hasOff[p-w])tryC(px+offX[p-w],py+offY[p-w]);
-    if(py<h-1&&hasOff[p+w])tryC(px+offX[p+w],py+offY[p+w]);
-    let seed=((p*2654435761+12345)>>>0)||1;
-    const rnd=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;seed>>>=0;return seed;};
-    for(let k=0;k<K;k++){
-      const rx=(rnd()%(2*R+1))-R,ry=(rnd()%(2*R+1))-R;
-      tryC(px+rx,py+ry);
-    }
-    if(bx<0){
-      outer:for(let r=1;r<=R;r++){
-        for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
-          const cx=px+dx,cy=py+dy;
-          if(cx>=0&&cy>=0&&cx<w&&cy<h&&valid[cy*w+cx]){bx=cx;by=cy;break outer;}
-        }
-      }
-      if(bx<0)continue;
-    }
-    const ti=p*4,si=(by*w+bx)*4;
-    cur[ti]=d[si];cur[ti+1]=d[si+1];cur[ti+2]=d[si+2];
-    offX[p]=bx-px;offY[p]=by-py;hasOff[p]=1;known[p]=1;
-  }
-
-  // 5) seamless blend + write back; remember the plan for the next frames
-  const P={k:pkey,age:0,w,h,hole,order,offX,offY,hasOff,valid};
-  blendFill(P,cur,d,w,h,strength,30);
+  inpaintHole(d,w,h,hole,strength);
   ctx2.putImageData(img,x0,y0);
-  wrPlan=P;
-  prevOff={x0,y0,w,h,ox:offX,oy:offY,has:hasOff};
-  wrCache.set(ckey,{img,x0,y0});
-  if(wrCache.size>6)wrCache.delete(wrCache.keys().next().value);
-}
-function blendFill(P,cur,d,w,h,strength,iters){
-  const {hole,order,offX,offY,hasOff,valid}=P,N=w*h;
-  const delta=new Float32Array(N*3),bsum=new Float32Array(N*3),cnt=new Uint8Array(N),hc=new Uint8Array(N);
-  const nbs=[-1,1,-w,w];
-  const okN=(p,k)=>{const x=p%w,y=(p/w)|0;return !((k==0&&x==0)||(k==1&&x==w-1)||(k==2&&y==0)||(k==3&&y==h-1));};
-  for(let oi=0;oi<order.length;oi++){
-    const p=order[oi];
-    for(let k=0;k<4;k++){
-      if(!okN(p,k))continue;
-      const n=p+nbs[k];
-      if(hole[n]){hc[p]++;continue;}
-      cnt[p]++;
-      if(hasOff[p]){
-        const nx=(n%w)+offX[p],ny=((n/w)|0)+offY[p];
-        if(nx>=0&&ny>=0&&nx<w&&ny<h&&valid[ny*w+nx]){
-          const si=(ny*w+nx)*4,ni=n*4;
-          bsum[p*3]+=d[ni]-d[si];bsum[p*3+1]+=d[ni+1]-d[si+1];bsum[p*3+2]+=d[ni+2]-d[si+2];
-        }
-      }
-    }
-  }
-  for(let it=0;it<iters;it++){
-    for(let oi=0;oi<order.length;oi++){
-      const p=order[oi],dn=cnt[p]+hc[p];if(!dn)continue;
-      let a=bsum[p*3],b=bsum[p*3+1],c=bsum[p*3+2];
-      for(let k=0;k<4;k++){
-        if(!okN(p,k))continue;
-        const n=p+nbs[k];
-        if(hole[n]){a+=delta[n*3];b+=delta[n*3+1];c+=delta[n*3+2];}
-      }
-      delta[p*3]=Math.max(-50,Math.min(50,a/dn));
-      delta[p*3+1]=Math.max(-50,Math.min(50,b/dn));
-      delta[p*3+2]=Math.max(-50,Math.min(50,c/dn));
-    }
-  }
-  for(let p=0;p<N;p++){
-    if(!hole[p])continue;
-    const i=p*4;
-    for(let k=0;k<3;k++){
-      let v=cur[i+k]+delta[p*3+k];v=v<0?0:v>255?255:v;
-      d[i+k]=d[i+k]*(1-strength)+v*strength;
-    }
+  if(cacheable){
+    wrCache.set(ckey,{img,x0,y0});
+    if(wrCache.size>6)wrCache.delete(wrCache.keys().next().value);
   }
 }
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
@@ -596,7 +662,7 @@ view.addEventListener('pointerup',e=>{
  const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
  if(q.w<5||q.h<5){return}
  if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
- if(removeMode){whiteRect={...q};wrPlan=null;$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
+ if(removeMode){whiteRect={...q};invalidateWR();$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
  updateSelectionBox();
 });
 
@@ -739,6 +805,7 @@ $('videoFile').addEventListener('change',()=>{
  file=$('videoFile').files[0]; if(!file)return;
  if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
  $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
+ staticMask=null; wrCache.clear();
 });
 video.addEventListener('loadedmetadata',()=>{
  duration=video.duration||0;
@@ -763,13 +830,23 @@ $('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.cur
 $('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
 $('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
 $('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
-$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;wrPlan=null;$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
-$('resetCrop').onclick=()=>{crop=null;whiteRect=null;wrPlan=null;$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
-$('removeWhite').onclick=()=>{if(!whiteRect)return;setStatus('White-text removal will be applied to every frame during export.');drawPreview()}
-$('clearWhite').onclick=()=>{whiteRect=null;wrPlan=null;$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
-$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;wrPlan=null;drawPreview()}
-$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrPlan=null;drawPreview()}
-$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrPlan=null;drawPreview()}
+$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;invalidateWR();$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
+$('removeWhite').onclick=async()=>{
+ if(!whiteRect)return;
+ video.pause();
+ setStatus('Analysing the text area across the video…');
+ try{
+   await buildStaticMask();
+   setStatus('White-text removal is ready. It is applied to every frame when you export / download.');
+ }catch(e){setStatus('Text analysis failed: '+(e.message||e))}
+ drawPreview();drawGeoPreview();
+}
+$('clearWhite').onclick=()=>{whiteRect=null;invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
+$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
+$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
+$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
+$('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 
 function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
 function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
@@ -1194,6 +1271,13 @@ async function exportVideoFrameAccurate(){
   const start=clamp(+$('trimStart').value||0,0,duration);
   const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
   const length=Math.max(0.05,end-start);
+
+  // scan the video once for static text (needed for a clean, flicker-free result)
+  if(whiteRect){
+    $('exportStatus').textContent='Analysing the text area…';
+    await buildStaticMask();
+  }
+
   $('exportStatus').textContent='Detecting video frame rate…';
   const fps=await estimateFps();
 
@@ -1225,6 +1309,7 @@ async function exportVideoFrameAccurate(){
   const muxer=new Mp4Muxer.Muxer({
     target:new Mp4Muxer.ArrayBufferTarget(),
     fastStart:'in-memory',
+    firstTimestampBehavior:'offset',
     video:{codec:'avc',width:outputW,height:outputH},
     audio:hasAudio?{
       codec:'aac',
@@ -1237,6 +1322,7 @@ async function exportVideoFrameAccurate(){
   let rejectEncoding=null;
   let videoEncoder=null;
   let restoreMute=video.muted;
+  const bitrate=clamp(Math.round(outputW*outputH*fps*0.12),4_000_000,20_000_000);
 
   try{
     videoEncoder=new VideoEncoder({
@@ -1252,54 +1338,91 @@ async function exportVideoFrameAccurate(){
       codec,
       width:outputW,
       height:outputH,
-      bitrate:8_000_000,
+      bitrate,
       framerate:fps,
-      hardwareAcceleration,
-      firstTimestampBehavior:'offset'
+      hardwareAcceleration
     });
 
     const needsFrameProcessing=exportNeedsFrameProcessing();
     $('exportStatus').textContent=needsFrameProcessing
-      ? 'Rendering selected changes… 0% (accelerated)'
-      : 'Rendering crop/trim only… 0% (accelerated)';
+      ? 'Rendering selected changes… 0% (keep this tab open)'
+      : 'Rendering crop/trim only… 0% (keep this tab open)';
 
-    // FAST EXPORT: play the video faster than real time and catch every
-    // presented frame (no per-frame seeking). Timestamps use the real video
-    // time so the output plays at normal speed.
-    prevOff=null;wrPlan=null;
+    // FAST EXPORT: play the video faster than real time and catch every presented
+    // frame (no per-frame seeking). Timestamps use the real video time so the
+    // output plays at normal speed. Playback speed adapts automatically to how
+    // fast frames can be processed, and any frame the browser skips is repeated
+    // so the final video keeps a steady frame rate.
     video.pause();restoreMute=video.muted;video.muted=true;
     await seekVideo(start);
     const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
-    let rate=needsFrameProcessing?3:6,lastMT=-1,n=0;
+    let rate=needsFrameProcessing?3:6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
+    const tBegin=performance.now();
     video.playbackRate=rate;
     await new Promise((resolve,reject)=>{
       rejectEncoding=reject;
-      const finish=()=>{video.pause();resolve()};
+      let finished=false,lastCb=performance.now(),dog=null;
+      const finish=()=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(e){}resolve()};
+      const fail=e=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(x){}reject(e)};
+      dog=setInterval(()=>{
+        if(!finished&&performance.now()-lastCb>12000&&videoEncoder.encodeQueueSize<3)
+          fail(new Error('The browser stopped delivering video frames (keep this tab visible while rendering).'));
+      },1000);
       video.addEventListener('ended',finish,{once:true});
+      const encodeCanvas=ts=>{
+        const vf=new VideoFrame(work,{timestamp:Math.round(ts*1e6),duration:frameDur});
+        videoEncoder.encode(vf,{keyFrame:n%keyEvery===0});vf.close();n++;
+      };
       const onFrame=(now,m)=>{
+        if(finished)return;
+        lastCb=performance.now();
         try{
           if(encoderFailed)throw encoderFailed;
           const mt=m.mediaTime;
           if(mt>=end-0.0005){finish();return}
           if(mt>=start-0.001&&mt>lastMT+1e-4){
-            // a frame was skipped -> slow down so no frame is ever lost
-            if(lastMT>=0&&mt-lastMT>1.6/fps){rate=Math.max(1,rate*.6);video.playbackRate=rate;}
+            const t0=performance.now();
+            const rel=n===0?0:Math.max(0,mt-start);
+            if(n===0||rel>prevRel+0.0005){
+              // frame(s) skipped by the browser -> slow down and repeat the last frame
+              if(lastMT>=0){
+                const gap=Math.round((mt-lastMT)*fps)-1;
+                if(gap>=1){
+                  maxRate=Math.max(1,Math.min(maxRate,rate*.8));
+                  rate=Math.min(rate,maxRate);video.playbackRate=rate;
+                  if(gap<=8)for(let k=1;k<=gap;k++){const ts=prevRel+k/fps;if(ts<rel-0.0005)encodeCanvas(ts);}
+                }
+              }
+              drawExportFrame(rel);
+              encodeCanvas(rel);
+              prevRel=rel;
+            }
             lastMT=mt;
-            const rel=Math.max(0,mt-start);
-            drawExportFrame(rel);
-            const vf=new VideoFrame(work,{timestamp:Math.round(rel*1e6),duration:frameDur});
-            videoEncoder.encode(vf,{keyFrame:n%keyEvery===0});vf.close();n++;
-            if(n%5===0)$('exportStatus').textContent='Rendering… '+Math.min(99,Math.round(rel/length*99))+'% ('+n+' frames)';
-            if(videoEncoder.encodeQueueSize>16){
+            const proc=performance.now()-t0;
+            procEMA=procEMA?procEMA*.8+proc*.2:proc;
+            if(++sinceAdj>=8){
+              sinceAdj=0;
+              const target=clamp((1000/fps)/(procEMA*1.5+3),1,maxRate);
+              rate=clamp(rate*.5+target*.5,1,maxRate);
+              video.playbackRate=rate;
+            }
+            if(n%5===0){
+              const pct=Math.min(99,Math.round(rel/length*99));
+              $('exportStatus').textContent='Rendering… '+pct+'% ('+n+' frames, '+Math.round((performance.now()-tBegin)/1000)+'s) — keep this tab open';
+            }
+            if(videoEncoder.encodeQueueSize>12){
               video.pause();
-              const t=setInterval(()=>{if(videoEncoder.encodeQueueSize<4){clearInterval(t);video.play().catch(reject)}},10);
+              const iv=setInterval(()=>{
+                if(finished){clearInterval(iv);return}
+                if(videoEncoder.encodeQueueSize<3){clearInterval(iv);video.play().catch(fail)}
+              },8);
             }
           }
           video.requestVideoFrameCallback(onFrame);
-        }catch(e){reject(e)}
+        }catch(e){fail(e)}
       };
       video.requestVideoFrameCallback(onFrame);
-      video.play().catch(reject);
+      video.play().catch(fail);
     });
     video.playbackRate=1;
     video.muted=restoreMute;
@@ -1309,7 +1432,7 @@ async function exportVideoFrameAccurate(){
     $('exportStatus').textContent='Finishing video encoding… 91%';
     await Promise.race([
       videoEncoder.flush(),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out after 5 seconds.')),5000))
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out.')),60000))
     ]);
 
     videoEncoder.close();
@@ -1367,7 +1490,7 @@ async function exportVideoFrameAccurate(){
     $('exportStatus').textContent='Finalizing MP4…';
     muxer.finalize();
     exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
-    $('exportStatus').textContent='Video rendered — 100% complete. Download button is ready.';
+    $('exportStatus').textContent='Video rendered in '+Math.round((performance.now()-tBegin)/1000)+'s — 100% complete. Download button is ready.';
     $('downloadVideo').disabled=false;
   }finally{
     rejectEncoding=null;
@@ -1422,7 +1545,7 @@ async function exportVideo(){
 }
 async function doExport(){
   exporting=true;
-  try{ await doExportInner(); } finally { exporting=false; prevOff=null; wrPlan=null; drawPreview(); drawGeoPreview(); drawTimeline(); }
+  try{ await doExportInner(); } finally { exporting=false; drawPreview(); drawGeoPreview(); drawTimeline(); }
 }
 async function doExportInner(){
   const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
@@ -1532,6 +1655,7 @@ $('exportGeo').onclick=async()=>{
  $('exportGeo').disabled=true;
  $('downloadGeo').disabled=true;
  $('geoStatus').textContent='Rendering GeoTagged Video…';
+ const poll=setInterval(()=>{if(exporting)$('geoStatus').textContent=$('exportStatus').textContent},300);
  try{
    await doExport();
    if(exportBlob){
@@ -1544,6 +1668,7 @@ $('exportGeo').onclick=async()=>{
    console.error(err);
    $('geoStatus').textContent='GeoTagged video export failed: '+(err.message||err);
  }finally{
+   clearInterval(poll);
    $('exportGeo').disabled=false;
  }
 }

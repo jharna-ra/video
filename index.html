@@ -977,11 +977,40 @@ $('timelineNext').onclick=()=>{ if(!duration)return; video.currentTime=clamp((vi
 document.querySelectorAll('.quickTrim').forEach(btn=>btn.addEventListener('click',()=>{
  $('trimStart').value='0.0'; $('trimEnd').value=fmt(Math.min(duration,+btn.dataset.sec)); video.currentTime=0; drawTimeline();
 }));
-$('videoFile').addEventListener('change',()=>{
- file=$('videoFile').files[0]; if(!file)return;
- if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
- $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
+$('videoFile').addEventListener('change',async(e)=>{
+ const input=e.currentTarget;
+ const selected=input.files&&input.files.length?input.files[0]:null;
+ if(!selected){
+   file=null;
+   $('fileName').textContent='No video selected';
+   setStatus('No video selected.');
+   return;
+ }
+ file=selected;
+ if(videoURL){URL.revokeObjectURL(videoURL);videoURL=null;}
+ video.pause();
+ video.removeAttribute('src');
+ video.load();
+ videoURL=URL.createObjectURL(file);
+ video.src=videoURL;
+ video.load();
+ $('fileName').textContent=file.name;
+ $('durationBadge').textContent='Loading…';
+ $('downloadVideo').disabled=true;
+ $('goGeo').disabled=true;
+ exportBlob=null;
  staticMask=null; wrCache.clear();
+ setStatus('Loading video preview…');
+ console.log('Selected video:',file.name,file.type,file.size);
+});
+video.addEventListener('loadstart',()=>{
+  if(file) setStatus('Loading '+file.name+'…');
+});
+video.addEventListener('loadeddata',()=>{
+  if(!video.videoWidth||!video.videoHeight)return;
+  resizePreview();
+  drawPreview();
+  drawTimeline();
 });
 video.addEventListener('loadedmetadata',()=>{
  duration=video.duration||0;
@@ -992,19 +1021,16 @@ video.addEventListener('loadedmetadata',()=>{
  $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
  buildTimeline();
 });
-// Draw only after the browser has decoded an actual video frame.
-video.addEventListener('loadeddata',()=>{
-  resizePreview();
-  drawPreview();
-  drawTimeline();
-});
 video.addEventListener('canplay',()=>{
   if(video.videoWidth){ resizePreview(); drawPreview(); }
 });
 video.addEventListener('error',()=>{
   const e=video.error;
-  setStatus('Video preview error: '+(e&&e.message?e.message:'The selected video format could not be decoded in this browser.'));
-  console.error('Video preview error',e);
+  const code=e&&e.code;
+  const msg=code===1?'Loading was aborted.':code===2?'A network/read error occurred.':code===3?'The video could not be decoded.':code===4?'This video format/codec is not supported by this browser.':'Unknown video loading error.';
+  setStatus('Video preview error: '+msg);
+  $('durationBadge').textContent='Error';
+  console.error('Video preview error',e,file);
 });
 video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
 video.addEventListener('play',()=>{playing=true;});

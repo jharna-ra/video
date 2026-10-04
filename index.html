@@ -157,6 +157,7 @@ input[type=range]{width:100%}
 <button id="removeWhite" disabled>Remove White Text</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
 <label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
+<label class="checkLine"><input id="hideUnderStamp" type="checkbox" checked> Text is where the GeoTag goes — hide it completely under the GeoTag</label>
 <label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
 <label>White detection sensitivity <b id="whiteVal">170</b></label>
 <input id="whiteThreshold" type="range" min="80" max="245" value="170">
@@ -919,6 +920,7 @@ $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').v
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
 $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
+$('hideUnderStamp').onchange=()=>{drawPreview();drawGeoPreview()}
 $('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 $('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 
@@ -1144,11 +1146,39 @@ $('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat'
 $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
 
+// The selected text box, only when it sits in the lower part of the frame (where the GeoTag stamp goes).
+function coverRect(W,H){
+  if(!whiteRect||!$('hideUnderStamp').checked)return null;
+  const r=sourceRect();
+  const c={x:whiteRect.x/r.w*W,y:whiteRect.y/r.h*H,w:whiteRect.w/r.w*W,h:whiteRect.h/r.h*H};
+  return c.y>=H*0.45?c:null;
+}
+// Smear the text box completely (nothing readable can survive) – it is hidden under the stamp afterwards.
+let _obCanvas=null;
+function obliterateBox(ctx,W,H){
+  const c=coverRect(W,H);if(!c)return;
+  const bl=Math.max(6,Math.round(W/50)),m=bl*3;
+  const x=Math.max(0,Math.floor(c.x)-2),y=Math.max(0,Math.floor(c.y)-2);
+  const x2=Math.min(W,Math.ceil(c.x+c.w)+2),y2=Math.min(H,Math.ceil(c.y+c.h)+2);
+  const ex=Math.max(0,x-m),ey=Math.max(0,y-m),ew=Math.min(W,x2+m)-ex,eh=Math.min(H,y2+m)-ey;
+  if(x2-x<2||y2-y<2||ew<2||eh<2)return;
+  if(!_obCanvas)_obCanvas=document.createElement('canvas');
+  _obCanvas.width=ew;_obCanvas.height=eh;
+  _obCanvas.getContext('2d').drawImage(ctx.canvas,ex,ey,ew,eh,0,0,ew,eh);
+  ctx.save();
+  ctx.beginPath();ctx.rect(x,y,x2-x,y2-y);ctx.clip();
+  ctx.filter='blur('+bl+'px)';
+  ctx.drawImage(_obCanvas,ex,ey);
+  ctx.restore();
+}
+
 function drawGeoFrame(baseCtx,W,H,seconds){
   const stampOpacity=clamp(state.gOpacity/100,0,1);
   const mapOpacity=clamp(state.gMapO/100,0,1);
 
-  const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
+  let stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
+  const cov=coverRect(W,H);
+  if(cov)stampH=Math.max(stampH,Math.min(H*.95,H-cov.y+Math.round(H*.015)));
   const stampX=0;
   const stampY=Math.round(H-stampH);
   const stampW=W;
@@ -1270,6 +1300,7 @@ function drawExportFrame(elapsedOverride){
   }
 
   if(lat!=null&&lon!=null){
+    obliterateBox(wctx,outputW,outputH);
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
     drawGeoFrame(wctx,outputW,outputH,elapsed);
   }
@@ -1722,7 +1753,7 @@ function drawGeoPreview(){
  if(geo.width!==nw)geo.width=nw; if(geo.height!==nh)geo.height=nh;
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
- if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
+ if(lat!=null&&lon!=null){obliterateBox(gctx,geo.width,geo.height);drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));}
 }
 $('exportGeo').onclick=async()=>{
  if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}

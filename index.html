@@ -546,7 +546,7 @@ function detectWhiteTextPrecise(d,w,h,t,x0,y0,x1,y1){
   return any?mask:null;
 }
 
-function buildStaticMask(){
+async function buildStaticMask(){
   while(staticBuilding){try{await staticBuilding}catch(e){}}
   if(!whiteRect||!duration)return null;
   const key=wrKey();
@@ -991,6 +991,20 @@ video.addEventListener('loadedmetadata',()=>{
  resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
  $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
  buildTimeline();
+});
+// Draw only after the browser has decoded an actual video frame.
+video.addEventListener('loadeddata',()=>{
+  resizePreview();
+  drawPreview();
+  drawTimeline();
+});
+video.addEventListener('canplay',()=>{
+  if(video.videoWidth){ resizePreview(); drawPreview(); }
+});
+video.addEventListener('error',()=>{
+  const e=video.error;
+  setStatus('Video preview error: '+(e&&e.message?e.message:'The selected video format could not be decoded in this browser.'));
+  console.error('Video preview error',e);
 });
 video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
 video.addEventListener('play',()=>{playing=true;});

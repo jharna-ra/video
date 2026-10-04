@@ -25,7 +25,7 @@ input[type=range]{width:100%}
 .status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
 .stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
 #viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
+#selection{position:absolute;border:2px solid #ff3b30;background:transparent;display:none;pointer-events:none}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
@@ -157,15 +157,16 @@ input[type=range]{width:100%}
 <button id="removeWhite" disabled>Remove White Text</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
 <label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
-<label>White detection sensitivity <b id="whiteVal">115</b></label>
-<input id="whiteThreshold" type="range" min="80" max="245" value="115">
+<label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
+<label>White detection sensitivity <b id="whiteVal">200</b></label>
+<input id="whiteThreshold" type="range" min="80" max="245" value="200">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
 <label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
 <input id="textThick" type="range" min="2" max="30" value="9">
-<div class="small">Draw the box around the text. Only thin bright strokes (letters) are changed — big bright areas such as floor tiles, clothes or sky inside the box are left exactly as they are, so every other pixel stays identical to the original video. If part of a letter is left behind (bold text), raise <b>Max text stroke thickness</b>. If letters are still visible, lower the sensitivity number or raise Edge expand.</div>
+<div class="small">Draw the box around the text. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see exactly which pixels will be removed: if red covers the text, you are set; if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
 <div class="section">
@@ -465,7 +466,7 @@ async function buildStaticMask(){
       await seekVideo(s0+(e0-s0)*(i+.5)/n);
       cx.drawImage(video,r.x+wr.x,r.y+wr.y,wr.w,wr.h,0,0,aw,ah);
       const id=cx.getImageData(0,0,aw,ah);
-      const thk=Math.max(2,Math.round((+$('textThick').value||9)*(r.w*sc)/1080));
+      const thk=Math.max(3,Math.round((+$('textThick').value||9)*(r.w*sc)/1080));
       const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,mr,thk);
       if(m)for(let p=0;p<m.length;p++)if(m[p])count[p]++;
     }
@@ -610,15 +611,16 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
 
   const t=+$('whiteThreshold').value||115;
   const strength=(+$('removeOpacity').value||100)/100;
-  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*Math.max(1,W/640)*0.5));
-  const thk=Math.max(2,Math.round((+$('textThick').value||9)*W/1080));
+  const grow=Math.max(1,Math.round((+$('inpaintPasses').value||5)*W/1080*0.6));
+  const thk=Math.max(3,Math.round((+$('textThick').value||9)*W/1080));
   const dynamic=$('textChanges').checked;
   const key=wrKey();
   const sm=(staticMask&&staticMask.key===key)?staticMask:null;
   if(!sm&&!exporting&&!staticBuilding)scheduleStaticMask(false);
   const useStatic=!!(sm&&sm.any);
 
-  const cacheable=!exporting&&video.paused;
+  const showMask=$('showMask').checked&&!exporting;
+  const cacheable=!exporting&&video.paused&&!showMask;
   let ckey=null;
   if(cacheable){
     ckey=[W,H,rx0,ry0,rx1,ry1,t,thk,strength,grow,dynamic,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
@@ -633,23 +635,33 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
 
   // build the text mask
   let hole=new Uint8Array(N),any=false;
+  const rectArea=(rx1-rx0)*(ry1-ry0);
+  let staticTooBig=false;
   if(useStatic){
     const rw=rx1-rx0,rh=ry1-ry0,sc=scaledStatic(sm,rw,rh);
-    for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;any=true;}}
+    let c=0;
+    for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;c++;}}
+    if(c/rectArea>0.08){hole.fill(0);staticTooBig=true;}else if(c)any=true;
   }
-  if(dynamic||!useStatic){
+  if(dynamic||!useStatic||staticTooBig){
     // safety cap: if "text" covers a big part of the box it is not text -> raise the bar, never smear the scene
-    const rectArea=(rx1-rx0)*(ry1-ry0);
     let tt=t,det=null;
     for(let k=0;k<5;k++){
       det=detectWhite(d,w,h,tt,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
       if(!det)break;
       let c=0;for(let p=0;p<N;p++)c+=det[p];
-      if(c/rectArea<=0.12)break;
+      if(c/rectArea<=0.08)break;
       if(k===4)det=null;
       tt+=20;
     }
     if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
+  }
+  if(showMask){
+    let c=0;
+    if(any)for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;c++;}
+    ctx2.putImageData(img,x0,y0);
+    setStatus('Detected text pixels: '+(c/rectArea*100).toFixed(2)+'% of the selected box (red = will be removed).');
+    return;
   }
   if(!any)return;
 
@@ -906,6 +918,7 @@ $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').v
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
 $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
+$('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 $('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 
 function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}

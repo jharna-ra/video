@@ -920,203 +920,208 @@ function removeWhiteDetailedFromCanvasV2(ctx2,W,H,rect){
   if(rx1-rx0<4||ry1-ry0<4)return;
 
   /*
-    SECOND BOX — NATURAL OVERLAY REMOVAL
-    The previous versions were still capable of producing a horizontal seam.
-    This version first checks whether the selected area contains a dark
-    subtitle/banner strip. If it does, the strip itself is reconstructed from
-    real neighbouring pixels. If it does not, only the actual bright text
-    pixels are replaced.
+    SECOND BOX — SUPER-PRECISION TEXT REMOVER
+    ---------------------------------------------------------------
+    The selection rectangle is ONLY a search area.  Nothing is filled as a
+    rectangle, and no blur/diffusion is applied to the box.
 
-    Nothing is blurred and no synthetic colour/noise is generated.
+    We build a mask from bright/neutral pixels that are locally brighter than
+    their surroundings, expand it only by the anti-aliased edge amount, then
+    fill the masked pixels one at a time with REAL pixels from a nearby clean
+    part of the same frame.  The source pixel is selected by comparing the
+    small neighbourhood around it with the unmasked neighbourhood around the
+    text pixel.  This keeps floor/wall texture and avoids the fixed horizontal
+    seam produced by the earlier band method.
   */
-  const x0=Math.max(0,rx0-8), y0=Math.max(0,ry0-8);
-  const x1=Math.min(W,rx1+8), y1=Math.min(H,ry1+8);
+  const pad=14;
+  const x0=Math.max(0,rx0-pad), y0=Math.max(0,ry0-pad);
+  const x1=Math.min(W,rx1+pad), y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx2.getImageData(x0,y0,w,h), d=img.data;
-  const lumAt=(p)=>{const i=p*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114;};
 
-  // Detect a real dark banner/subtitle band containing bright text.
-  const rowInfo=[];
-  for(let y=ry0-y0;y<ry1-y0;y++){
-    let dark=0, brightNeutral=0, bright=0;
-    const count=rx1-rx0;
-    for(let x=rx0-x0;x<rx1-x0;x++){
-      const p=y*w+x,i=p*4,R=d[i],G=d[i+1],B=d[i+2],L=R*.299+G*.587+B*.114;
-      if(L<58)dark++;
-      if(L>150 && Math.max(R,G,B)-Math.min(R,G,B)<75)brightNeutral++;
-      if(L>175)bright++;
-    }
-    rowInfo.push({dark:dark/count, bright:bright/count, neutral:brightNeutral/count});
+  const lum=new Float32Array(N), chroma=new Float32Array(N);
+  for(let p=0;p<N;p++){
+    const i=p*4,R=d[i],G=d[i+1],B=d[i+2];
+    lum[p]=R*.299+G*.587+B*.114;
+    chroma[p]=Math.max(R,G,B)-Math.min(R,G,B);
   }
 
-  const bandRows=[];
-  for(let i=0;i<rowInfo.length;i++){
-    const r=rowInfo[i];
-    // A banner normally has a dark majority plus visible light lettering.
-    if(r.dark>0.42 && (r.bright>0.008 || r.neutral>0.015))bandRows.push(i);
-  }
-
-  // Group contiguous band rows and require a meaningful height.
-  const bands=[];
-  if(bandRows.length){
-    let a=bandRows[0],b=a;
-    for(let i=1;i<bandRows.length;i++){
-      if(bandRows[i]<=b+1)b=bandRows[i];
-      else{if(b-a+1>=3)bands.push([a,b]);a=b=bandRows[i];}
-    }
-    if(b-a+1>=3)bands.push([a,b]);
-  }
-
-  // Only use a band if it is a genuine overlay and not just naturally dark
-  // scenery. The strongest candidate is the one containing the most bright
-  // text-like pixels.
-  let bestBand=null,bestScore=-1;
-  for(const b of bands){
-    let score=0;
-    for(let y=b[0];y<=b[1];y++)score+=rowInfo[y].bright+rowInfo[y].neutral*.7;
-    if(score>bestScore){bestScore=score;bestBand=b;}
-  }
-
-  if(bestBand){
-    const by0=ry0-y0+bestBand[0], by1=ry0-y0+bestBand[1];
-    const bandH=by1-by0+1;
-
-    // Reconstruct the band in small overlapping tiles. Every replacement
-    // pixel is copied from an actual clean neighbouring patch. Candidate
-    // patches are scored against the clean pixels immediately above/below the
-    // banner, so the continuation follows the local scene rather than making
-    // a uniform strip.
-    const tileW=Math.max(24,Math.min(72,Math.round(W/10)));
-    const overlap=4;
-    const out=new Uint8ClampedArray(bandH*w*4);
-    let initialized=new Uint8Array(bandH*w);
-
-    for(let tx=rx0-x0;tx<rx1-x0;tx+=tileW-overlap){
-      const tw=Math.min(tileW,(rx1-x0)-tx);
-      if(tw<=2)continue;
-
-      // Search clean source blocks above and below the band. The block height
-      // is the banner height plus a small context margin. We only accept
-      // blocks that do not overlap the detected banner.
-      const candidates=[];
-      const margin=Math.max(2,Math.min(18,bandH+4));
-      const searchTop=Math.max(2,by0-margin-Math.min(70,bandH*4));
-      const searchBottom=Math.min(h-bandH-2,by1+margin+Math.min(70,bandH*4));
-
-      for(let sy=2;sy+bandH+1<h;sy+=2){
-        if(sy<by0-bandH-2 || sy>by1+2)continue;
-        if(sy<searchTop || sy>searchBottom)continue;
-        // A source block cannot touch the detected banner.
-        if(!(sy+bandH<by0-1 || sy>by1+1))continue;
-        for(let sx=Math.max(2,tx-24);sx<=Math.min(w-tw-2,tx+24);sx+=4){
-          let score=0,n=0;
-          // Compare the source block's top/bottom context with the actual
-          // context surrounding the destination band.
-          const sampleStep=Math.max(2,Math.floor(tw/18));
-          for(let xx=0;xx<tw;xx+=sampleStep){
-            const dx=tx+xx;
-            const aboveDst=Math.max(1,by0-1), belowDst=Math.min(h-2,by1+1);
-            const aboveSrc=sy<by0 ? sy-1 : sy+bandH;
-            const belowSrc=sy<by0 ? sy+bandH : sy-1;
-            const pAD=aboveDst*w+dx, pBD=belowDst*w+dx;
-            const pAS=aboveSrc*w+(sx+xx), pBS=belowSrc*w+(sx+xx);
-            if(pAS<0||pBS<0||pAS>=N||pBS>=N)continue;
-            const la=lumAt(pAD),lb=lumAt(pBD),lsa=lumAt(pAS),lsb=lumAt(pBS);
-            score+=(la-lsa)*(la-lsa)+(lb-lsb)*(lb-lsb);
-            n++;
-          }
-          if(n){
-            score/=n;
-            // Prefer nearby source regions, but only slightly; texture match
-            // matters more than distance.
-            score+=0.03*Math.abs(sy-((by0+by1)/2));
-            candidates.push({sx,sy,score});
-          }
-        }
-      }
-      candidates.sort((a,b)=>a.score-b.score);
-      const src=candidates[0];
-      if(!src)continue;
-
-      // Copy actual pixels. For each destination row, map through the source
-      // block. A mirrored source is avoided: we want genuine neighbouring
-      // texture, not a geometric reflection.
-      for(let yy=0;yy<bandH;yy++){
-        for(let xx=0;xx<tw;xx++){
-          const dx=tx+xx,dy=by0+yy;
-          const sx=src.sx+xx, sy=src.sy+yy;
-          if(dx<rx0-x0||dx>=rx1-x0||dy<by0||dy>by1||sx<0||sx>=w||sy<0||sy>=h)continue;
-          const dp=(dy*w+dx),sp=(sy*w+sx),di=dp*4,si=sp*4;
-          // Small overlap areas use the best of the existing copied pixel and
-          // the new source pixel. This is a hard pixel choice, not a blur.
-          if(!initialized[dy*w+dx]){
-            out[dp*4]=d[si];
-            out[dp*4+1]=d[si+1];
-            out[dp*4+2]=d[si+2];
-            out[dp*4+3]=255;
-            initialized[dy*w+dx]=1;
-          }else{
-            // Keep the already-selected real pixel to avoid double filtering.
-          }
-        }
+  const localAvg=(x,y,r)=>{
+    let sum=0,n=0;
+    for(let yy=Math.max(0,y-r);yy<=Math.min(h-1,y+r);yy++){
+      for(let xx=Math.max(0,x-r);xx<=Math.min(w-1,x+r);xx++){
+        if(xx===x&&yy===y)continue;
+        sum+=lum[yy*w+xx]; n++;
       }
     }
+    return n?sum/n:lum[y*w+x];
+  };
 
-    // Write the reconstructed band. If a rare tile had no valid source,
-    // leave that pixel untouched rather than creating an artificial line.
-    for(let y=by0;y<=by1;y++)for(let x=rx0-x0;x<rx1-x0;x++){
-      const p=y*w+x,oi=(p)*4;
-      if(initialized[p]){
-        d[oi]=out[oi];d[oi+1]=out[oi+1];d[oi+2]=out[oi+2];
-      }
-    }
-
-    // The banner itself is now gone. Do not run the old inpaint/diffusion on
-    // top of it — that was the source of the blurry horizontal seam.
-    ctx2.putImageData(img,x0,y0);
-    return;
-  }
-
-  // No banner detected: precise text-only fallback. This branch never paints
-  // a rectangle and never blurs the selected area.
-  const baseT=+$('whiteThreshold').value||115;
   const mask=new Uint8Array(N);
-  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
-    const p=y*w+x,i=p*4,R=d[i],G=d[i+1],B=d[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B),L=R*.299+G*.587+B*.114;
-    if(mx-mn<70 && L>=Math.max(105,baseT-8))mask[p]=1;
+  const baseT=Math.max(120,Math.min(220,+$('whiteThreshold').value||200));
+
+  // Strong but local detector.  The local-contrast test is what prevents
+  // ordinary bright floor texture from becoming a giant filled region.
+  for(let y=ry0-y0;y<ry1-y0;y++){
+    for(let x=rx0-x0;x<rx1-x0;x++){
+      const p=y*w+x,L=lum[p],C=chroma[p];
+      const a=localAvg(x,y,2);
+      const neutral=C<92;
+      const veryWhite=L>=Math.max(145,baseT-38) && C<115;
+      const localWhite=L>=Math.max(118,baseT-62) && neutral && L>a+15;
+      if(veryWhite || localWhite)mask[p]=1;
+    }
   }
-  // Add only immediately adjacent anti-aliased pixels.
-  const add=mask.slice();
+
+  // Add faint anti-aliased text edges only when they touch a strong text
+  // pixel.  Two passes catch compressed/soft edges without creating a band.
+  for(let pass=0;pass<2;pass++){
+    const add=mask.slice();
+    for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
+      for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
+        const p=y*w+x;if(mask[p])continue;
+        let near=false;
+        for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
+          if(mask[(y+dy)*w+x+dx]){near=true;break;}
+        }
+        if(!near)continue;
+        const L=lum[p],C=chroma[p],a=localAvg(x,y,2);
+        if(C<120 && L>=Math.max(72,baseT-95) && L>=a+5)add[p]=1;
+      }
+    }
+    mask.set(add);
+  }
+
+  // Keep the mask strictly inside the second selection box.
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    if(x<x0+0 || x>=rx1-x0 || y<ry0-y0 || y>=ry1-y0) mask[y*w+x]=0;
+  }
+
+  // Remove isolated single bright texture pixels; actual text strokes tend to
+  // have at least two neighbours.  This also protects natural highlights.
+  const cleaned=mask.slice();
+  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
+    const p=y*w+x;if(!mask[p])continue;
+    let n=0;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      if(!dx&&!dy)continue;
+      const xx=x+dx,yy=y+dy;
+      if(xx>=0&&xx<w&&yy>=0&&yy<h&&mask[yy*w+xx])n++;
+    }
+    if(n===0)cleaned[p]=0;
+  }
+  mask.set(cleaned);
+
+  // Only one-pixel edge expansion.  This catches the faint border of letters
+  // but cannot form the previous full-width horizontal line.
+  const edge=mask.slice();
   for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++)for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
     const p=y*w+x;if(mask[p])continue;
     let near=false;for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++)if(mask[(y+dy)*w+x+dx]){near=true;break;}
-    if(!near)continue;
-    const i=p*4,L=d[i]*.299+d[i+1]*.587+d[i+2]*.114,mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    if(mx-mn<78&&L>=Math.max(78,baseT-28))add[p]=1;
+    if(near && chroma[p]<125 && lum[p]>=Math.max(65,baseT-105))edge[p]=1;
   }
-  // Replace each tiny component with the nearest clean real patch.
-  const seen=new Uint8Array(N);
-  for(let seed=0;seed<N;seed++){
-    if(!add[seed]||seen[seed])continue;
-    const q=[seed];seen[seed]=1;
-    for(let qi=0;qi<q.length;qi++){
-      const p=q[qi],xx=p%w,yy=(p/w)|0;
-      if(xx>0&&add[p-1]&&!seen[p-1]){seen[p-1]=1;q.push(p-1)}
-      if(xx<w-1&&add[p+1]&&!seen[p+1]){seen[p+1]=1;q.push(p+1)}
-      if(yy>0&&add[p-w]&&!seen[p-w]){seen[p-w]=1;q.push(p-w)}
-      if(yy<h-1&&add[p+w]&&!seen[p+w]){seen[p+w]=1;q.push(p+w)}
+  mask.set(edge);
+
+  const remaining=mask.slice();
+  const result=new Uint8ClampedArray(d);
+  const filled=new Uint8Array(N);
+
+  // Candidate source pixels must be outside the text mask.  They are sampled
+  // from a local ring so the replacement follows the same floor/wall texture.
+  const dirs=[];
+  for(let dy=-18;dy<=18;dy++)for(let dx=-18;dx<=18;dx++){
+    if(dx===0&&dy===0)continue;
+    const dist=Math.hypot(dx,dy);
+    if(dist>=3&&dist<=18)dirs.push({dx,dy,dist});
+  }
+  dirs.sort((a,b)=>a.dist-b.dist);
+
+  const isInside=(x,y)=>x>=rx0-x0&&x<rx1-x0&&y>=ry0-y0&&y<ry1-y0;
+  const isClean=(x,y)=>x>=0&&x<w&&y>=0&&y<h&&!remaining[y*w+x];
+
+  // Fill boundary-to-interior.  Each pixel copies an actual source pixel;
+  // there is no averaging, blur, or generated colour.
+  let left=0;
+  for(let p=0;p<N;p++)if(remaining[p])left++;
+  let guard=0;
+  while(left>0 && guard<80){
+    guard++;
+    const boundary=[];
+    for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
+      const p=y*w+x;if(!remaining[p])continue;
+      let known=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        const xx=x+dx,yy=y+dy;
+        if(xx>=0&&xx<w&&yy>=0&&yy<h&&!remaining[yy*w+xx])known++;
+      }
+      if(known)boundary.push({x,y,known});
     }
-    if(q.length<3)continue;
-    let minX=w,maxX=-1,minY=h,maxY=-1;
-    for(const p of q){const xx=p%w,yy=(p/w)|0;minX=Math.min(minX,xx);maxX=Math.max(maxX,xx);minY=Math.min(minY,yy);maxY=Math.max(maxY,yy);}
-    const bw=maxX-minX+1,bh=maxY-minY+1;
-    let best=null,bs=1e30;
-    for(let sy=Math.max(2,minY-40);sy<=Math.min(h-bh-2,maxY+40);sy+=2)for(let sx=Math.max(2,minX-40);sx<=Math.min(w-bw-2,maxX+40);sx+=2){
-      let blocked=false;for(let yy=0;yy<bh;yy+=Math.max(1,Math.floor(bh/3)))for(let xx=0;xx<bw;xx+=Math.max(1,Math.floor(bw/3)))if(add[(sy+yy)*w+sx+xx]){blocked=true;break;}if(blocked)break;
-      if(blocked)continue;
-      let score=0,n=0;for(const p of q){const xx=p%w,yy=(p/w)|0,sp=(sy+yy-minY)*w+(sx+xx-minX),ti=p*4,si=sp*4;score+=(d[ti]-d[si])**2+(d[ti+1]-d[si+1])**2+(d[ti+2]-d[si+2])**2;n++;if(n>=24)break;}score/=Math.max(1,n);if(score<bs){bs=score;best={sx,sy};}
+    if(!boundary.length)break;
+    boundary.sort((a,b)=>b.known-a.known);
+
+    // Limit each pass so the browser remains responsive on video frames.
+    const batch=boundary.slice(0,Math.min(700,boundary.length));
+    for(const q of batch){
+      const {x,y}=q,p=y*w+x;
+      let best=null,bestScore=Infinity;
+
+      // Compare a small known neighbourhood.  This is patch matching, not
+      // interpolation, so the chosen RGB comes directly from the video.
+      for(const c of dirs){
+        const sx=x+c.dx,sy=y+c.dy;
+        if(!isClean(sx,sy))continue;
+        let score=0,n=0;
+        for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+          if(dx===0&&dy===0)continue;
+          const tx=x+dx,ty=y+dy;
+          if(tx<0||tx>=w||ty<0||ty>=h||remaining[ty*w+tx])continue;
+          const ux=sx+dx,uy=sy+dy;
+          if(ux<0||ux>=w||uy<0||uy>=h||remaining[uy*w+ux])continue;
+          const a=(ty*w+tx)*4,b=(uy*w+ux)*4;
+          const dr=d[a]-d[b],dg=d[a+1]-d[b+1],db=d[a+2]-d[b+2];
+          score+=dr*dr+dg*dg+db*db;n++;
+        }
+        if(n===0)continue;
+        score/=n;
+        // Prefer close source pixels only when texture match is similar.
+        score+=c.dist*1.5;
+        if(score<bestScore){bestScore=score;best={sx,sy};}
+      }
+
+      if(!best){
+        // Fallback to nearest clean pixel, still an actual source pixel.
+        for(const c of dirs){const sx=x+c.dx,sy=y+c.dy;if(isClean(sx,sy)){best={sx,sy};break;}}
+      }
+      if(!best)continue;
+
+      const si=(best.sy*w+best.sx)*4,di=p*4;
+      result[di]=d[si];result[di+1]=d[si+1];result[di+2]=d[si+2];result[di+3]=255;
+      remaining[p]=0;filled[p]=1;left--;
     }
-    if(best)for(const p of q){const xx=p%w,yy=(p/w)|0,sp=(best.sy+yy-minY)*w+(best.sx+xx-minX),ti=p*4,si=sp*4;d[ti]=d[si];d[ti+1]=d[si+1];d[ti+2]=d[si+2];}
+  }
+
+  // If a very large connected stroke could not be filled completely, use a
+  // final nearest-source pass.  Still no blur and no synthetic pixels.
+  if(left>0){
+    for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
+      const p=y*w+x;if(!remaining[p])continue;
+      let best=null;
+      for(let r=3;r<=24&&!best;r++){
+        for(let dy=-r;dy<=r&&!best;dy++)for(let dx=-r;dx<=r;dx++){
+          if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
+          const sx=x+dx,sy=y+dy;if(isClean(sx,sy)){best={sx,sy};break;}
+        }
+      }
+      if(best){const si=(best.sy*w+best.sx)*4,di=p*4;result[di]=d[si];result[di+1]=d[si+1];result[di+2]=d[si+2];result[di+3]=255;}
+    }
+  }
+
+  // Write ONLY pixels in the detected text mask. The rest of the second box
+  // is byte-for-byte unchanged, which prevents a visible processed band.
+  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
+    const p=y*w+x;if(!mask[p]||!filled[p])continue;
+    const i=p*4;d[i]=result[i];d[i+1]=result[i+1];d[i+2]=result[i+2];d[i+3]=255;
   }
   ctx2.putImageData(img,x0,y0);
 }

@@ -908,6 +908,169 @@ function removeWhiteDetailedFromCanvas(ctx2,W,H,rect){
 }
 
 
+
+/* SECOND BOX V2: patch-based texture clone.
+   Unlike the previous diffusion/inpaint pass, this never invents RGB values.
+   Every replacement pixel comes from real neighbouring video pixels, which
+   prevents the magenta/black/blur artifacts seen in the earlier version. */
+function removeWhiteDetailedFromCanvasV2(ctx2,W,H,rect){
+  if(!rect)return;
+  const rx0=Math.max(0,Math.floor(rect.x)), ry0=Math.max(0,Math.floor(rect.y));
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  if(rx1-rx0<2||ry1-ry0<2)return;
+
+  const pad=Math.max(8,Math.min(24,Math.round(Math.min(W,H)*.018)));
+  const x0=Math.max(0,rx0-pad), y0=Math.max(0,ry0-pad);
+  const x1=Math.min(W,rx1+pad), y1=Math.min(H,ry1+pad);
+  const w=x1-x0,h=y1-y0;
+  const img=ctx2.getImageData(x0,y0,w,h), d=img.data;
+  const baseT=+$('whiteThreshold').value||115;
+  const baseThk=+$('textThick').value||9;
+
+  // Build a conservative white-text mask.  It is intentionally NOT based on
+  // dark pixels, so dark floor texture can never be painted black/purple.
+  const hole=new Uint8Array(w*h);
+  const passes=[
+    {t:Math.max(82,baseT-18), thk:Math.max(2,Math.round(baseThk*.65))},
+    {t:Math.max(92,baseT-8),  thk:Math.max(2,Math.round(baseThk*.85))},
+    {t:Math.max(100,baseT),   thk:Math.max(2,Math.round(baseThk*1.05))}
+  ];
+  for(const cfg of passes){
+    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(3,Math.round(W/95)),cfg.thk);
+    if(m)for(let p=0;p<m.length;p++)if(m[p])hole[p]=1;
+  }
+
+  // Catch only faint neutral letters which are brighter than their immediate
+  // surroundings.  This catches compression residue without selecting dark texture.
+  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
+    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
+      const p=y*w+x,i=p*4;
+      const R=d[i],G=d[i+1],B=d[i+2], mx=Math.max(R,G,B),mn=Math.min(R,G,B);
+      const L=R*.299+G*.587+B*.114;
+      if(L<Math.max(82,baseT-28)||mx-mn>48)continue;
+      const l=(q)=>{const j=q*4;return d[j]*.299+d[j+1]*.587+d[j+2]*.114;};
+      const nb=(l(p-1)+l(p+1)+l(p-w)+l(p+w))/4;
+      if(L-nb>=7)hole[p]=1;
+    }
+  }
+
+  // Keep the mask strictly inside the user's second selection.
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
+  }
+
+  // Small dilation only around actual detected strokes.
+  let mask=dilateMask(hole,w,h,1);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)mask[y*w+x]=0;
+  }
+
+  // Connected components. Each letter/stroke gets its own source patch.
+  const seen=new Uint8Array(w*h), comps=[];
+  for(let p=0;p<w*h;p++){
+    if(!mask[p]||seen[p])continue;
+    const q=[p];seen[p]=1;let minX=w,maxX=-1,minY=h,maxY=-1;
+    for(let qi=0;qi<q.length;qi++){
+      const z=q[qi],x=z%w,y=(z/w)|0;
+      minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+      if(x>0&&mask[z-1]&&!seen[z-1]){seen[z-1]=1;q.push(z-1)}
+      if(x<w-1&&mask[z+1]&&!seen[z+1]){seen[z+1]=1;q.push(z+1)}
+      if(y>0&&mask[z-w]&&!seen[z-w]){seen[z-w]=1;q.push(z-w)}
+      if(y<h-1&&mask[z+w]&&!seen[z+w]){seen[z+w]=1;q.push(z+w)}
+    }
+    if(q.length>=2)comps.push({pix:q,minX,maxX,minY,maxY});
+  }
+  if(!comps.length)return;
+
+  const lum=(p)=>{const i=p*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114};
+  const validPatch=(sx,sy,bw,bh)=>{
+    if(sx<2||sy<2||sx+bw>=w-2||sy+bh>=h-2)return false;
+    for(let yy=-1;yy<bh+1;yy++)for(let xx=-1;xx<bw+1;xx++){
+      if(mask[(sy+yy)*w+(sx+xx)])return false;
+    }
+    return true;
+  };
+
+  for(const c of comps){
+    const margin=Math.max(3,Math.min(10,Math.ceil(Math.max(c.maxX-c.minX+1,c.maxY-c.minY+1)*.35)));
+    const minX=Math.max(2,c.minX-margin),maxX=Math.min(w-3,c.maxX+margin);
+    const minY=Math.max(2,c.minY-margin),maxY=Math.min(h-3,c.maxY+margin);
+    const bw=maxX-minX+1,bh=maxY-minY+1;
+    if(bw<3||bh<3)continue;
+
+    // Border pixels are the untouched texture immediately around the text.
+    const border=[];
+    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
+      const p=y*w+x;if(mask[p])continue;
+      let near=false;
+      for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;const xx=x+dx,yy=y+dy;
+        if(xx>=0&&xx<w&&yy>=0&&yy<h&&mask[yy*w+xx])near=true;
+      }
+      if(near)border.push({x,y,p});
+    }
+    if(border.length<3)continue;
+
+    // Search nearby real patches and pick the one whose surrounding texture
+    // most closely matches the texture around this text.
+    const search=Math.min(80,Math.max(16,Math.round(Math.max(bw,bh)*1.8)));
+    const candidates=[];
+    for(let dy=-search;dy<=search;dy+=3){
+      for(let dx=-search;dx<=search;dx+=3){
+        if(Math.abs(dx)<bw*.55&&Math.abs(dy)<bh*.55)continue;
+        const sx=minX+dx,sy=minY+dy;
+        if(!validPatch(sx,sy,bw,bh))continue;
+        let score=0,n=0;
+        const stride=Math.max(1,Math.floor(border.length/32));
+        for(let k=0;k<border.length;k+=stride){
+          const b=border[k],rx=b.x-minX,ry=b.y-minY;
+          const sp=(sy+ry)*w+(sx+rx);
+          const ti=b.p*4,si=sp*4;
+          const dr=d[ti]-d[si],dg=d[ti+1]-d[si+1],db=d[ti+2]-d[si+2];
+          score+=dr*dr+dg*dg+db*db;
+          const gx=b.x>0&&b.x<w-1?lum(b.p+1)-lum(b.p-1):0;
+          const gy=b.y>0&&b.y<h-1?lum(b.p+w)-lum(b.p-w):0;
+          const sgx=(sx+rx)>0&&(sx+rx)<w-1?lum(sp+1)-lum(sp-1):0;
+          const sgy=(sy+ry)>0&&(sy+ry)<h-1?lum(sp+w)-lum(sp-w):0;
+          score+=1.2*((gx-sgx)*(gx-sgx)+(gy-sgy)*(gy-sgy));
+          n++;
+        }
+        candidates.push({sx,sy,score:score/Math.max(1,n)+.12*(dx*dx+dy*dy)});
+      }
+    }
+    candidates.sort((a,b)=>a.score-b.score);
+    if(!candidates.length)continue;
+    const src=candidates[0];
+
+    // Match the source patch's average colour to the surrounding real texture.
+    // This changes only a small RGB offset; the texture itself remains genuine.
+    let ar=0,ag=0,ab=0,sr=0,sg=0,sb=0,n=0;
+    const stride=Math.max(1,Math.floor(border.length/50));
+    for(let k=0;k<border.length;k+=stride){
+      const b=border[k],rx=b.x-minX,ry=b.y-minY,sp=(src.sy+ry)*w+(src.sx+rx);
+      let i=b.p*4,j=sp*4;ar+=d[i];ag+=d[i+1];ab+=d[i+2];sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;
+    }
+    const offR=Math.max(-24,Math.min(24,(ar-sr)/Math.max(1,n)));
+    const offG=Math.max(-24,Math.min(24,(ag-sg)/Math.max(1,n)));
+    const offB=Math.max(-24,Math.min(24,(ab-sb)/Math.max(1,n)));
+
+    // Copy the real neighbouring texture into the text pixels. No diffusion,
+    // no blur, no synthetic noise and no extrapolated colour values.
+    for(const p of c.pix){
+      const x=p%w,y=(p/w)|0;
+      const rx=x-minX,ry=y-minY;
+      const sp=(src.sy+ry)*w+(src.sx+rx);
+      const ti=p*4,si=sp*4;
+      d[ti]=Math.max(0,Math.min(255,d[si]+offR));
+      d[ti+1]=Math.max(0,Math.min(255,d[si+1]+offG));
+      d[ti+2]=Math.max(0,Math.min(255,d[si+2]+offB));
+    }
+  }
+  ctx2.putImageData(img,x0,y0);
+}
+
 function drawPreview(){
  if(exporting||!video.videoWidth)return;
  const r=sourceRect();
@@ -927,7 +1090,7 @@ function drawPreview(){
  }
  if(whiteRect2){
    const wr=whiteRect2;
-   removeWhiteDetailedFromCanvas(vctx,view.width,view.height,{x:wr.x/r.w*view.width,y:wr.y/r.h*view.height,w:wr.w/r.w*view.width,h:wr.h/r.h*view.height});
+   removeWhiteDetailedFromCanvasV2(vctx,view.width,view.height,{x:wr.x/r.w*view.width,y:wr.y/r.h*view.height,w:wr.w/r.w*view.width,h:wr.h/r.h*view.height});
  }
 }
 function updateSelectionBox(){
@@ -1509,7 +1672,7 @@ function drawExportFrame(elapsedOverride){
       w:whiteRect2.w/r.w*outputW,
       h:whiteRect2.h/r.h*outputH
     };
-    removeWhiteDetailedFromCanvas(wctx,outputW,outputH,rectOnOutput);
+    removeWhiteDetailedFromCanvasV2(wctx,outputW,outputH,rectOnOutput);
   }
 
   if(lat!=null&&lon!=null){
@@ -1965,7 +2128,7 @@ function drawGeoPreview(){
  if(geo.width!==nw)geo.width=nw; if(geo.height!==nh)geo.height=nh;
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
- if(whiteRect2)removeWhiteDetailedFromCanvas(gctx,geo.width,geo.height,{x:whiteRect2.x/r.w*geo.width,y:whiteRect2.y/r.h*geo.height,w:whiteRect2.w/r.w*geo.width,h:whiteRect2.h/r.h*geo.height});
+ if(whiteRect2)removeWhiteDetailedFromCanvasV2(gctx,geo.width,geo.height,{x:whiteRect2.x/r.w*geo.width,y:whiteRect2.y/r.h*geo.height,w:whiteRect2.w/r.w*geo.width,h:whiteRect2.h/r.h*geo.height});
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{

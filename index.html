@@ -3,481 +3,710 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Video Studio — White Text Remover + GeoTag</title>
+<title>Video Studio - White Text Remover</title>
 <style>
-:root{--bg:#0b0f14;--card:#111820;--line:#26313d;--text:#f4f7fb;--muted:#9aa8b6;--accent:#4ea1ff;--yellow:#ffd84d;--danger:#ff6262}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#080b10,#101820);color:var(--text);font:14px Arial,sans-serif}
-header{padding:18px 22px;border-bottom:1px solid var(--line);background:#0b1118;position:sticky;top:0;z-index:10}
-h1{margin:0;font-size:21px}header p{margin:5px 0 0;color:var(--muted)}
-.app{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px;max-width:1500px;margin:auto}
-.card{background:rgba(17,24,32,.97);border:1px solid var(--line);border-radius:12px;padding:15px;box-shadow:0 12px 35px #0004}
-h2{font-size:16px;margin:0 0 12px}h3{font-size:13px;margin:15px 0 9px;color:#dbe5ee}
-label{display:block;color:#b8c5d1;font-size:12px;margin:8px 0 5px}
-input[type=file],input[type=text],input[type=number],select{width:100%;background:#0a0f14;border:1px solid #34414e;color:#fff;border-radius:7px;padding:9px}
-input[type=range]{width:100%}
-button{border:1px solid #3b82c4;background:#2478c4;color:#fff;border-radius:7px;padding:9px 10px;cursor:pointer;font-weight:600}
-button:hover{filter:brightness(1.12)}button:disabled{opacity:.38;cursor:not-allowed}
-button.secondary{background:#18212b;border-color:#3a4653}button.danger{background:#7f2525;border-color:#a43c3c}
-.row{display:flex;gap:7px}.row>*{flex:1}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.status{padding:9px;border-radius:7px;background:#0a1016;border:1px solid #24303c;color:#aebbc7;margin-top:10px;min-height:38px}
-.small{font-size:11px;color:#8493a0;line-height:1.45}.check{display:flex;gap:7px;align-items:center;color:#c6d0d9;font-size:12px;margin:8px 0}.check input{width:auto}
-.stage{position:relative;background:#05070a;border-radius:10px;border:1px solid #202a34;overflow:hidden;min-height:360px;display:flex;align-items:center;justify-content:center}
-#preview{display:block;max-width:100%;max-height:62vh;background:#000}
-#selection{position:absolute;border:2px dashed var(--yellow);display:none;pointer-events:none}
-#cropBox{position:absolute;border:2px solid #58a6ff;display:none;pointer-events:none}
-.controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-.timeline{margin-top:12px;background:#080c11;border:1px solid #27313b;border-radius:9px;padding:8px}
-#timeline{width:100%;height:96px;display:block;cursor:pointer}
-.badges{display:flex;justify-content:space-between;color:#9aa8b6;font-size:11px;margin-top:4px}
-.tabs{display:flex;gap:6px;margin-bottom:12px}.tab{flex:1}.tab.active{background:#2478c4}
-.panel{display:none}.panel.active{display:block}
-.previewWrap{position:relative}
-.overlayPreview{position:absolute;left:15px;bottom:15px;background:#000b;border:1px solid #ffffff33;border-radius:8px;padding:8px;display:none}
-.mapBox{height:180px;border:1px solid #33414e;border-radius:8px;overflow:hidden;background:#101820;margin-top:8px}
-.mapBox iframe{width:100%;height:100%;border:0}
-.progress{height:7px;background:#1a222b;border-radius:20px;overflow:hidden;margin-top:8px}.progress>div{height:100%;width:0;background:#4ea1ff}
-@media(max-width:900px){.app{grid-template-columns:1fr}.stage{min-height:260px}}
+*{box-sizing:border-box}
+body{margin:0;background:#0b1016;color:#eef3f8;font-family:Arial,sans-serif}
+header{padding:16px 20px;background:#101821;border-bottom:1px solid #293542}
+h1{margin:0;font-size:21px}p{color:#9eabb7}
+.app{max-width:1450px;margin:auto;padding:15px;display:grid;grid-template-columns:330px 1fr;gap:15px}
+.card{background:#111a23;border:1px solid #2a3744;border-radius:12px;padding:14px}
+h2{font-size:15px;margin:0 0 12px}
+h3{font-size:12px;color:#c9d5df;margin:15px 0 7px}
+label{display:block;font-size:12px;color:#aebbc7;margin:8px 0 5px}
+input,select{width:100%;background:#091017;color:white;border:1px solid #354453;border-radius:7px;padding:9px}
+input[type=range]{padding:0}
+button{border:1px solid #3788d0;background:#176db3;color:#fff;border-radius:7px;padding:9px 11px;font-weight:600;cursor:pointer}
+button:hover{filter:brightness(1.12)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.secondary{background:#18232e;border-color:#3b4855}
+button.danger{background:#7e2727;border-color:#a63a3a}
+.row{display:flex;gap:7px}.row>*{flex:1}
+.check{display:flex;gap:7px;align-items:center;font-size:12px;color:#c4ced7}.check input{width:auto}
+.small{font-size:11px;line-height:1.45;color:#8e9ba7}
+.status{margin-top:10px;padding:9px;min-height:38px;background:#091017;border:1px solid #263440;border-radius:7px;font-size:12px;color:#b9c6d1}
+.stage{background:#020508;border:1px solid #27333e;border-radius:10px;min-height:420px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+#preview{display:block;max-width:100%;max-height:68vh;background:#000}
+.box{position:absolute;border:2px dashed #ffd83d;display:none;pointer-events:none}
+.cropbox{position:absolute;border:2px solid #48a0ff;display:none;pointer-events:none}
+.controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.timeline{margin-top:10px;background:#080d12;border:1px solid #293642;border-radius:9px;padding:8px}
+#timeline{width:100%;height:100px;display:block;cursor:pointer}
+.timebar{display:flex;gap:8px;align-items:center;margin-top:7px}
+#seek{flex:1}
+.badges{display:flex;justify-content:space-between;color:#93a1ae;font-size:11px}
+.progress{height:7px;background:#1d2730;border-radius:20px;overflow:hidden;margin-top:8px}
+.progress>div{height:100%;width:0;background:#4da3ff}
+.map{height:170px;border:1px solid #354452;border-radius:8px;overflow:hidden;margin-top:8px}
+.map iframe{width:100%;height:100%;border:0}
+.error{display:none;margin-top:10px;padding:10px;border:1px solid #a83a3a;background:#351719;color:#ffd3d3;border-radius:7px;font-size:12px;white-space:pre-wrap}
+@media(max-width:900px){.app{grid-template-columns:1fr}.stage{min-height:280px}}
 </style>
 </head>
 <body>
 <header>
 <h1>Video Studio — White Text Remover + GeoTag</h1>
-<p>Standalone browser editor. No mp4-muxer or external JavaScript libraries.</p>
+<p>Choose a video, select only the text area, preview the removal, then export.</p>
 </header>
 
 <div class="app">
 <aside class="card">
-<div class="tabs">
-<button class="tab active" id="editTab">Edit</button>
-<button class="tab" id="geoTab">GeoTag</button>
-</div>
-
-<section class="panel active" id="editPanel">
 <h2>1. Video</h2>
-<label>Choose a video</label>
 <input id="file" type="file" accept="video/*">
-<div class="status" id="fileStatus">No video selected.</div>
-
-<h3>Playback</h3>
 <div class="controls">
-<button id="play" disabled>▶ Play</button>
-<button id="pause" class="secondary" disabled>⏸ Pause</button>
-<button id="back" class="secondary" disabled>◀ Frame</button>
-<button id="next" class="secondary" disabled>Frame ▶</button>
+<button id="open">Choose Video</button>
+<button id="play" disabled>Play</button>
+<button id="back" disabled>◀ Frame</button>
+<button id="next" disabled>Frame ▶</button>
 </div>
 
 <h3>Trim</h3>
-<div class="grid2">
+<div class="row">
 <div><label>Start</label><input id="start" type="number" min="0" step=".1" value="0"></div>
 <div><label>End</label><input id="end" type="number" min="0" step=".1" value="0"></div>
 </div>
 <div class="controls">
-<button class="secondary quick" data-sec="10">10s</button>
-<button class="secondary quick" data-sec="20">20s</button>
-<button class="secondary quick" data-sec="30">30s</button>
-<button id="setStart" class="secondary">Set Start</button>
-<button id="setEnd" class="secondary">Set End</button>
+<button class="secondary quick" data-s="0" data-e="10">0–10s</button>
+<button class="secondary quick" data-s="0" data-e="20">0–20s</button>
+<button class="secondary quick" data-s="0" data-e="30">0–30s</button>
 </div>
 
-<h3>Crop</h3>
+<h2 style="margin-top:18px">2. White Text Remover</h2>
+<p class="small">Click “Select Text Area”, then drag around the white date/location/speed text. Only pixels inside that box are processed.</p>
 <div class="controls">
-<button id="cropMode" class="secondary" disabled>Crop: OFF</button>
-<button id="cropReset" class="secondary" disabled>Reset Crop</button>
+<button id="selectText" disabled>Select Text Area</button>
+<button id="remove" disabled>Remove White Text</button>
+<button id="clear" class="secondary" disabled>Clear</button>
 </div>
-<div class="small">Turn crop on, then drag a box over the area you want to keep.</div>
 
-<h3>White Text Remover</h3>
-<div class="controls">
-<button id="selectText" class="secondary" disabled>Select White Text</button>
-<button id="removeText" disabled>Remove White Text</button>
-<button id="clearText" class="secondary" disabled>Clear</button>
-</div>
-<label>Detection sensitivity <b id="sensOut">190</b></label>
-<input id="sensitivity" type="range" min="130" max="245" value="190">
-<label>Text stroke size <b id="thickOut">8</b> px</label>
-<input id="thickness" type="range" min="2" max="20" value="8">
+<label>Detection sensitivity: <span id="sensVal">72</span></label>
+<input id="sensitivity" type="range" min="40" max="95" value="72">
+<label>Text stroke size: <span id="thickVal">3</span> px</label>
+<input id="thickness" type="range" min="1" max="7" value="3">
+<label>Reconstruction strength: <span id="growVal">2</span></label>
+<input id="grow" type="range" min="1" max="4" value="2">
 <label class="check"><input id="showMask" type="checkbox"> Show detected pixels in red</label>
-<div class="small">The remover only works inside your selected box. It copies real nearby pixels instead of blurring the area.</div>
+<label class="check"><input id="moving" type="checkbox" checked> Text changes while video plays</label>
+
+<h3>GeoTag</h3>
+<input id="state" type="text" placeholder="State">
+<input id="district" type="text" placeholder="District" style="margin-top:6px">
+<input id="location" type="text" placeholder="Location text" style="margin-top:6px">
 
 <h3>Export</h3>
-<button id="export" disabled>Render & Download WebM</button>
-<div class="progress"><div id="progressBar"></div></div>
-<div class="status" id="exportStatus">Load a video to begin.</div>
-</section>
-
-<section class="panel" id="geoPanel">
-<h2>GeoTag</h2>
-<label>State</label><input id="state" type="text" placeholder="e.g. Delhi">
-<label>District</label><input id="district" type="text" placeholder="e.g. New Delhi">
-<label>Location text</label><input id="location" type="text" placeholder="Optional location">
-<div class="controls">
-<button id="applyGeo" disabled>Apply GeoTag</button>
-<button id="clearGeo" class="secondary">Clear</button>
-</div>
-<div class="mapBox">
-<iframe id="map" title="OpenStreetMap"></iframe>
-</div>
-<div class="small">The map is for preview/reference. The text GeoTag is drawn into the exported video.</div>
-</section>
+<button id="export" disabled>Export Edited Video</button>
+<div class="progress"><div id="progress"></div></div>
+<div id="status" class="status">No video selected.</div>
+<div id="error" class="error"></div>
 </aside>
 
 <main class="card">
-<h2>Preview</h2>
 <div class="stage" id="stage">
 <canvas id="preview"></canvas>
-<div id="selection"></div>
-<div id="cropBox"></div>
-<div class="overlayPreview" id="geoOverlay"></div>
+<div id="textBox" class="box"></div>
+<div id="cropBox" class="cropbox"></div>
 </div>
+
 <div class="controls">
-<button id="openFile" disabled>Choose Video</button>
-<span class="status" id="timeStatus" style="flex:1;margin:0">00:00 / 00:00</span>
+<button id="crop" disabled>Crop Mode</button>
+<button id="resetCrop" class="secondary" disabled>Reset Crop</button>
 </div>
+
 <div class="timeline">
-<canvas id="timeline" width="1200" height="96"></canvas>
-<div class="badges"><span id="tlStart">00:00</span><span id="tlCurrent">00:00</span><span id="tlEnd">00:00</span></div>
+<canvas id="timeline"></canvas>
+<div class="timebar">
+<span id="now">0.00</span>
+<input id="seek" type="range" min="0" max="0" step=".01" value="0" disabled>
+<span id="dur">0.00</span>
 </div>
-<div class="small" style="margin-top:8px">Click the timeline to seek. Yellow = selected trim. Blue = current position.</div>
-<video id="source" preload="auto" playsinline muted style="display:none"></video>
+<div class="badges"><span>Blue = current time</span><span>Yellow = trim range</span></div>
+</div>
+
+<div class="small" style="margin-top:10px">
+Export is browser-based. The text remover copies real neighbouring texture into the detected strokes instead of blurring them.
+</div>
 </main>
 </div>
 
+<video id="video" preload="auto" playsinline muted style="display:none"></video>
+
 <script>
-(() => {
 "use strict";
 
 const $ = id => document.getElementById(id);
-const video = $("source");
-const canvas = $("preview");
-const ctx = canvas.getContext("2d", {willReadFrequently:true});
-const timeline = $("timeline");
-const tctx = timeline.getContext("2d");
-const stage = $("stage");
-const selection = $("selection");
-const cropBox = $("cropBox");
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-let url = null, duration = 0, raf = 0;
-let mode = null, drag = null;
-let textRect = null, cropRect = null;
-let geo = {state:"",district:"",location:""};
-let removed = false;
-let exportBusy = false;
+const video=$("video"), preview=$("preview"), pctx=preview.getContext("2d",{willReadFrequently:true});
+const timeline=$("timeline"), tctx=timeline.getContext("2d");
+const stage=$("stage");
 
-function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
-function fmt(s){s=Math.max(0,Number(s)||0);return String(Math.floor(s/60)).padStart(2,"0")+":"+String(Math.floor(s%60)).padStart(2,"0")}
-function setStatus(msg){$("fileStatus").textContent=msg}
-function enable(v){
-  ["play","pause","back","next","setStart","setEnd","cropMode","cropReset","selectText","removeText","clearText","export","applyGeo"].forEach(id=>$(id).disabled=!v);
-  $("openFile").disabled=false;
+let objectURL=null, duration=0, raf=0, ready=false;
+let textRect=null, cropRect=null, selectingText=false, selectingCrop=false, dragStart=null;
+let removed=false, cachedMask=null, cachedSource=null, cachedW=0, cachedH=0;
+let mapState={state:"",district:"",location:""};
+
+function status(s){$("status").textContent=s}
+function error(s){$("error").style.display="block";$("error").textContent=s}
+function clearError(){$("error").style.display="none";$("error").textContent=""}
+function enableControls(on){
+  ["play","back","next","selectText","remove","clear","crop","resetCrop","export","seek"].forEach(id=>$(id).disabled=!on);
 }
-function updateTime(){
-  $("timeStatus").textContent=fmt(video.currentTime)+" / "+fmt(duration);
-  $("tlCurrent").textContent=fmt(video.currentTime);
-}
-function fitCanvas(){
+function setProgress(x){$("progress").style.width=clamp(x,0,100)+"%"}
+
+$("open").onclick=()=>$("file").click();
+$("file").onchange=e=>{
+  const f=e.target.files[0]; if(!f)return;
+  clearError();
+  if(objectURL)URL.revokeObjectURL(objectURL);
+  objectURL=URL.createObjectURL(f);
+  video.src=objectURL;
+  video.load();
+  status("Loading "+f.name+"...");
+};
+
+video.onloadedmetadata=()=>{
+  duration=video.duration||0;
+  ready=true;
+  $("start").value="0";
+  $("end").value=duration.toFixed(2);
+  $("seek").max=duration;
+  $("seek").value=0;
+  $("dur").textContent=duration.toFixed(2);
+  enableControls(true);
+  textRect=null; cropRect=null; removed=false;
+  cachedMask=null; cachedSource=null;
+  drawFrame();
+  drawTimeline();
+  status("Video loaded. Select the white text area.");
+};
+
+video.onerror=()=>{
+  error("The browser could not decode this video. Try MP4/H.264 or WebM.");
+  status("Video load failed.");
+};
+
+function fit(){
   if(!video.videoWidth)return;
-  const maxW=Math.min(stage.clientWidth,1100), maxH=Math.max(240,window.innerHeight*0.62);
-  const scale=Math.min(maxW/video.videoWidth,maxH/video.videoHeight);
-  canvas.width=Math.max(2,Math.round(video.videoWidth*scale));
-  canvas.height=Math.max(2,Math.round(video.videoHeight*scale));
-  draw();
+  const maxW=Math.min(stage.clientWidth-4,1280);
+  const maxH=Math.min(window.innerHeight*.68,720);
+  const s=Math.min(maxW/video.videoWidth,maxH/video.videoHeight,1);
+  preview.width=Math.max(2,Math.round(video.videoWidth*s));
+  preview.height=Math.max(2,Math.round(video.videoHeight*s));
 }
-function sourceCrop(){
+window.onresize=()=>{if(ready){fit();drawFrame();drawTimeline()}};
+
+function cropSourceRect(){
   if(!cropRect)return {x:0,y:0,w:video.videoWidth,h:video.videoHeight};
-  return cropRect;
+  return {
+    x:clamp(Math.round(cropRect.x/videoScaleX()),0,video.videoWidth-1),
+    y:clamp(Math.round(cropRect.y/videoScaleY()),0,video.videoHeight-1),
+    w:clamp(Math.round(cropRect.w/videoScaleX()),1,video.videoWidth),
+    h:clamp(Math.round(cropRect.h/videoScaleY()),1,video.videoHeight)
+  };
 }
-function draw(){
-  if(!video.videoWidth)return;
-  const r=sourceCrop();
-  const scale=Math.min(stage.clientWidth/r.w,Math.max(240,window.innerHeight*.62)/r.h,1);
-  const w=Math.max(2,Math.round(r.w*scale)),h=Math.max(2,Math.round(r.h*scale));
-  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
-  ctx.clearRect(0,0,w,h);
-  ctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,w,h);
-  if(textRect) applyTextRemoval(ctx,w,h,{x:(textRect.x-r.x)*w/r.w,y:(textRect.y-r.y)*h/r.h,w:textRect.w*w/r.w,h:textRect.h*h/r.h},true);
-  drawGeo(ctx,w,h);
-  updateBoxes();
-}
-function drawGeo(c,w,h){
-  const s=geo.state.trim(),d=geo.district.trim(),l=geo.location.trim();
-  const text=[s,d,l].filter(Boolean).join(" • ");
-  $("geoOverlay").textContent=text;
-  $("geoOverlay").style.display=text?"block":"none";
-  if(!text)return;
-  c.save();
-  const pad=Math.max(8,w*.012), fs=Math.max(14,Math.round(w/55));
-  c.font="700 "+fs+"px Arial";
-  const tw=c.measureText(text).width+pad*2;
-  const th=fs+pad*2;
-  c.fillStyle="rgba(0,0,0,.72)";c.fillRect(pad,h-th-pad,tw,th);
-  c.fillStyle="#fff";c.fillText(text,pad*2,h-pad-fs*.15);
-  c.restore();
-}
-function updateBoxes(){
-  const R=stage.getBoundingClientRect(), C=canvas.getBoundingClientRect();
-  const scaleX=C.width/canvas.width,scaleY=C.height/canvas.height;
-  if(textRect){
-    const r=sourceCrop();
-    selection.style.display="block";
-    selection.style.left=(C.left-R.left+(textRect.x-r.x)*C.width/r.w)+"px";
-    selection.style.top=(C.top-R.top+(textRect.y-r.y)*C.height/r.h)+"px";
-    selection.style.width=(textRect.w*C.width/r.w)+"px";
-    selection.style.height=(textRect.h*C.height/r.h)+"px";
-  }else selection.style.display="none";
-  if(cropRect){
-    cropBox.style.display="block";
-    cropBox.style.left=(C.left-R.left+cropRect.x/video.videoWidth*C.width)+"px";
-    cropBox.style.top=(C.top-R.top+cropRect.y/video.videoHeight*C.height)+"px";
-    cropBox.style.width=(cropRect.w/video.videoWidth*C.width)+"px";
-    cropBox.style.height=(cropRect.h/video.videoHeight*C.height)+"px";
-  }else cropBox.style.display="none";
-}
-function pointerVideo(e){
-  const R=canvas.getBoundingClientRect(), r=sourceCrop();
-  return {x:clamp((e.clientX-R.left)/R.width*r.w+r.x,0,video.videoWidth),y:clamp((e.clientY-R.top)/R.height*r.h+r.y,0,video.videoHeight)}
+function videoScaleX(){return preview.width/video.videoWidth}
+function videoScaleY(){return preview.height/video.videoHeight}
+
+function drawBase(ctx,w,h){
+  ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
+  if(video.readyState>=2)ctx.drawImage(video,0,0,w,h);
 }
 
-function maskWhite(data,w,h,rect){
-  const mask=new Uint8Array(w*h), sens=+$("sensitivity").value, thick=+$("thickness").value;
-  const x0=clamp(Math.floor(rect.x),1,w-2), y0=clamp(Math.floor(rect.y),1,h-2);
-  const x1=clamp(Math.ceil(rect.x+rect.w),x0+1,w-1), y1=clamp(Math.ceil(rect.y+rect.h),y0+1,h-1);
-  for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){
-    const p=y*w+x,i=p*4,R=data[i],G=data[i+1],B=data[i+2];
-    const lum=.299*R+.587*G+.114*B, mx=Math.max(R,G,B),mn=Math.min(R,G,B);
-    if(lum<sens || mx-mn>55)continue;
-    let dark=0, count=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      if(!dx&&!dy)continue;
-      const q=((y+dy)*w+x+dx)*4, ql=.299*data[q]+.587*data[q+1]+.114*data[q+2];
-      count++; if(lum-ql>4)dark++;
-    }
-    if(dark>=2)mask[p]=1;
+function rectToCanvas(r){
+  return {x:r.x*videoScaleX(),y:r.y*videoScaleY(),w:r.w*videoScaleX(),h:r.h*videoScaleY()};
+}
+function normalizedRect(a,b){
+  const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);
+  return {x,y,w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)};
+}
+
+function applyGeo(ctx,w,h){
+  const s=(($("state").value||"")+" "+($("district").value||"")+" "+($("location").value||"")).trim();
+  if(!s)return;
+  const lines=[];
+  if($("state").value)lines.push("State: "+$("state").value);
+  if($("district").value)lines.push("District: "+$("district").value);
+  if($("location").value)lines.push($("location").value);
+  ctx.save();
+  ctx.font=Math.max(16,Math.round(w/65))+"px Arial";
+  ctx.textAlign="right";
+  ctx.textBaseline="bottom";
+  let y=h-18;
+  for(let i=lines.length-1;i>=0;i--){
+    ctx.lineWidth=5;ctx.strokeStyle="rgba(0,0,0,.8)";ctx.strokeText(lines[i],w-18,y);
+    ctx.fillStyle="#fff";ctx.fillText(lines[i],w-18,y);y-=Math.max(22,w/45);
   }
-  // grow only a small amount according to stroke size
-  const grow=Math.max(1,Math.min(3,Math.round(thick/5)));
-  for(let k=0;k<grow;k++){
-    const old=mask.slice();
-    for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-      const p=y*w+x;if(old[p])continue;
-      if(old[p-1]||old[p+1]||old[p-w]||old[p+w])mask[p]=1;
+  ctx.restore();
+}
+
+/* ---------- WHITE TEXT DETECTOR ---------- */
+/* Detects bright, low-colour pixels that are brighter than their local
+   neighbourhood. This is much more useful for white date/GPS text than
+   simply checking for white pixels. */
+function detectTextMask(data,w,h,roi){
+  const mask=new Uint8Array(w*h);
+  const lum=new Float32Array(w*h);
+
+  const sens=+$("sensitivity").value;
+  const thick=+$("thickness").value;
+  const threshold=205-(sens-40)*0.72; // 205..165
+  const x0=clamp(Math.floor(roi.x),1,w-2), y0=clamp(Math.floor(roi.y),1,h-2);
+  const x1=clamp(Math.ceil(roi.x+roi.w),1,w-1), y1=clamp(Math.ceil(roi.y+roi.h),1,h-1);
+
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const p=y*w+x,i=p*4;
+    const R=data[i],G=data[i+1],B=data[i+2];
+    lum[p]=.299*R+.587*G+.114*B;
+  }
+
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const p=y*w+x,i=p*4;
+    const R=data[i],G=data[i+1],B=data[i+2],L=lum[p];
+    const mx=Math.max(R,G,B),mn=Math.min(R,G,B);
+    const chroma=mx-mn;
+    if(L<threshold || chroma>78)continue;
+
+    let dark1=0,dark2=0,local=0,n=0;
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+      if(!dx&&!dy)continue;
+      const q=(y+dy)*w+x+dx,qL=lum[q];
+      local+=qL;n++;
+      if(L-qL>=8)dark2++;
     }
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      if(!dx&&!dy){
+        continue;
+      }
+      const q=(y+dy)*w+x+dx;
+      if(L-lum[q]>=5)dark1++;
+    }
+    const avg=local/n;
+    if(dark1>=1 || dark2>=3 || L-avg>=7)mask[p]=1;
+  }
+
+  // Grow only a little. This catches anti-aliased white text edges without
+  // turning the whole selected rectangle into one giant mask.
+  const out=mask.slice();
+  for(let pass=0;pass<Math.min(2,Math.max(1,Math.round(thick/3)));pass++){
+    for(let y=y0+1;y<y1-1;y++)for(let x=x0+1;x<x1-1;x++){
+      const p=y*w+x;if(out[p])continue;
+      let n=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(mask[(y+dy)*w+x+dx])n++;
+      if(n>=2){
+        const i=p*4,R=data[i],G=data[i+1],B=data[i+2];
+        const L=.299*R+.587*G+.114*B;
+        if(L>145)out[p]=1;
+      }
+    }
+    mask.set(out);
   }
   return mask;
 }
 
+/* Patch reconstruction:
+   - never averages the text itself
+   - uses original pixels only
+   - searches real nearby texture
+   - copies a matching source pixel/patch
+   - fills boundary inward so newly filled pixels are not reused as sources */
 function reconstruct(data,w,h,mask){
-  const original=new Uint8ClampedArray(data);
+  const out=new Uint8ClampedArray(data);
   const known=new Uint8Array(w*h);
-  for(let p=0;p<known.length;p++)known[p]=mask[p]?0:1;
-  const ys=[];
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(mask[y*w+x])ys.push(y*w+x);
-  // boundary-first, so each repaired pixel uses original neighbors only
-  ys.sort((a,b)=>{
-    const ax=a%w,ay=(a/w)|0,bx=b%w,by=(b/w)|0;
-    const ad=(known[a-1]?1:0)+(known[a+1]?1:0)+(known[a-w]?1:0)+(known[a+w]?1:0);
-    const bd=(known[b-1]?1:0)+(known[b+1]?1:0)+(known[b-w]?1:0)+(known[b+w]?1:0);
-    return bd-ad;
-  });
-  const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
-  for(const p of ys){
-    if(known[p])continue;
-    const x=p%w,y=(p/w)|0;
-    let best=-1,bestScore=1e18;
-    for(const [dx,dy] of dirs){
-      for(let r=2;r<=10;r++){
-        const sx=x+dx*r,sy=y+dy*r;
-        if(sx<1||sx>=w-1||sy<1||sy>=h-1)continue;
-        const sp=sy*w+sx;if(!known[sp])continue;
-        let score=0;
-        // compare a tiny immutable patch around source/target
-        for(let py=-1;py<=1;py++)for(let px=-1;px<=1;px++){
-          const tx=x+px,ty=y+py,cx=sx+px,cy=sy+py;
-          if(tx<0||tx>=w||ty<0||ty>=h||cx<0||cx>=w||cy<0||cy>=h)continue;
-          const tp=ty*w+tx,cp=cy*w+cx;
-          if(mask[tp])continue;
-          const ti=tp*4,ci=cp*4;
-          score+=Math.abs(original[ti]-original[ci])+Math.abs(original[ti+1]-original[ci+1])+Math.abs(original[ti+2]-original[ci+2]);
+  for(let p=0;p<w*h;p++)known[p]=mask[p]?0:1;
+
+  const offsets=[];
+  for(let r=3;r<=32;r+=3){
+    offsets.push(
+      [r,0],[-r,0],[0,r],[0,-r],
+      [r,r],[-r,r],[r,-r],[-r,-r],
+      [Math.round(r*.7),r],[-Math.round(r*.7),r],
+      [Math.round(r*.7),-r],[-Math.round(r*.7),-r]
+    );
+  }
+
+  const inside=(x,y)=>x>=0&&y>=0&&x<w&&y<h;
+
+  // Process from the outside of the mask toward its centre.
+  let remaining=0;
+  for(let p=0;p<w*h;p++)if(mask[p])remaining++;
+
+  const maxRounds=70;
+  for(let round=0;round<maxRounds&&remaining>0;round++){
+    const frontier=[];
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+      const p=y*w+x;
+      if(!mask[p]||known[p])continue;
+      let near=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)
+        if(known[(y+dy)*w+x+dx])near++;
+      if(near)frontier.push([x,y]);
+    }
+    if(!frontier.length)break;
+
+    for(const [x,y] of frontier){
+      const p=y*w+x;
+      let best=null,bestScore=1e20;
+
+      // Compare a small cross/patch around target with the candidate source.
+      // Only compare pixels that are known in the target patch.
+      for(const [ox,oy] of offsets){
+        const sx=x+ox,sy=y+oy;
+        if(!inside(sx,sy))continue;
+        const sp=sy*w+sx;
+        if(!known[sp])continue;
+
+        let score=0,n=0;
+        for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+          const tx=x+dx,ty=y+dy;
+          const cx=sx+dx,cy=sy+dy;
+          if(!inside(tx,ty)||!inside(cx,cy))continue;
+          const tp=ty*w+tx;
+          if(!known[tp])continue;
+          const ti=tp*4,ci=(cy*w+cx)*4;
+          const dr=data[ti]-data[ci],dg=data[ti+1]-data[ci+1],db=data[ti+2]-data[ci+2];
+          score+=dr*dr+dg*dg+db*db;n++;
         }
-        if(score<bestScore){bestScore=score;best=sp}
+        if(!n)continue;
+
+        // Prefer closer sources when texture scores are similar.
+        score=score/n + (Math.abs(ox)+Math.abs(oy))*2.2;
+        if(score<bestScore){bestScore=score;best=[sx,sy]}
+      }
+
+      if(!best){
+        // Small local fallback, never a large rectangular fill.
+        for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]){
+          const sx=x+dx,sy=y+dy;
+          if(inside(sx,sy)&&known[sy*w+sx]){best=[sx,sy];break}
+        }
+      }
+
+      if(best){
+        const si=(best[1]*w+best[0])*4,di=p*4;
+        out[di]=data[si];out[di+1]=data[si+1];out[di+2]=data[si+2];out[di+3]=data[si+3];
+        known[p]=1;remaining--;
       }
     }
-    if(best<0)continue;
-    const bi=best*4,pi=p*4;
-    data[pi]=original[bi];data[pi+1]=original[bi+1];data[pi+2]=original[bi+2];
-    known[p]=1;
   }
-  if($("showMask").checked){
-    for(let p=0;p<mask.length;p++)if(mask[p]){const i=p*4;data[i]=255;data[i+1]=40;data[i+2]=40}
+  return out;
+}
+
+function showMaskOnCanvas(ctx,w,h,mask){
+  const img=ctx.getImageData(0,0,w,h);
+  for(let p=0;p<w*h;p++)if(mask[p]){
+    const i=p*4;
+    img.data[i]=255;img.data[i+1]=25;img.data[i+2]=25;img.data[i+3]=220;
   }
+  ctx.putImageData(img,0,0);
 }
-function applyTextRemoval(c,w,h,rect,preview){
-  if(!textRect||rect.w<2||rect.h<2)return;
-  const img=c.getImageData(0,0,w,h);
-  const mask=maskWhite(img.data,w,h,rect);
-  reconstruct(img.data,w,h,mask);
-  c.putImageData(img,0,0);
+
+function processFrameCanvas(ctx,w,h){
+  drawBase(ctx,w,h);
+  if(!textRect)return;
+
+  const roi={
+    x:Math.floor(textRect.x),
+    y:Math.floor(textRect.y),
+    w:Math.floor(textRect.w),
+    h:Math.floor(textRect.h)
+  };
+  if(roi.w<3||roi.h<3)return;
+
+  const img=ctx.getImageData(0,0,w,h);
+  const mask=detectTextMask(img.data,w,h,roi);
+  let count=0;for(const v of mask)count+=v;
+  if(!count)return;
+
+  const cleaned=reconstruct(img.data,w,h,mask);
+  const out=new ImageData(cleaned,w,h);
+  ctx.putImageData(out,0,0);
+
+  if($("showMask").checked)showMaskOnCanvas(ctx,w,h,mask);
 }
+
+function drawFrame(){
+  if(!ready)return;
+  fit();
+  processFrameCanvas(pctx,preview.width,preview.height);
+  if(!textRect){
+    drawBase(pctx,preview.width,preview.height);
+  }
+  applyGeo(pctx,preview.width,preview.height);
+
+  if(textRect){
+    const r=rectToCanvas(textRect);
+    $("textBox").style.display="block";
+    $("textBox").style.left=r.x+"px";$("textBox").style.top=r.y+"px";
+    $("textBox").style.width=r.w+"px";$("textBox").style.height=r.h+"px";
+  }else $("textBox").style.display="none";
+
+  if(cropRect){
+    const r=rectToCanvas(cropRect);
+    $("cropBox").style.display="block";
+    $("cropBox").style.left=r.x+"px";$("cropBox").style.top=r.y+"px";
+    $("cropBox").style.width=r.w+"px";$("cropBox").style.height=r.h+"px";
+  }else $("cropBox").style.display="none";
+
+  $("now").textContent=video.currentTime.toFixed(2);
+  $("seek").value=video.currentTime;
+}
+
+function loop(){
+  drawFrame();
+  if(!video.paused)raf=requestAnimationFrame(loop);
+}
+$("play").onclick=()=>{
+  if(video.paused){video.play();$("play").textContent="Pause";loop()}
+  else{video.pause();$("play").textContent="Play";cancelAnimationFrame(raf)}
+};
+$("back").onclick=()=>{video.pause();$("play").textContent="Play";video.currentTime=clamp(video.currentTime-1/30,0,duration);drawFrame()};
+$("next").onclick=()=>{video.pause();$("play").textContent="Play";video.currentTime=clamp(video.currentTime+1/30,0,duration);drawFrame()};
+video.ontimeupdate=()=>{if(video.paused)drawFrame()};
+
+$("seek").oninput=e=>{video.currentTime=+e.target.value;drawFrame()};
+$("start").onchange=()=>{let v=clamp(+$("start").value,0,duration);$("start").value=v; if(v>+$("end").value){$("end").value=duration} drawTimeline()};
+$("end").onchange=()=>{let v=clamp(+$("end").value,0,duration);$("end").value=v; if(v<+$("start").value){$("start").value=0} drawTimeline()};
+document.querySelectorAll(".quick").forEach(b=>b.onclick=()=>{
+  $("start").value=b.dataset.s;
+  $("end").value=Math.min(duration,+b.dataset.e).toFixed(2);
+  drawTimeline();
+});
+
+$("selectText").onclick=()=>{
+  selectingText=true;selectingCrop=false;status("Drag around ONLY the white text. Release when the box covers it.");
+};
+$("crop").onclick=()=>{
+  selectingCrop=true;selectingText=false;status("Drag a crop rectangle.");
+};
+$("clear").onclick=()=>{
+  textRect=null;removed=false;cachedMask=null;cachedSource=null;
+  $("textBox").style.display="none";drawFrame();status("Text selection cleared.");
+};
+$("resetCrop").onclick=()=>{
+  cropRect=null;$("cropBox").style.display="none";drawFrame();status("Crop reset.");
+};
+
+function pointerPos(e){
+  const r=preview.getBoundingClientRect();
+  return {x:clamp(e.clientX-r.left,0,preview.width),y:clamp(e.clientY-r.top,0,preview.height)};
+}
+preview.onpointerdown=e=>{
+  if(!selectingText&&!selectingCrop)return;
+  dragStart=pointerPos(e);
+  preview.setPointerCapture(e.pointerId);
+};
+preview.onpointermove=e=>{
+  if(!dragStart)return;
+  const cur=pointerPos(e),r=normalizedRect(dragStart,cur);
+  if(selectingText){
+    $("textBox").style.display="block";
+    $("textBox").style.left=r.x+"px";$("textBox").style.top=r.y+"px";
+    $("textBox").style.width=r.w+"px";$("textBox").style.height=r.h+"px";
+  }else{
+    $("cropBox").style.display="block";
+    $("cropBox").style.left=r.x+"px";$("cropBox").style.top=r.y+"px";
+    $("cropBox").style.width=r.w+"px";$("cropBox").style.height=r.h+"px";
+  }
+};
+preview.onpointerup=e=>{
+  if(!dragStart)return;
+  const cur=pointerPos(e),r=normalizedRect(dragStart,cur);
+  dragStart=null;
+  if(r.w<5||r.h<5)return;
+  if(selectingText){
+    textRect={x:r.x/videoScaleX(),y:r.y/videoScaleY(),w:r.w/videoScaleX(),h:r.h/videoScaleY()};
+    selectingText=false;removed=false;cachedMask=null;cachedSource=null;
+    status("Text area selected. Click Remove White Text.");
+  }else{
+    cropRect=r;selectingCrop=false;
+    status("Crop selected.");
+  }
+  drawFrame();
+};
+
+$("remove").onclick=()=>{
+  if(!textRect){status("Select the white text area first.");return}
+  removed=true;cachedMask=null;cachedSource=null;
+  status("White-text removal enabled. Play the video to check it.");
+  drawFrame();
+};
+
+["sensitivity","thickness","grow","showMask","moving"].forEach(id=>{
+  $(id).oninput=()=>{
+    if(id==="sensitivity")$("sensVal").textContent=$(id).value;
+    if(id==="thickness")$("thickVal").textContent=$(id).value;
+    if(id==="grow")$("growVal").textContent=$(id).value;
+    if(id==="sensitivity"||id==="thickness"||id==="grow"||id==="showMask"){
+      if(ready)drawFrame();
+    }
+  };
+});
+
+["state","district","location"].forEach(id=>{
+  $(id).oninput=()=>drawFrame();
+});
+
 function drawTimeline(){
-  const W=timeline.width,H=timeline.height;
-  tctx.clearRect(0,0,W,H);tctx.fillStyle="#070b10";tctx.fillRect(0,0,W,H);
-  if(!duration){tctx.fillStyle="#71808d";tctx.font="14px Arial";tctx.fillText("Load a video to use the timeline",20,48);return}
-  // film-like thumbnail placeholders using sampled current frame is intentionally avoided;
-  // timeline remains instant and interactive.
-  for(let i=0;i<24;i++){
-    const x=i*W/24;
-    const grd=tctx.createLinearGradient(x,0,x+W/24,0);grd.addColorStop(0,"#111b25");grd.addColorStop(.5,"#1b2a38");grd.addColorStop(1,"#101820");
-    tctx.fillStyle=grd;tctx.fillRect(x+1,4,W/24-2,H-8);
-    tctx.strokeStyle="#253443";tctx.strokeRect(x+1,4,W/24-2,H-8);
+  const w=timeline.clientWidth||800,h=100;
+  timeline.width=w*devicePixelRatio;timeline.height=h*devicePixelRatio;
+  tctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  tctx.fillStyle="#0a1016";tctx.fillRect(0,0,w,h);
+  if(!duration)return;
+  const n=18;
+  for(let i=0;i<n;i++){
+    const x=i*w/n;
+    tctx.fillStyle=i%2?"#17222c":"#1c2933";tctx.fillRect(x,0,w/n-2,h);
+    tctx.fillStyle="#5c6b77";tctx.font="11px Arial";tctx.fillText((duration*i/(n-1)).toFixed(0)+"s",x+4,18);
   }
   const s=+$("start").value||0,e=+$("end").value||duration;
-  tctx.fillStyle="rgba(255,216,77,.18)";tctx.fillRect(s/duration*W,0,(e-s)/duration*W,H);
-  tctx.strokeStyle="#ffd84d";tctx.lineWidth=3;tctx.strokeRect(s/duration*W+1,3,(e-s)/duration*W-2,H-6);
-  tctx.strokeStyle="#4ea1ff";tctx.lineWidth=3;const px=video.currentTime/duration*W;tctx.beginPath();tctx.moveTo(px,0);tctx.lineTo(px,H);tctx.stroke();
+  tctx.fillStyle="rgba(255,216,61,.16)";tctx.fillRect(w*s/duration,0,w*(e-s)/duration,h);
+  tctx.strokeStyle="#ffd83d";tctx.strokeRect(w*s/duration+1,1,w*(e-s)/duration-2,h-2);
+  const x=w*video.currentTime/duration;
+  tctx.strokeStyle="#4da3ff";tctx.lineWidth=2;tctx.beginPath();tctx.moveTo(x,0);tctx.lineTo(x,h);tctx.stroke();
 }
-function setTrim(which,v){
+timeline.onclick=e=>{
   if(!duration)return;
-  v=clamp(Number(v)||0,0,duration);
-  if(which==="start"){$("start").value=Math.min(v,(+$("end").value||duration)-.05)}
-  else $("end").value=Math.max(v,(+$("start").value||0)+.05);
-  drawTimeline();
-}
-function seek(t){
-  if(!duration)return;
-  video.currentTime=clamp(t,0,duration);
-}
-function downloadBlob(blob,name){
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();
-  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
-}
-
-$("file").addEventListener("change",e=>{
-  const f=e.target.files[0];if(!f)return;
-  if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);video.src=url;video.load();
-  textRect=null;cropRect=null;removed=false;
-  setStatus("Loading "+f.name+"…");
-  $("exportStatus").textContent="Loading video…";
-});
-$("openFile").onclick=()=>$("file").click();
-video.addEventListener("loadedmetadata",()=>{
-  duration=Number.isFinite(video.duration)?video.duration:0;
-  $("start").value="0";$("end").value=duration.toFixed(1);$("tlStart").textContent="00:00";$("tlEnd").textContent=fmt(duration);
-  enable(true);fitCanvas();updateTime();drawTimeline();
-  setStatus("Video loaded: "+fmt(duration));
-  $("exportStatus").textContent="Ready.";
-});
-video.addEventListener("loadeddata",()=>{fitCanvas();draw()});
-video.addEventListener("timeupdate",()=>{updateTime();draw();drawTimeline();});
-video.addEventListener("play",()=>{cancelAnimationFrame(raf);const loop=()=>{draw();drawTimeline();if(!video.paused)raf=requestAnimationFrame(loop)};raf=requestAnimationFrame(loop)});
-video.addEventListener("pause",()=>cancelAnimationFrame(raf));
-video.addEventListener("error",()=>setStatus("This video could not be decoded by the browser. Try MP4/H.264 or WebM."));
-
-$("play").onclick=async()=>{try{await video.play()}catch(e){setStatus("Playback blocked: "+e.message)}};
-$("pause").onclick=()=>video.pause();
-$("back").onclick=()=>seek(video.currentTime-.1);
-$("next").onclick=()=>seek(video.currentTime+.1);
-$("setStart").onclick=()=>setTrim("start",video.currentTime);
-$("setEnd").onclick=()=>setTrim("end",video.currentTime);
-document.querySelectorAll(".quick").forEach(b=>b.onclick=()=>{$("start").value="0";$("end").value=Math.min(duration,+b.dataset.sec).toFixed(1);seek(0);drawTimeline()});
-$("start").oninput=e=>setTrim("start",e.target.value);
-$("end").oninput=e=>setTrim("end",e.target.value);
-
-$("cropMode").onclick=()=>{
-  mode=mode==="crop"?null:"crop";$("cropMode").textContent=mode==="crop"?"Crop: ON":"Crop: OFF";
-  $("selectText").textContent="Select White Text";$("selectText").classList.remove("active");updateBoxes();
+  const r=timeline.getBoundingClientRect();
+  video.currentTime=clamp((e.clientX-r.left)/r.width*duration,0,duration);
+  drawFrame();drawTimeline();
 };
-$("cropReset").onclick=()=>{cropRect=null;draw()};
-$("selectText").onclick=()=>{
-  mode=mode==="text"?null:"text";$("selectText").textContent=mode==="text"?"Drag Over Text…":"Select White Text";updateBoxes();
-};
-$("clearText").onclick=()=>{textRect=null;removed=false;draw()};
-$("removeText").onclick=()=>{if(!textRect){setStatus("Select the white-text area first.");return}removed=true;draw();setStatus("White-text removal applied to preview.");};
-$("sensitivity").oninput=e=>$("sensOut").textContent=e.target.value;
-$("thickness").oninput=e=>$("thickOut").textContent=e.target.value;
 
-canvas.addEventListener("pointerdown",e=>{
-  if(mode!=="text"&&mode!=="crop")return;
-  const p=pointerVideo(e);drag={x:p.x,y:p.y};canvas.setPointerCapture(e.pointerId);
-});
-canvas.addEventListener("pointermove",e=>{
-  if(!drag)return;
-  const p=pointerVideo(e);
-  if(mode==="text")textRect={x:Math.min(drag.x,p.x),y:Math.min(drag.y,p.y),w:Math.abs(p.x-drag.x),h:Math.abs(p.y-drag.y)};
-  else cropRect={x:Math.min(drag.x,p.x),y:Math.min(drag.y,p.y),w:Math.abs(p.x-drag.x),h:Math.abs(p.y-drag.y)};
-  draw();
-});
-canvas.addEventListener("pointerup",()=>{drag=null;mode=null;$("cropMode").textContent="Crop: OFF";$("selectText").textContent="Select White Text";draw()});
-canvas.addEventListener("pointercancel",()=>{drag=null});
+$("open").disabled=false;
 
-timeline.addEventListener("pointerdown",e=>{
-  if(!duration)return;const r=timeline.getBoundingClientRect();seek((e.clientX-r.left)/r.width*duration);
-});
-timeline.addEventListener("pointermove",e=>{if(e.buttons&&duration){const r=timeline.getBoundingClientRect();seek((e.clientX-r.left)/r.width*duration)}});
-
-$("editTab").onclick=()=>switchTab("edit");
-$("geoTab").onclick=()=>switchTab("geo");
-function switchTab(t){
-  $("editTab").classList.toggle("active",t==="edit");$("geoTab").classList.toggle("active",t==="geo");
-  $("editPanel").classList.toggle("active",t==="edit");$("geoPanel").classList.toggle("active",t==="geo");
+/* ---------- EXPORT ---------- */
+function wait(ms){return new Promise(r=>setTimeout(r,ms))}
+function seekVideo(t){
+  return new Promise(resolve=>{
+    const target=clamp(t,0,duration);
+    if(Math.abs(video.currentTime-target)<0.003){setTimeout(resolve,0);return}
+    let done=false;
+    const finish=()=>{if(done)return;done=true;video.removeEventListener("seeked",finish);resolve()};
+    video.addEventListener("seeked",finish,{once:true});
+    video.currentTime=target;
+    setTimeout(finish,250);
+  });
 }
 
-function updateMap(){
-  const q=[geo.state,geo.district,geo.location].filter(Boolean).join(", ");
-  if(!q){$("map").src="about:blank";return}
-  $("map").src="https://www.openstreetmap.org/export/embed.html?bbox=76.7%2C28.4%2C77.5%2C29.1&layer=mapnik&marker=28.61%2C77.21";
-}
-["state","district","location"].forEach(id=>$(id).oninput=()=>{
-  geo[id]=$(""+id).value;updateMap();draw();
-});
-$("applyGeo").onclick=()=>{geo={state:$("state").value,district:$("district").value,location:$("location").value};updateMap();draw();setStatus("GeoTag applied.")};
-$("clearGeo").onclick=()=>{["state","district","location"].forEach(id=>$(id).value="");geo={state:"",district:"",location:""};updateMap();draw()};
+$("export").onclick=async()=>{
+  if(!ready){status("Choose a video first.");return}
+  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){
+    error("This browser does not support canvas video recording. Use current Chrome or Edge.");
+    return;
+  }
 
-async function exportVideo(){
-  if(exportBusy||!duration)return;
-  exportBusy=true;$("export").disabled=true;$("exportStatus").textContent="Rendering…";$("progressBar").style.width="0%";
+  clearError();
+  const s=clamp(+$("start").value,0,duration),e=clamp(+$("end").value,0,duration);
+  if(e<=s){error("Export end time must be greater than start time.");return}
+
+  const srcW=cropRect?Math.max(2,Math.round(cropRect.w/videoScaleX())):video.videoWidth;
+  const srcH=cropRect?Math.max(2,Math.round(cropRect.h/videoScaleY())):video.videoHeight;
+  const out=document.createElement("canvas");
+  out.width=srcW;out.height=srcH;
+  const ctx=out.getContext("2d",{willReadFrequently:true});
+  const stream=out.captureStream(30);
+
+  // Add source audio when the browser exposes it.
   try{
-    const out=document.createElement("canvas");
-    const r=sourceCrop(), max=1280, scale=Math.min(1,max/r.w);
-    out.width=Math.max(2,Math.round(r.w*scale));out.height=Math.max(2,Math.round(r.h*scale));
-    const oc=out.getContext("2d",{willReadFrequently:true});
-    const stream=out.captureStream(30);
-    const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";
-    const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:7000000});
-    const chunks=[];rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-    const stopped=new Promise(res=>rec.onstop=()=>res());
-    const s=clamp(+$("start").value||0,0,duration), en=clamp(+$("end").value||duration,s+.05,duration);
-    video.pause();video.currentTime=s;
-    await new Promise(res=>{const fn=()=>{video.removeEventListener("seeked",fn);res()};video.addEventListener("seeked",fn,{once:true})});
-    rec.start(250);
-    const fps=30, step=1/fps;
-    for(let t=s;t<=en;t+=step){
-      video.currentTime=t;
-      await new Promise(res=>{let done=false;const fn=()=>{if(done)return;done=true;video.removeEventListener("seeked",fn);res()};video.addEventListener("seeked",fn,{once:true});setTimeout(fn,120)});
-      oc.clearRect(0,0,out.width,out.height);
-      oc.drawImage(video,r.x,r.y,r.w,r.h,0,0,out.width,out.height);
-      if(textRect){
-        const tr={x:(textRect.x-r.x)*out.width/r.w,y:(textRect.y-r.y)*out.height/r.h,w:textRect.w*out.width/r.w,h:textRect.h*out.height/r.h};
-        applyTextRemoval(oc,out.width,out.height,tr,false);
-      }
-      drawGeo(oc,out.width,out.height);
-      const track=stream.getVideoTracks()[0];if(track.requestFrame)track.requestFrame();
-      $("progressBar").style.width=Math.round((t-s)/(en-s)*100)+"%";
-      $("exportStatus").textContent="Rendering "+Math.round((t-s)/(en-s)*100)+"%";
-      await new Promise(r=>setTimeout(r,0));
+    if(video.captureStream){
+      const vs=video.captureStream();
+      vs.getAudioTracks().forEach(t=>stream.addTrack(t));
     }
-    rec.stop();await stopped;
-    stream.getTracks().forEach(t=>t.stop());
-    const blob=new Blob(chunks,{type:"video/webm"});
-    downloadBlob(blob,"edited-video.webm");
-    $("exportStatus").textContent="Done — edited-video.webm downloaded.";
-    $("progressBar").style.width="100%";
+  }catch(_){}
+
+  let mime="";
+  for(const m of ["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"]){
+    if(MediaRecorder.isTypeSupported(m)){mime=m;break}
+  }
+  if(!mime){error("No supported WebM recorder was found.");return}
+
+  const rec=new MediaRecorder(stream,{mimeType:mime});
+  const chunks=[];
+  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const stopped=new Promise(resolve=>rec.onstop=resolve);
+
+  const fps=30, total=Math.max(1,Math.ceil((e-s)*fps));
+  $("export").disabled=true;
+  $("play").disabled=true;
+  status("Rendering...");
+  setProgress(0);
+
+  const oldTime=video.currentTime;
+  const wasPaused=video.paused;
+  video.pause();
+
+  rec.start(100);
+  try{
+    for(let frame=0;frame<total;frame++){
+      const t=s+frame/fps;
+      await seekVideo(Math.min(t,e));
+      ctx.clearRect(0,0,out.width,out.height);
+
+      if(cropRect){
+        const sx=Math.round(cropRect.x/videoScaleX()),sy=Math.round(cropRect.y/videoScaleY());
+        const sw=Math.round(cropRect.w/videoScaleX()),sh=Math.round(cropRect.h/videoScaleY());
+        ctx.drawImage(video,sx,sy,sw,sh,0,0,out.width,out.height);
+      }else{
+        ctx.drawImage(video,0,0,out.width,out.height);
+      }
+
+      if(textRect){
+        // Convert the selected preview rectangle to output coordinates.
+        let roi={x:textRect.x,y:textRect.y,w:textRect.w,h:textRect.h};
+        if(cropRect){
+          const cx=cropRect.x/videoScaleX(),cy=cropRect.y/videoScaleY();
+          roi={x:roi.x-cx,y:roi.y-cy,w:roi.w,h:roi.h};
+        }
+        const img=ctx.getImageData(0,0,out.width,out.height);
+        const mask=detectTextMask(img.data,out.width,out.height,roi);
+        const cleaned=reconstruct(img.data,out.width,out.height,mask);
+        ctx.putImageData(new ImageData(cleaned,out.width,out.height),0,0);
+        if($("showMask").checked)showMaskOnCanvas(ctx,out.width,out.height,mask);
+      }
+
+      applyGeo(ctx,out.width,out.height);
+      const track=stream.getVideoTracks()[0];
+      if(track&&track.requestFrame)track.requestFrame();
+
+      if(frame%3===0){
+        setProgress((frame+1)/total*100);
+        status("Rendering frame "+(frame+1)+" / "+total);
+      }
+    }
   }catch(err){
-    console.error(err);$("exportStatus").textContent="Export failed: "+err.message;
-  }finally{exportBusy=false;$("export").disabled=!duration}
-}
-$("export").onclick=exportVideo;
-window.addEventListener("resize",fitCanvas);
+    rec.stop();
+    await stopped;
+    error("Export error: "+(err&&err.message?err.message:err));
+    status("Export stopped.");
+    $("export").disabled=false;$("play").disabled=false;
+    setProgress(0);
+    return;
+  }
+
+  rec.stop();
+  await stopped;
+  const blob=new Blob(chunks,{type:mime});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="edited-video.webm";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+
+  await seekVideo(oldTime);
+  if(!wasPaused){video.play();$("play").textContent="Pause";loop()}else $("play").textContent="Play";
+  $("export").disabled=false;$("play").disabled=false;
+  setProgress(100);
+  status("Export complete. Downloaded edited-video.webm");
+};
+
+window.addEventListener("error",e=>{
+  error("JavaScript error: "+(e.message||"Unknown error"));
+});
+window.addEventListener("unhandledrejection",e=>{
+  error("Unexpected error: "+(e.reason&&e.reason.message?e.reason.message:e.reason));
+});
+
+fit();
 drawTimeline();
-})();
 </script>
 </body>
 </html>

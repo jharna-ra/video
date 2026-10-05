@@ -919,160 +919,152 @@ function removeWhiteDetailedFromCanvasV2(ctx2,W,H,rect){
   const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
   if(rx1-rx0<2||ry1-ry0<2)return;
 
-  /* SECOND BOX: clean, local texture replacement.
-     Important: the selection rectangle is ONLY a search area.  We never fill
-     the rectangle and we never blur it.  Only pixels that look like the white
-     lettering are replaced. */
-  const pad=10;
+  // SECOND BOX ONLY — precision text removal.
+  // The rectangle is ONLY a search area.  We never process the whole box and
+  // never blur/diffuse across it.  Only pixels belonging to detected letters
+  // are replaced with real pixels from a nearby, texture-matched patch.
+  const pad=Math.max(6,Math.min(14,Math.round(W/120)));
   const x0=Math.max(0,rx0-pad), y0=Math.max(0,ry0-pad);
   const x1=Math.min(W,rx1+pad), y1=Math.min(H,ry1+pad);
-  const w=x1-x0,h=y1-y0;
+  const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx2.getImageData(x0,y0,w,h), d=img.data;
-  const N=w*h;
-  const mask=new Uint8Array(N);
   const baseT=+$('whiteThreshold').value||115;
 
-  // Detect only neutral/bright text.  Do NOT use a broad local-brightness
-  // detector: that was the source of the horizontal blurry band.
-  const coreT=Math.max(120,Math.min(175,baseT+20));
+  // Bright neutral text detector. Several thresholds are unioned, but there
+  // is NO repeated dilation here: repeated dilation was what made the old
+  // letters merge into a long horizontal band.
+  const core=new Uint8Array(N);
   for(let y=ry0-y0;y<ry1-y0;y++){
     for(let x=rx0-x0;x<rx1-x0;x++){
       const p=y*w+x,i=p*4;
       const R=d[i],G=d[i+1],B=d[i+2];
       const mx=Math.max(R,G,B),mn=Math.min(R,G,B);
       const L=R*.299+G*.587+B*.114;
-      if(mx-mn<=55 && L>=coreT) mask[p]=1;
+      const neutral=mx-mn<=58;
+      if(neutral && L>=Math.max(104,Math.min(185,baseT+10))) core[p]=1;
     }
   }
 
-  // Grow ONLY from the bright text cores.  This catches anti-aliased edges,
-  // but cannot turn the whole floor/background into a removal mask.
-  for(let pass=0;pass<4;pass++){
-    const next=mask.slice();
-    for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
-      for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
-        const p=y*w+x;
-        if(mask[p])continue;
-        let linked=false;
-        if(mask[p-1]||mask[p+1]||mask[p-w]||mask[p+w]||
-           mask[p-w-1]||mask[p-w+1]||mask[p+w-1]||mask[p+w+1]) linked=true;
-        if(!linked)continue;
-        const i=p*4,R=d[i],G=d[i+1],B=d[i+2];
-        const mx=Math.max(R,G,B),mn=Math.min(R,G,B);
-        const L=R*.299+G*.587+B*.114;
-        // Anti-aliased text can be substantially darker than its core, but it
-        // must remain reasonably bright and nearly neutral.
-        if(mx-mn<=62 && L>=Math.max(62,coreT-18-pass*8)) next[p]=1;
-      }
+  // Catch anti-aliased edges only when directly adjacent to a detected core.
+  // One pass keeps individual letters separate and prevents a filled strip.
+  const mask=core.slice();
+  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
+    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-y0);x++){
+      const p=y*w+x;
+      if(mask[p])continue;
+      if(!(core[p-1]||core[p+1]||core[p-w]||core[p+w]||core[p-w-1]||core[p-w+1]||core[p+w-1]||core[p+w+1]))continue;
+      const i=p*4,R=d[i],G=d[i+1],B=d[i+2];
+      const mx=Math.max(R,G,B),mn=Math.min(R,G,B);
+      const L=R*.299+G*.587+B*.114;
+      if(mx-mn<=68 && L>=Math.max(72,baseT-22)) mask[p]=1;
     }
-    mask.set(next);
   }
 
-  // One-pixel edge catch, still strictly connected to detected lettering.
-  let m=dilateMask(mask,w,h,1);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)m[y*w+x]=0;
-  }
-
-  // Reject tiny isolated texture specks. Keep only components that contain a
-  // bright core pixel, so ordinary floor highlights are left completely alone.
+  // Connected components on the precise mask.  Each letter/stroke is handled
+  // separately; this is the key protection against the previous long band.
   const seen=new Uint8Array(N), comps=[];
-  for(let p=0;p<N;p++){
-    if(!m[p]||seen[p])continue;
-    const q=[p];seen[p]=1;let minX=w,maxX=-1,minY=h,maxY=-1,hasCore=false;
+  for(let seed=0;seed<N;seed++){
+    if(!mask[seed]||seen[seed])continue;
+    const q=[seed]; seen[seed]=1;
+    let minX=w,maxX=-1,minY=h,maxY=-1,hasCore=false;
     for(let qi=0;qi<q.length;qi++){
-      const z=q[qi],x=z%w,y=(z/w)|0;
-      minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
-      if(mask[z]){
-        const i=z*4,L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-        if(L>=coreT)hasCore=true;
-      }
-      if(x>0&&m[z-1]&&!seen[z-1]){seen[z-1]=1;q.push(z-1)}
-      if(x<w-1&&m[z+1]&&!seen[z+1]){seen[z+1]=1;q.push(z+1)}
-      if(y>0&&m[z-w]&&!seen[z-w]){seen[z-w]=1;q.push(z-w)}
-      if(y<h-1&&m[z+w]&&!seen[z+w]){seen[z+w]=1;q.push(z+w)}
+      const p0=q[qi],xx=p0%w,yy=(p0/w)|0;
+      minX=Math.min(minX,xx);maxX=Math.max(maxX,xx);minY=Math.min(minY,yy);maxY=Math.max(maxY,yy);
+      if(core[p0])hasCore=true;
+      if(xx>0&&mask[p0-1]&&!seen[p0-1]){seen[p0-1]=1;q.push(p0-1)}
+      if(xx<w-1&&mask[p0+1]&&!seen[p0+1]){seen[p0+1]=1;q.push(p0+1)}
+      if(yy>0&&mask[p0-w]&&!seen[p0-w]){seen[p0-w]=1;q.push(p0-w)}
+      if(yy<h-1&&mask[p0+w]&&!seen[p0+w]){seen[p0+w]=1;q.push(p0+w)}
     }
-    if(hasCore && q.length>=2) comps.push({pix:q,minX,maxX,minY,maxY});
+    // Tiny isolated bright floor pixels are ignored. Text strokes have a core
+    // and normally contain several pixels.
+    if(hasCore && q.length>=3) comps.push({pix:q,minX,maxX,minY,maxY});
   }
+
   if(!comps.length)return;
 
-  const lum=(p)=>{const i=p*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114};
+  const lum=(p0)=>{const i=p0*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114;};
+  const getBorder=(c)=>{
+    const out=[];
+    for(let y=Math.max(1,c.minY-2);y<=Math.min(h-2,c.maxY+2);y++){
+      for(let x=Math.max(1,c.minX-2);x<=Math.min(w-2,c.maxX+2);x++){
+        const p0=y*w+x;if(mask[p0])continue;
+        let near=false;
+        for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
+          if(!dx&&!dy)continue;
+          if(mask[(y+dy)*w+(x+dx)]){near=true;break;}
+        }
+        if(near)out.push({x,y,p:p0});
+      }
+    }
+    return out;
+  };
 
-  // Replace each text component with a real nearby patch whose border looks
-  // like the untouched pixels around that component. This keeps the video's
-  // natural texture and avoids blur, bands, grain, or synthetic colours.
   for(const c of comps){
-    const margin=Math.max(4,Math.min(12,Math.ceil(Math.max(c.maxX-c.minX+1,c.maxY-c.minY+1)*.45)));
+    // Tight component patch.  Never include a large selection rectangle.
+    const margin=2;
     const minX=Math.max(2,c.minX-margin), maxX=Math.min(w-3,c.maxX+margin);
     const minY=Math.max(2,c.minY-margin), maxY=Math.min(h-3,c.maxY+margin);
     const bw=maxX-minX+1,bh=maxY-minY+1;
-    if(bw<3||bh<3)continue;
+    if(bw<2||bh<2)continue;
+    const border=getBorder(c);
+    if(border.length<3)continue;
 
-    const border=[];
-    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
-      const p=y*w+x;if(m[p])continue;
-      let near=false;
-      for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
-        if(!dx&&!dy)continue;
-        const xx=x+dx,yy=y+dy;
-        if(xx>=0&&xx<w&&yy>=0&&yy<h&&m[yy*w+xx])near=true;
-      }
-      if(near)border.push({x,y,p});
-    }
-    if(border.length<4)continue;
-
-    const search=Math.min(70,Math.max(14,Math.round(Math.max(bw,bh)*1.7)));
+    // Search close to the component for a patch with matching boundary colour
+    // and local texture.  We reject any patch touching another detected letter.
+    const search=Math.min(48,Math.max(10,Math.round(Math.max(bw,bh)*2.0)));
     let best=null,bestScore=Infinity;
-    for(let dy=-search;dy<=search;dy+=2){
-      for(let dx=-search;dx<=search;dx+=2){
-        const sx=minX+dx,sy=minY+dy;
+    for(let sy=minY-search;sy<=maxY+search;sy+=2){
+      for(let sx=minX-search;sx<=maxX+search;sx+=2){
         if(sx<2||sy<2||sx+bw>=w-2||sy+bh>=h-2)continue;
-        if(Math.abs(dx)<bw*.65&&Math.abs(dy)<bh*.65)continue;
+        if(Math.abs((sx+minX)/2-(minX+maxX)/2)<bw*.65 && Math.abs((sy+minY)/2-(minY+maxY)/2)<bh*.65)continue;
         let blocked=false;
-        // Candidate patch must be completely outside the text mask.
-        for(let yy=0;yy<bh&&!blocked;yy+=Math.max(1,Math.floor(bh/8)))
-          for(let xx=0;xx<bw;xx+=Math.max(1,Math.floor(bw/8)))
-            if(m[(sy+yy)*w+(sx+xx)]){blocked=true;break;}
+        for(let yy=0;yy<bh;yy+=Math.max(1,Math.floor(bh/5))){
+          for(let xx=0;xx<bw;xx+=Math.max(1,Math.floor(bw/5))){
+            if(mask[(sy+yy)*w+(sx+xx)]){blocked=true;break;}
+          }
+          if(blocked)break;
+        }
         if(blocked)continue;
 
         let score=0,n=0;
-        const step=Math.max(1,Math.floor(border.length/36));
+        const step=Math.max(1,Math.floor(border.length/24));
         for(let k=0;k<border.length;k+=step){
           const b=border[k],rx=b.x-minX,ry=b.y-minY;
           const sp=(sy+ry)*w+(sx+rx),ti=b.p*4,si=sp*4;
           const dr=d[ti]-d[si],dg=d[ti+1]-d[si+1],db=d[ti+2]-d[si+2];
           score+=dr*dr+dg*dg+db*db;
-          const gx=b.x>0&&b.x<w-1?lum(b.p+1)-lum(b.p-1):0;
-          const gy=b.y>0&&b.y<h-1?lum(b.p+w)-lum(b.p-w):0;
-          const sgx=(sx+rx)>0&&(sx+rx)<w-1?lum(sp+1)-lum(sp-1):0;
-          const sgy=(sy+ry)>0&&(sy+ry)<h-1?lum(sp+w)-lum(sp-w):0;
-          score+=1.5*((gx-sgx)*(gx-sgx)+(gy-sgy)*(gy-sgy));
+          const gx=lum(b.p+1)-lum(b.p-1),gy=lum(b.p+w)-lum(b.p-w);
+          const sgx=lum(sp+1)-lum(sp-1),sgy=lum(sp+w)-lum(sp-w);
+          score+=2.0*((gx-sgx)*(gx-sgx)+(gy-sgy)*(gy-sgy));
           n++;
         }
         score/=Math.max(1,n);
-        score+=0.08*(dx*dx+dy*dy);
+        score+=0.18*((sx-minX)*(sx-minX)+(sy-minY)*(sy-minY));
         if(score<bestScore){bestScore=score;best={sx,sy};}
       }
     }
     if(!best)continue;
 
-    // Small colour correction only. Texture always comes from the real frame.
+    // Estimate a tiny colour offset from the actual surrounding border.
     let ar=0,ag=0,ab=0,sr=0,sg=0,sb=0,n=0;
-    const step=Math.max(1,Math.floor(border.length/45));
+    const step=Math.max(1,Math.floor(border.length/28));
     for(let k=0;k<border.length;k+=step){
       const b=border[k],rx=b.x-minX,ry=b.y-minY,sp=(best.sy+ry)*w+(best.sx+rx);
       const ti=b.p*4,si=sp*4;
-      ar+=d[ti];ag+=d[ti+1];ab+=d[ti+2];sr+=d[si];sg+=d[si+1];sb+=d[si+2];n++;
+      ar+=d[ti];ag+=d[ti+1];ab+=d[ti+2];
+      sr+=d[si];sg+=d[si+1];sb+=d[si+2];n++;
     }
-    const offR=Math.max(-18,Math.min(18,(ar-sr)/Math.max(1,n)));
-    const offG=Math.max(-18,Math.min(18,(ag-sg)/Math.max(1,n)));
-    const offB=Math.max(-18,Math.min(18,(ab-sb)/Math.max(1,n)));
+    const offR=Math.max(-12,Math.min(12,(ar-sr)/Math.max(1,n)));
+    const offG=Math.max(-12,Math.min(12,(ag-sg)/Math.max(1,n)));
+    const offB=Math.max(-12,Math.min(12,(ab-sb)/Math.max(1,n)));
 
-    for(const p of c.pix){
-      const x=p%w,y=(p/w)|0,rx=x-minX,ry=y-minY;
+    // IMPORTANT: write ONLY the actual detected letter pixels.  No dilation,
+    // no blur, no rectangular fill and no full-band replacement.
+    for(const p0 of c.pix){
+      const x=p0%w,y=(p0/w)|0,rx=x-minX,ry=y-minY;
       const sp=(best.sy+ry)*w+(best.sx+rx);
-      const ti=p*4,si=sp*4;
+      const ti=p0*4,si=sp*4;
       d[ti]=Math.max(0,Math.min(255,d[si]+offR));
       d[ti+1]=Math.max(0,Math.min(255,d[si+1]+offG));
       d[ti+2]=Math.max(0,Math.min(255,d[si+2]+offB));

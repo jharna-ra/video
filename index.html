@@ -1131,7 +1131,7 @@ function removeWhiteDetailedFromCanvasV2(ctx2,W,H,rect){
 // original footage instead of looking like a processed strip. The noise is
 // low-amplitude and deterministic per frame to avoid harsh flicker.
 let grainFrameSeed=0;
-function applyNaturalGrain(ctx,W,H,amount=2.6){
+function applyNaturalGrain(ctx,W,H,amount=7.0){
   if(!W||!H||amount<=0)return;
   const img=ctx.getImageData(0,0,W,H);
   const d=img.data;
@@ -1143,13 +1143,24 @@ function applyNaturalGrain(ctx,W,H,amount=2.6){
     state ^= state<<5; state >>>=0;
     return state;
   };
-  // A tiny amount of luminance noise is enough to make repaired texture
-  // statistically match the surrounding video without visibly changing it.
+
+  // Match the fine, slightly rough texture visible in the repaired area across
+  // the WHOLE frame.  It is monochrome-dominant so it reads like camera/compression
+  // texture instead of colored digital noise.  A tiny correlated component keeps
+  // neighboring pixels from looking like a flat synthetic overlay.
+  let prev=0;
   for(let i=0;i<d.length;i+=4){
-    const n=((next()/4294967295)-0.5)*2*amount;
-    d[i]=clamp(Math.round(d[i]+n),0,255);
-    d[i+1]=clamp(Math.round(d[i+1]+n),0,255);
-    d[i+2]=clamp(Math.round(d[i+2]+n),0,255);
+    const raw=((next()/4294967295)-0.5)*2;
+    const n=raw*0.72 + prev*0.28;
+    prev=raw;
+    const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    // Slightly stronger texture in mid/dark tones, where the repaired texture
+    // is most visible, while protecting bright highlights.
+    const tone=l<75?1.12:l<160?1.0:0.82;
+    const dn=n*amount*tone;
+    d[i]=clamp(Math.round(d[i]+dn),0,255);
+    d[i+1]=clamp(Math.round(d[i+1]+dn*0.96),0,255);
+    d[i+2]=clamp(Math.round(d[i+2]+dn*0.92),0,255);
   }
   ctx.putImageData(img,0,0);
 }
@@ -1175,7 +1186,7 @@ function drawPreview(){
    const wr=whiteRect2;
    removeWhiteDetailedFromCanvasV2(vctx,view.width,view.height,{x:wr.x/r.w*view.width,y:wr.y/r.h*view.height,w:wr.w/r.w*view.width,h:wr.h/r.h*view.height});
  }
- applyNaturalGrain(vctx,view.width,view.height,2.6);
+ applyNaturalGrain(vctx,view.width,view.height,7.0);
 }
 function updateSelectionBox(){
  if(!selecting && !whiteRect && !whiteRect2 && !crop){selBox.style.display='none';selection2.style.display='none';return;}
@@ -1761,7 +1772,7 @@ function drawExportFrame(elapsedOverride){
 
   // Apply the same subtle texture to the complete exported frame, including
   // untouched areas, so repaired pixels do not stand out from the video.
-  applyNaturalGrain(wctx,outputW,outputH,2.6);
+  applyNaturalGrain(wctx,outputW,outputH,7.0);
 
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));

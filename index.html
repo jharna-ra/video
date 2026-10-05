@@ -25,7 +25,7 @@ input[type=range]{width:100%}
 .status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
 .stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
 #viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#selection{position:absolute;border:2px solid #ff3b30;background:transparent;display:none;pointer-events:none}
+#selection{position:absolute;border:2px dashed #ffd400;background:rgba(255,212,0,.04);display:none;pointer-events:none}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
@@ -169,7 +169,7 @@ input[type=range]{width:100%}
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
 <label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
 <input id="textThick" type="range" min="2" max="30" value="9">
-<div class="small">Draw the box around the text. Only detected white/gray text strokes are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see exactly which pixels will be removed: if red covers the text, you are set; if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
+<div class="small">Draw the yellow box around the text. The yellow box is only a search area; it is NOT itself removed. Only detected white/gray letter strokes are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see exactly which pixels will be removed: if red covers the text, you are set; if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
 <div class="section">
@@ -783,156 +783,242 @@ function inpaintHole(d,w,h,hole,strength){
 
 function removeWhiteFromCanvas(ctx2,W,H,rect){
   if(!rect||!removalEnabled)return;
+
   const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
   const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
   const rw=x1-x0,rh=y1-y0;
   if(rw<3||rh<3)return;
 
-  const img=ctx2.getImageData(x0,y0,rw,rh), d=img.data;
+  const img=ctx2.getImageData(x0,y0,rw,rh);
+  const d=img.data, N=rw*rh;
   const threshold=+$('whiteThreshold').value||200;
   const thick=+$('textThick').value||9;
-  const N=rw*rh;
-  const lum=new Uint16Array(N), core=new Uint8Array(N);
 
-  for(let p=0,i=0;p<N;p++,i+=4) lum[p]=Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2]);
+  // IMPORTANT: the yellow rectangle is only the search area.
+  // We first build a pixel mask from bright, low-colour text strokes.
+  // This is deliberately more permissive than the previous detector so
+  // anti-aliased white letters are actually found.
+  const lum=new Float32Array(N);
+  for(let p=0,i=0;p<N;p++,i+=4)
+    lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
 
-  // The user's rectangle is the search boundary. Inside it, detect actual
-  // white/grey character strokes, not the whole rectangle.
-  const minL=Math.max(145,threshold-45);
+  const core=new Uint8Array(N);
+
+  // A white text core: bright + close RGB channels + brighter than nearby pixels.
+  // The local test rejects most bright walls/sky while still catching thin letters.
+  const floor=Math.max(135,threshold-75);
   for(let y=1;y<rh-1;y++) for(let x=1;x<rw-1;x++){
     const p=y*rw+x,i=p*4,L=lum[p];
-    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    if(L<minL||mx-mn>95)continue;
+    const mx=Math.max(d[i],d[i+1],d[i+2]);
+    const mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(L<floor || mx-mn>78) continue;
 
-    let darker=0, localMin=255;
+    let darker=0, localSum=0, n=0;
     for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
       if(!dx&&!dy)continue;
-      const q=(y+dy)*rw+x+dx,v=lum[q];
-      if(v<L-3)darker++;
-      if(v<localMin)localMin=v;
+      const q=(y+dy)*rw+(x+dx), qL=lum[q];
+      localSum+=qL; n++;
+      if(L-qL>=4)darker++;
     }
-    // White text has a bright core and some darker pixels immediately around it.
-    if(darker>=2 && L-localMin>=5) core[p]=1;
+    const localAvg=localSum/n;
+
+    // Core pixels are either strongly brighter than their neighbourhood,
+    // or very bright with at least one darker neighbour.
+    if((L-localAvg>=5 && darker>=1) || (L>=Math.max(205,threshold) && darker>=1))
+      core[p]=1;
   }
 
-  // Connected components: keep small character-like structures and reject
-  // large bright regions. The selected rectangle is never itself a mask.
+  // Grow only by nearby bright/neutral anti-aliased pixels.
+  const grown=core.slice();
+  const grow=Math.max(1,Math.min(2,Math.round(thick/8)));
+  for(let y=1;y<rh-1;y++) for(let x=1;x<rw-1;x++){
+    const p=y*rw+x;
+    if(core[p])continue;
+    const i=p*4,L=lum[p];
+    const mx=Math.max(d[i],d[i+1],d[i+2]);
+    const mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(L<Math.max(120,threshold-90)||mx-mn>95)continue;
+    let near=0;
+    for(let dy=-grow;dy<=grow;dy++) for(let dx=-grow;dx<=grow;dx++){
+      if(dx||dy) if(core[(y+dy)*rw+x+dx]) near++;
+    }
+    if(near>=1)grown[p]=1;
+  }
+
+  // Connected components: keep character-like components and reject large
+  // white regions. The user's rectangle itself is NEVER painted over.
   const seen=new Uint8Array(N), keep=new Uint8Array(N), stack=new Int32Array(N);
-  const maxArea=Math.max(80,Math.floor(N*.16));
   for(let p0=0;p0<N;p0++){
-    if(!core[p0]||seen[p0])continue;
-    let head=0,tail=0,area=0,minX=rw,maxX=0,minY=rh,maxY=0;
-    stack[tail++]=p0;seen[p0]=1;
+    if(!grown[p0]||seen[p0])continue;
+
+    let head=0,tail=0,area=0,minX=rw,maxX=-1,minY=rh,maxY=-1;
+    stack[tail++]=p0; seen[p0]=1;
+
     while(head<tail){
-      const p=stack[head++],x=p%rw,y=(p/rw)|0;area++;
-      if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const p=stack[head++], x=p%rw, y=(p/rw)|0;
+      area++;
+      if(x<minX)minX=x;if(x>maxX)maxX=x;
+      if(y<minY)minY=y;if(y>maxY)maxY=y;
+
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
         if(!dx&&!dy)continue;
         const nx=x+dx,ny=y+dy;
         if(nx<0||ny<0||nx>=rw||ny>=rh)continue;
         const q=ny*rw+nx;
-        if(core[q]&&!seen[q]){seen[q]=1;stack[tail++]=q;}
+        if(grown[q]&&!seen[q]){
+          seen[q]=1;stack[tail++]=q;
+        }
       }
     }
-    const bw=maxX-minX+1,bh=maxY-minY+1;
-    const plausible=area<=maxArea &&
-      bw<=Math.max(90,bh*24) && bh<=Math.max(90,bw*24) &&
-      (area<=12 || area/(bw*bh)>=.015);
-    if(plausible)for(let k=0;k<tail;k++)keep[stack[k]]=1;
+
+    const bw=maxX-minX+1, bh=maxY-minY+1;
+    const density=area/(bw*bh);
+
+    // Text components are normally compact/thin. Very large solid bright
+    // areas are rejected, but long words and numbers are allowed.
+    const huge = area > Math.max(700, N*.12) ||
+                 (bw>Math.max(140,rw*.55) && bh>Math.max(45,rh*.55));
+    const absurd = (bw>Math.max(220,rw*.92) && bh>Math.max(55,rh*.30));
+    const plausible = !huge && !absurd &&
+      area>=1 && density>=0.012 &&
+      bw<=Math.max(260,rw) && bh<=Math.max(90,rh);
+
+    if(plausible){
+      for(let k=0;k<tail;k++)keep[stack[k]]=1;
+    }
   }
 
-  // Anti-aliased edge: only one/two pixels immediately around an accepted stroke.
+  // One-pixel anti-aliasing halo, but ONLY next to detected letter pixels.
   const finalMask=keep.slice();
-  const halo=Math.max(1,Math.min(2,Math.round(thick/7)));
-  for(let y=1;y<rh-1;y++)for(let x=1;x<rw-1;x++){
-    const p=y*rw+x;if(keep[p])continue;
-    const i=p*4,L=lum[p],mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    if(L<minL-50||mx-mn>105)continue;
-    let near=0;
-    for(let dy=-halo;dy<=halo;dy++)for(let dx=-halo;dx<=halo;dx++)
-      if(keep[(y+dy)*rw+x+dx])near++;
-    if(near>=2)finalMask[p]=1;
+  for(let y=1;y<rh-1;y++) for(let x=1;x<rw-1;x++){
+    const p=y*rw+x;
+    if(keep[p])continue;
+    const i=p*4,L=lum[p];
+    const mx=Math.max(d[i],d[i+1],d[i+2]);
+    const mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(L<Math.max(115,threshold-100)||mx-mn>105)continue;
+
+    let near=0,dark=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      if(dx||dy){
+        const q=(y+dy)*rw+x+dx;
+        if(keep[q])near++;
+        if(L-lum[q]>=3)dark++;
+      }
+    }
+    if(near>=1 && dark>=1)finalMask[p]=1;
   }
 
-  let count=0;for(let p=0;p<N;p++)count+=finalMask[p];
-  if(!count)return;
+  let count=0;
+  for(let p=0;p<N;p++)if(finalMask[p])count++;
+  if(!count){
+    setStatus('No white letter pixels detected in the yellow search area. Lower White detection sensitivity and try again.');
+    return;
+  }
 
   if($('showMask').checked&&!exporting){
     const dbg=new Uint8ClampedArray(d);
     for(let p=0;p<N;p++)if(finalMask[p]){
-      const i=p*4;dbg[i]=255;dbg[i+1]=0;dbg[i+2]=45;dbg[i+3]=235;
+      const i=p*4;
+      dbg[i]=255;dbg[i+1]=0;dbg[i+2]=45;dbg[i+3]=240;
     }
     ctx2.putImageData(new ImageData(dbg,rw,rh),x0,y0);
-    setStatus('Detected '+count+' white-text pixels. If the red covers the letters, click Remove White Text.');
+    setStatus('Detected '+count+' text pixels. Red = pixels that will be dissolved.');
     return;
   }
 
-  // Letter-by-letter texture dissolve.
-  // Each masked pixel copies a REAL nearby pixel from the original frame.
-  // No blur, averaging, grain, or rectangle fill is used.
-  const original=new Uint8ClampedArray(d), known=new Uint8Array(N);
+  // LETTER-BY-LETTER DISSOLVE:
+  // Every replacement comes from an ORIGINAL, nearby, unmasked video pixel.
+  // No blur, averaging, grain, horizontal streaks, or rectangular patch.
+  const original=new Uint8ClampedArray(d);
+  const known=new Uint8Array(N);
   for(let p=0;p<N;p++)known[p]=finalMask[p]?0:1;
 
-  const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
-  const order=[];
-  const queued=new Uint8Array(N);
+  const dirs=[
+    [1,0],[-1,0],[0,1],[0,-1],
+    [1,1],[-1,1],[1,-1],[-1,-1]
+  ];
 
-  // Start from the outside edge of every letter and move inward.
-  for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){
-    const p=y*rw+x;if(!finalMask[p])continue;
+  // Process the outside edge of each letter first, then its interior.
+  const order=[], queued=new Uint8Array(N);
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(!finalMask[p])continue;
     let boundary=false;
     for(const [dx,dy] of dirs){
       const nx=x+dx,ny=y+dy;
-      if(nx>=0&&ny>=0&&nx<rw&&ny<rh&&known[ny*rw+nx]){boundary=true;break}
+      if(nx>=0&&ny>=0&&nx<rw&&ny<rh&&known[ny*rw+nx]){
+        boundary=true;break;
+      }
     }
-    if(boundary){order.push(p);queued[p]=1;}
+    if(boundary){queued[p]=1;order.push(p);}
   }
-  // Then add interior pixels adjacent to already queued pixels.
+
   for(let k=0;k<order.length;k++){
     const p=order[k],x=p%rw,y=(p/rw)|0;
     for(const [dx,dy] of dirs){
       const nx=x+dx,ny=y+dy;
       if(nx<0||ny<0||nx>=rw||ny>=rh)continue;
       const q=ny*rw+nx;
-      if(finalMask[q]&&!queued[q]){queued[q]=1;order.push(q);}
+      if(finalMask[q]&&!queued[q]){
+        queued[q]=1;order.push(q);
+      }
     }
   }
 
-  const maxR=Math.max(7,Math.min(22,Math.round(5+thick*1.1)));
+  const maxR=Math.max(5,Math.min(18,Math.round(4+thick*.9)));
+
   for(const p of order){
     const x=p%rw,y=(p/rw)|0;
     let best=-1,bestScore=1e30;
+
     for(const [dx,dy] of dirs){
+      // perpendicular axis used to compare the local texture
       const px=-dy,py=dx;
+
       for(let r=1;r<=maxR;r++){
         const sx=x+dx*r,sy=y+dy*r;
         if(sx<1||sy<1||sx>=rw-1||sy>=rh-1)break;
+
         const q=sy*rw+sx;
         if(!known[q])continue;
 
-        // Compare a tiny perpendicular strip on ORIGINAL pixels. This helps
-        // choose the side of the text whose texture continues naturally.
-        let score=r*1.5;
-        for(let k=-2;k<=2;k++){
-          const tx=x+px*k,ty=y+py*k,cx=sx+px*k,cy=sy+py*k;
+        let score=r*1.25;
+        for(let k2=-2;k2<=2;k2++){
+          const tx=x+px*k2,ty=y+py*k2;
+          const cx=sx+px*k2,cy=sy+py*k2;
           if(tx<0||ty<0||tx>=rw||ty>=rh||cx<0||cy<0||cx>=rw||cy>=rh)continue;
           const a=(ty*rw+tx)*4,b=(cy*rw+cx)*4;
           const dr=original[a]-original[b],dg=original[a+1]-original[b+1],db=original[a+2]-original[b+2];
-          score+=(dr*dr+dg*dg+db*db)*.045;
+          score+=(dr*dr*.299+dg*dg*.587+db*db*.114)*.035;
         }
         if(score<bestScore){bestScore=score;best=q;}
-        break;
       }
     }
+
+    if(best<0){
+      for(const [dx,dy] of dirs){
+        const sx=x+dx,sy=y+dy;
+        if(sx>=0&&sy>=0&&sx<rw&&sy<rh){
+          const q=sy*rw+sx;
+          if(known[q]){best=q;break;}
+        }
+      }
+    }
+
     if(best>=0){
       const di=p*4,si=best*4;
-      d[di]=original[si];d[di+1]=original[si+1];d[di+2]=original[si+2];d[di+3]=original[di+3];
+      d[di]=original[si];
+      d[di+1]=original[si+1];
+      d[di+2]=original[si+2];
+      d[di+3]=original[di+3];
       known[p]=1;
     }
   }
-  ctx2.putImageData(new ImageData(d,rw,rh),x0,y0);
-}
 
+  ctx2.putImageData(new ImageData(d,rw,rh),x0,y0);
+  if(!exporting)setStatus('Removed '+count+' detected white-text pixels using neighbouring video texture.');
+}
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){
   removeWhiteFromCanvas(ctx2,W,H,rect);
 }
@@ -1299,7 +1385,7 @@ $('removeWhite').onclick=()=>{
  setStatus('White-text remover ON — individual letter pixels are being dissolved into real neighbouring video texture.');
 }
 $('clearWhite').onclick=()=>{whiteRect=null;removalEnabled=false;invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
-$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
+$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview();drawGeoPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
 $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}

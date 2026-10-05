@@ -683,23 +683,22 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
 }
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
 function textureInpaintHole(d,w,h,hole,strength){
-  // SECOND BOX ONLY: exemplar/patch inpainting.
-  // Every removed text component is filled with real pixels copied from a
-  // nearby clean part of the SAME surface. No blur, no grain, no flat box.
+  // SECOND BOX ONLY: strong local texture synthesis with Poisson-style
+  // gradient blending.  The source pixels come from the same nearby frame,
+  // while the boundary is forced to agree with the untouched neighbouring
+  // pixels. This removes the "stamped patch" look of simple copy/paste.
   const N=w*h;
-  const seen=new Uint8Array(N);
-  const comps=[];
-  const q=new Int32Array(N);
+  const seen=new Uint8Array(N), q=new Int32Array(N), comps=[];
 
-  // Find connected text components. Keeping components separate prevents one
-  // large replacement patch from being stamped across the whole selection.
+  // Find connected masked components so each letter/stroke gets its own
+  // nearby texture source instead of one large rectangle being copied.
   for(let seed=0;seed<N;seed++){
     if(!hole[seed]||seen[seed])continue;
-    let qh=0,qt=0; q[qt++]=seed; seen[seed]=1;
-    const pix=[]; let minX=w,maxX=0,minY=h,maxY=0;
+    let qh=0,qt=0;q[qt++]=seed;seen[seed]=1;
+    const pix=[];let minX=w,maxX=-1,minY=h,maxY=-1;
     while(qh<qt){
       const p=q[qh++],x=p%w,y=(p/w)|0;
-      pix.push(p); if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;
+      pix.push(p);minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
       if(x>0){const n=p-1;if(hole[n]&&!seen[n]){seen[n]=1;q[qt++]=n;}}
       if(x<w-1){const n=p+1;if(hole[n]&&!seen[n]){seen[n]=1;q[qt++]=n;}}
       if(y>0){const n=p-w;if(hole[n]&&!seen[n]){seen[n]=1;q[qt++]=n;}}
@@ -708,36 +707,32 @@ function textureInpaintHole(d,w,h,hole,strength){
     comps.push({pix,minX,maxX,minY,maxY});
   }
 
-  const lumAt=(p)=>{const i=p*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114;};
-  const validSource=(sx,sy,bw,bh,mark)=>{
-    if(sx<1||sy<1||sx+bw>=w-1||sy+bh>=h-1)return false;
-    for(let yy=-1;yy<=bh;yy++)for(let xx=-1;xx<=bw;xx++){
+  comps.sort((a,b)=>b.pix.length-a.pix.length);
+
+  const luma=(p)=>{const i=p*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114;};
+  const validPatch=(sx,sy,bw,bh,mark)=>{
+    if(sx<2||sy<2||sx+bw>=w-2||sy+bh>=h-2)return false;
+    for(let yy=-2;yy<=bh+1;yy++)for(let xx=-2;xx<=bw+1;xx++){
       const p=(sy+yy)*w+(sx+xx);
       if(mark[p])return false;
     }
     return true;
   };
 
-  // Process largest components first. Tiny text strokes then borrow texture
-  // from the newly repaired surrounding surface rather than from other text.
-  comps.sort((a,b)=>b.pix.length-a.pix.length);
-
   for(const c of comps){
-    const pad=3;
-    const minX=Math.max(1,c.minX-pad), maxX=Math.min(w-2,c.maxX+pad);
-    const minY=Math.max(1,c.minY-pad), maxY=Math.min(h-2,c.maxY+pad);
+    const pad=4;
+    const minX=Math.max(2,c.minX-pad),maxX=Math.min(w-3,c.maxX+pad);
+    const minY=Math.max(2,c.minY-pad),maxY=Math.min(h-3,c.maxY+pad);
     const bw=maxX-minX+1,bh=maxY-minY+1;
     if(bw<1||bh<1)continue;
 
-    // Border pixels outside the hole are used as the fingerprint of the
-    // surrounding texture. A matching source patch continues that texture.
+    // Build a thin fingerprint from the untouched pixels surrounding the hole.
     const border=[];
     for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
-      const p=y*w+x;
-      if(hole[p])continue;
+      const p=y*w+x;if(hole[p])continue;
       let near=false;
       for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
-        if(dx===0&&dy===0)continue;
+        if(!dx&&!dy)continue;
         const xx=x+dx,yy=y+dy;
         if(xx>=0&&xx<w&&yy>=0&&yy<h&&hole[yy*w+xx]){near=true;break;}
       }
@@ -745,58 +740,95 @@ function textureInpaintHole(d,w,h,hole,strength){
     }
     if(!border.length)continue;
 
-    let bestX=-1,bestY=-1,best=Infinity;
-    const search=Math.min(42,Math.max(16,Math.round(Math.max(bw,bh)*1.8)));
-    const step=bw*bh>700?3:2;
-
-    // Prefer candidates that are genuinely close and have similar local
-    // brightness/colour. The source patch itself must contain no text mask.
+    // Search several nearby source patches.  We score colour, luma gradient
+    // and distance, so a patch on the same floor texture is preferred over a
+    // visually similar but unrelated object.
+    const candidates=[];
+    const search=Math.min(70,Math.max(20,Math.round(Math.max(bw,bh)*2.2)));
+    const step=bw*bh>1200?3:2;
     for(let dy=-search;dy<=search;dy+=step){
       for(let dx=-search;dx<=search;dx+=step){
-        if(dx===0&&dy===0)continue;
+        if(Math.abs(dx)<bw*.35&&Math.abs(dy)<bh*.35)continue;
         const sx=minX+dx,sy=minY+dy;
-        if(!validSource(sx,sy,bw,bh,hole))continue;
+        if(!validPatch(sx,sy,bw,bh,hole))continue;
         let score=0,n=0;
-        for(let k=0;k<border.length;k+=Math.max(1,Math.floor(border.length/28))){
-          const b=border[k], rx=b.x-minX, ry=b.y-minY;
-          const sp=(sy+ry)*w+(sx+rx);
-          const ti=b.p*4,si=sp*4;
+        const stride=Math.max(1,Math.floor(border.length/40));
+        for(let k=0;k<border.length;k+=stride){
+          const b=border[k],rx=b.x-minX,ry=b.y-minY;
+          const sp=(sy+ry)*w+(sx+rx),ti=b.p*4,si=sp*4;
           const dr=d[ti]-d[si],dg=d[ti+1]-d[si+1],db=d[ti+2]-d[si+2];
-          score+=(dr*dr+dg*dg+db*db);
+          score+=dr*dr+dg*dg+db*db;
+          const gx=b.x>0&&b.x<w-1 ? luma(b.p+1)-luma(b.p-1) : 0;
+          const gy=b.y>0&&b.y<h-1 ? luma(b.p+w)-luma(b.p-w) : 0;
+          const sgx=(sx+rx)>0&&(sx+rx)<w-1 ? luma(sp+1)-luma(sp-1) : 0;
+          const sgy=(sy+ry)>0&&(sy+ry)<h-1 ? luma(sp+w)-luma(sp-w) : 0;
+          score+=0.7*((gx-sgx)*(gx-sgx)+(gy-sgy)*(gy-sgy));
           n++;
         }
         if(n)score/=n;
-        // Mild distance penalty stops the algorithm from grabbing a visually
-        // similar but far-away object in the frame.
-        score += (dx*dx+dy*dy)*0.9;
-        if(score<best){best=score;bestX=sx;bestY=sy;}
+        score+=(dx*dx+dy*dy)*0.45;
+        candidates.push({sx,sy,score});
       }
     }
+    candidates.sort((a,b)=>a.score-b.score);
+    const best=candidates.slice(0,Math.min(3,candidates.length));
+    if(!best.length)continue;
 
-    if(bestX<0){
-      // Very small/edge components: use the nearest clean neighbour rather
-      // than leaving a visible letter fragment behind.
-      for(const p of c.pix){
-        const x=p%w,y=(p/w)|0; let src=-1;
-        for(let r=1;r<=10&&src<0;r++){
-          const cand=[[x-r,y],[x+r,y],[x,y-r],[x,y+r]];
-          for(const [xx,yy] of cand){
-            if(xx>=0&&xx<w&&yy>=0&&yy<h){const sp=yy*w+xx;if(!hole[sp]){src=sp;break;}}
+    // Choose the best patch.  A second/third patch is used as a fallback only
+    // when the best patch is not valid at a particular source coordinate.
+    const src=best[0];
+
+    // Initialise the hole from the real source texture.
+    const work=new Float32Array(c.pix.length*3);
+    const pos=new Map();
+    for(let i=0;i<c.pix.length;i++)pos.set(c.pix[i],i);
+    for(let i=0;i<c.pix.length;i++){
+      const p=c.pix[i],x=p%w,y=(p/w)|0;
+      const sp=(src.sy+(y-minY))*w+(src.sx+(x-minX));
+      const si=sp*4;
+      work[i*3]=d[si];work[i*3+1]=d[si+1];work[i*3+2]=d[si+2];
+    }
+
+    // Poisson-style relaxation: preserve the source patch's local texture
+    // gradients while matching the actual pixels around the removed text.
+    // This is deliberately per-component, so it cannot create a box-shaped
+    // fill across the selection.
+    const next=new Float32Array(work.length);
+    const iterations=c.pix.length>3500?14:c.pix.length>1200?18:24;
+    for(let it=0;it<iterations;it++){
+      for(let i=0;i<c.pix.length;i++){
+        const p=c.pix[i],x=p%w,y=(p/w)|0;
+        let sr=0,sg=0,sb=0,n=0;
+        const neigh=[p-1,p+1,p-w,p+w];
+        for(let z=0;z<4;z++){
+          const np=neigh[z],nx=np%w,ny=(np/w)|0;
+          if(nx<0||nx>=w||ny<0||ny>=h)continue;
+          const ox=nx-minX,oy=ny-minY;
+          const sp=(src.sy+oy)*w+(src.sx+ox),si=sp*4;
+          const si0=(src.sy+(y-minY))*w+(src.sx+(x-minX))*4;
+          // Source gradient from current source pixel toward source neighbour.
+          const gr=d[si]-d[si0],gg=d[si+1]-d[si0+1],gb=d[si+2]-d[si0+2];
+          const j=pos.get(np);
+          if(j!==undefined){sr+=work[j*3]+gr;sg+=work[j*3+1]+gg;sb+=work[j*3+2]+gb;}
+          else{
+            const ti=np*4;sr+=d[ti]+gr;sg+=d[ti+1]+gg;sb+=d[ti+2]+gb;
           }
+          n++;
         }
-        if(src>=0){const ti=p*4,si=src*4;d[ti]=d[si];d[ti+1]=d[si+1];d[ti+2]=d[si+2];}
+        if(n){next[i*3]=sr/n;next[i*3+1]=sg/n;next[i*3+2]=sb/n;}
       }
-      continue;
+      work.set(next);
     }
 
-    // Copy ONLY the actual detected/dilated text pixels. The surrounding
-    // pixels are never overwritten, so there is no rectangular patch edge.
-    for(const p of c.pix){
-      const x=p%w,y=(p/w)|0;
-      const sx=bestX+(x-minX), sy=bestY+(y-minY);
-      if(sx<0||sx>=w||sy<0||sy>=h)continue;
-      const sp=sy*w+sx,ti=p*4,si=sp*4;
-      d[ti]=d[si];d[ti+1]=d[si+1];d[ti+2]=d[si+2];
+    // Blend only the masked pixels.  The final value is gently anchored to
+    // the source texture so the fill remains detailed rather than becoming a
+    // blurred wash.
+    for(let i=0;i<c.pix.length;i++){
+      const p=c.pix[i],di=p*4;
+      const r=work[i*3],g=work[i*3+1],b=work[i*3+2];
+      d[di]=d[di]*(1-strength)+r*strength;
+      d[di+1]=d[di+1]*(1-strength)+g*strength;
+      d[di+2]=d[di+2]*(1-strength)+b*strength;
     }
   }
 }
@@ -821,13 +853,33 @@ function removeWhiteDetailedFromCanvas(ctx2,W,H,rect){
   // Union several tight detectors. This is much less likely to leave the
   // recognizable little letter-shaped remnant seen in the previous version.
   const passes=[
-    {t:Math.max(82,baseT-24),thk:Math.max(2,Math.round(baseThk*.48)),mr:Math.max(4,Math.round(W/90))},
-    {t:Math.max(88,baseT-14),thk:Math.max(2,Math.round(baseThk*.62)),mr:Math.max(5,Math.round(W/78))},
-    {t:Math.max(94,baseT-6), thk:Math.max(2,Math.round(baseThk*.78)),mr:Math.max(6,Math.round(W/68))}
+    {t:Math.max(68,baseT-38),thk:2,mr:Math.max(3,Math.round(W/105))},
+    {t:Math.max(76,baseT-30),thk:Math.max(2,Math.round(baseThk*.40)),mr:Math.max(4,Math.round(W/96))},
+    {t:Math.max(84,baseT-20),thk:Math.max(2,Math.round(baseThk*.52)),mr:Math.max(5,Math.round(W/86))},
+    {t:Math.max(90,baseT-10),thk:Math.max(2,Math.round(baseThk*.68)),mr:Math.max(6,Math.round(W/74))},
+    {t:Math.max(96,baseT-2), thk:Math.max(2,Math.round(baseThk*.82)),mr:Math.max(6,Math.round(W/64))}
   ];
   for(const cfg of passes){
     const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,cfg.mr,cfg.thk);
     if(m)for(let p=0;p<N;p++)if(m[p])hole[p]=1;
+  }
+
+  // Final residue pass: catch compressed/anti-aliased white lettering that is
+  // no longer bright enough to pass the top-hat detector. It requires both
+  // low colour saturation and a local brightness peak, so broad floor texture
+  // is not converted into a giant mask.
+  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
+    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
+      const p=y*w+x,i=p*4;
+      const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+      const L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
+      if(mx-mn>72||L<Math.max(62,baseT-48))continue;
+      const nb=(d[i-4]*.299+d[i-3]*.587+d[i-2]*.114 +
+                d[i+4]*.299+d[i+5]*.587+d[i+6]*.114 +
+                d[i-w*4]*.299+d[i-w*4+1]*.587+d[i-w*4+2]*.114 +
+                d[i+w*4]*.299+d[i+w*4+1]*.587+d[i+w*4+2]*.114)/4;
+      if(L-nb>=5)hole[p]=1;
+    }
   }
 
   let count=0;

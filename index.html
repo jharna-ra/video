@@ -379,7 +379,7 @@ const video=$('video'), view=$('viewCanvas'), vctx=view.getContext('2d',{willRea
 const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true});
 const geo=$('geoCanvas'), gctx=geo.getContext('2d',{willReadFrequently:true});
 if(!wctx) throw new Error('Export canvas context unavailable');
-const stage=$('stage'), selBox=$('selection');
+const stage=$('stage'), selBox=$('selection'), selection2=$('selection2');
 
 let file=null, videoURL=null, duration=0, playing=false;
 let crop=null, cropMode=false, whiteRect=null, whiteRect2=null, removeMode=false, removalEnabled=false, selecting=false, sx=0, sy=0;

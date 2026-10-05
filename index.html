@@ -3,710 +3,1716 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Video Studio - White Text Remover</title>
+<title>Video White Text Remover + GeoTag</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#0b1016;color:#eef3f8;font-family:Arial,sans-serif}
-header{padding:16px 20px;background:#101821;border-bottom:1px solid #293542}
-h1{margin:0;font-size:21px}p{color:#9eabb7}
-.app{max-width:1450px;margin:auto;padding:15px;display:grid;grid-template-columns:330px 1fr;gap:15px}
-.card{background:#111a23;border:1px solid #2a3744;border-radius:12px;padding:14px}
-h2{font-size:15px;margin:0 0 12px}
-h3{font-size:12px;color:#c9d5df;margin:15px 0 7px}
-label{display:block;font-size:12px;color:#aebbc7;margin:8px 0 5px}
-input,select{width:100%;background:#091017;color:white;border:1px solid #354453;border-radius:7px;padding:9px}
-input[type=range]{padding:0}
-button{border:1px solid #3788d0;background:#176db3;color:#fff;border-radius:7px;padding:9px 11px;font-weight:600;cursor:pointer}
-button:hover{filter:brightness(1.12)}
-button:disabled{opacity:.4;cursor:not-allowed}
-button.secondary{background:#18232e;border-color:#3b4855}
-button.danger{background:#7e2727;border-color:#a63a3a}
-.row{display:flex;gap:7px}.row>*{flex:1}
-.check{display:flex;gap:7px;align-items:center;font-size:12px;color:#c4ced7}.check input{width:auto}
-.small{font-size:11px;line-height:1.45;color:#8e9ba7}
-.status{margin-top:10px;padding:9px;min-height:38px;background:#091017;border:1px solid #263440;border-radius:7px;font-size:12px;color:#b9c6d1}
-.stage{background:#020508;border:1px solid #27333e;border-radius:10px;min-height:420px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-#preview{display:block;max-width:100%;max-height:68vh;background:#000}
-.box{position:absolute;border:2px dashed #ffd83d;display:none;pointer-events:none}
-.cropbox{position:absolute;border:2px solid #48a0ff;display:none;pointer-events:none}
-.controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
-.timeline{margin-top:10px;background:#080d12;border:1px solid #293642;border-radius:9px;padding:8px}
-#timeline{width:100%;height:100px;display:block;cursor:pointer}
-.timebar{display:flex;gap:8px;align-items:center;margin-top:7px}
-#seek{flex:1}
-.badges{display:flex;justify-content:space-between;color:#93a1ae;font-size:11px}
-.progress{height:7px;background:#1d2730;border-radius:20px;overflow:hidden;margin-top:8px}
-.progress>div{height:100%;width:0;background:#4da3ff}
-.map{height:170px;border:1px solid #354452;border-radius:8px;overflow:hidden;margin-top:8px}
-.map iframe{width:100%;height:100%;border:0}
-.error{display:none;margin-top:10px;padding:10px;border:1px solid #a83a3a;background:#351719;color:#ffd3d3;border-radius:7px;font-size:12px;white-space:pre-wrap}
-@media(max-width:900px){.app{grid-template-columns:1fr}.stage{min-height:280px}}
+*{box-sizing:border-box}body{margin:0;background:#0b1117;color:#e9eef3;font:14px Arial,sans-serif}
+header{padding:16px 20px;background:#111a23;border-bottom:1px solid #263340}
+header h1{margin:0;font-size:20px}header p{margin:6px 0 0;color:#9eabb7}
+.wrap{max-width:1400px;margin:auto;padding:16px}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:16px}
+.card{background:#121b24;border:1px solid #273440;border-radius:12px;padding:14px}
+h2,h3{margin:0 0 12px}.section{border-top:1px solid #263440;margin-top:14px;padding-top:14px}
+label{display:block;font-weight:600;margin:8px 0 5px;color:#cdd6de}
+input[type=file],input[type=text],input[type=date],input[type=time],input[type=number],textarea,select{width:100%;padding:9px;border-radius:8px;border:1px solid #344553;background:#0d151d;color:#eef3f7}
+textarea{min-height:72px;resize:vertical}
+button{border:0;border-radius:8px;padding:10px 12px;background:#1976e8;color:#fff;font-weight:700;cursor:pointer;margin:4px 3px 0 0}
+button.secondary{background:#293643}button.danger{background:#b63b3b}button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.sliderTop{display:flex;justify-content:space-between;font-size:12px;color:#cbd4dc}.sliderTop b{color:#6fb1ff}
+input[type=range]{width:100%}
+.status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
+.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
+#viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
+#trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
+#trimRange{width:100%}
+.galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
+.timelineHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}.timelineHead b{font-size:13px}.timelineHead span{font-size:11px;color:#8fa0ad}
+#timelineWrap{position:relative;background:#090f15;border:1px solid #263744;border-radius:10px;padding:8px 34px 9px;overflow:hidden}
+#timelineCanvas{width:100%;height:132px;display:block;border-radius:6px;background:#05090d;touch-action:none;cursor:ew-resize}
+.timelineArrow{position:absolute;top:54px;width:28px;height:40px;margin:0;padding:0;border-radius:7px;background:#202c37;color:#cfd8df;font-size:25px;line-height:35px;z-index:3}
+.timelineArrow.left{left:3px}.timelineArrow.right{right:3px}
+.timelineTimes{display:flex;justify-content:space-between;color:#a3afb9;font-size:11px;margin-top:5px;padding:0 4px}
+.timelineHint{font-size:11px;color:#7f909e;margin-top:5px;text-align:center}
+
+
+.queue{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.queue span{padding:5px 8px;border-radius:6px;background:#1d2934}
+.small{font-size:12px;color:#94a3af;line-height:1.45}
+.tabs{display:flex;gap:8px;margin-bottom:14px}.tabs button.active{background:#1769e0}
+#geoSection{display:none}
+.badge{display:inline-block;padding:4px 7px;border-radius:6px;background:#24313d;color:#9fb0be;font-size:11px}
+#mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px;cursor:crosshair;touch-action:none}
+#logoCanvas{display:none}
+/* GeoTag layout: preview first, overlay/logo directly underneath, compact controls */
+#geoSection .geoPage{display:flex;flex-direction:column;gap:12px;width:100%;}
+#geoSection .geoPreviewCard{width:100%;padding:12px;}
+#geoSection .geoPreviewHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;}
+#geoSection .geoPreviewHead h2{margin:0 0 5px;}
+#geoSection .geoPreviewHint{font-size:11px;color:#8fa0ad;text-align:right;max-width:480px;}
+#geoSection .geoPreviewCard .stage{height:calc(100vh - 390px);min-height:330px;max-height:620px;}
+#geoSection #geoCanvas{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+#geoSection .geoOptionGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
+#geoSection .geoOptionCard{min-width:0;padding:12px;}
+#geoSection .geoOptionCard h3{margin-bottom:10px;}
+#geoSection .geoOptionCard .sliderTop{margin-top:7px;}
+#geoSection .geoOptionCard input[type=range]{margin:0 0 2px;}
+#geoSection .geoInfoGrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:12px;align-items:start;}
+#geoSection .geoFields3{display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;}
+#geoSection .geoInfoGrid .card{min-width:0;}
+#geoSection textarea{min-height:48px;}
+#geoSection label{margin:4px 0 2px;}
+#geoSection .small{font-size:11px;line-height:1.25;}
+#geoSection .status{padding:6px;margin-top:6px;}
+#geoSection .row{gap:6px;}
+#geoSection button{padding:7px 9px;margin-top:3px;}
+#geoSection .runningBox{border-top:1px solid #263440;margin-top:10px;padding-top:10px;}
+#geoSection .runningBox h3{margin-bottom:6px;}
+#geoSection #mapPreview{height:90px;margin-top:8px;}
+#geoSection .geoActions{border-top:1px solid #263440;margin-top:14px;padding-top:10px;}
+#geoSection .geoActions button{margin-right:4px;}
+
+@media(max-width:900px){
+  #geoSection .geoOptionGrid{grid-template-columns:1fr 1fr;}
+  #geoSection .geoInfoGrid{grid-template-columns:1fr;}
+  #geoSection .geoFields3{grid-template-columns:1fr 1fr;}
+  #geoSection .geoFields3>div:last-child{grid-column:1 / -1;}
+  #geoSection .geoPreviewCard .stage{height:calc(100vh - 360px);min-height:280px;}
+}
+
+@media(max-width:640px){
+  #geoSection .geoOptionGrid{grid-template-columns:1fr;}
+  #geoSection .geoFields3{grid-template-columns:1fr;}
+  #geoSection .geoFields3>div:last-child{grid-column:auto;}
+  #geoSection .geoPreviewHead{align-items:flex-start;flex-direction:column;}
+  #geoSection .geoPreviewHint{text-align:left;}
+  #geoSection .geoPreviewCard .stage{height:auto;min-height:260px;}
+}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
+@media(max-width:640px){
+  .wrap{padding:10px}
+  header{padding:12px 14px}
+  header h1{font-size:17px}
+  header p{font-size:12px}
+  .card{padding:10px}
+  .row,.row3{grid-template-columns:1fr}
+  button{width:100%;margin:5px 0 0;padding:12px;font-size:14px}
+  .row button,.row3 button{width:100%}
+  .tabs{flex-wrap:wrap}
+  .tabs button{flex:1 1 45%}
+  input[type=range]{height:28px}
+  .stage{min-height:220px}
+  #viewCanvas{max-height:50vh}
+  .queue{gap:5px}
+  #timelineWrap{padding:8px 30px 9px}
+  .timelineArrow{width:26px;height:36px;top:50px;font-size:20px;line-height:32px}
+}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
 </head>
 <body>
 <header>
-<h1>Video Studio — White Text Remover + GeoTag</h1>
-<p>Choose a video, select only the text area, preview the removal, then export.</p>
+<h1>Video White Text Remover + GeoTag</h1>
+<p>Trim + gallery-style crop + remove selected white text from every frame + editable GeoTag overlay.</p>
 </header>
 
-<div class="app">
-<aside class="card">
-<h2>1. Video</h2>
-<input id="file" type="file" accept="video/*">
-<div class="controls">
-<button id="open">Choose Video</button>
-<button id="play" disabled>Play</button>
-<button id="back" disabled>◀ Frame</button>
-<button id="next" disabled>Frame ▶</button>
+<div class="wrap">
+<div class="tabs">
+<button id="tabEdit" class="active">1. Video Edit</button>
+<button id="tabGeo" disabled>2. GeoTag</button>
 </div>
 
+<section id="editSection">
+<div class="grid">
+<aside class="card">
+<h2>Video</h2>
+<label>Choose MP4 / WebM / MOV</label>
+<input id="videoFile" type="file" accept="video/*">
+
+<div class="queue"><span id="fileName">No video selected</span><span id="durationBadge">0.0 s</span></div>
+
+<div class="section">
 <h3>Trim</h3>
 <div class="row">
-<div><label>Start</label><input id="start" type="number" min="0" step=".1" value="0"></div>
-<div><label>End</label><input id="end" type="number" min="0" step=".1" value="0"></div>
+<div><label>Start (seconds)</label><input id="trimStart" type="number" min="0" step="0.1" value="0"></div>
+<div><label>End (seconds)</label><input id="trimEnd" type="number" min="0" step="0.1" value="0"></div>
 </div>
-<div class="controls">
-<button class="secondary quick" data-s="0" data-e="10">0–10s</button>
-<button class="secondary quick" data-s="0" data-e="20">0–20s</button>
-<button class="secondary quick" data-s="0" data-e="30">0–30s</button>
+<div class="row3"><button class="secondary quickTrim" data-sec="10">10.0s</button><button class="secondary quickTrim" data-sec="20">20.0s</button><button class="secondary quickTrim" data-sec="30">30.0s</button></div>
+<div class="small">10.0 = 10 seconds, 20.0 = 20 seconds. You can use decimals such as 10.5. You can also drag the yellow handles in the gallery timeline.</div>
+<input id="trimRange" type="range" min="0" max="0" step="0.1" value="0">
+<div class="row">
+<button id="setStart" class="secondary">Set start from current</button>
+<button id="setEnd" class="secondary">Set end from current</button>
 </div>
-
-<h2 style="margin-top:18px">2. White Text Remover</h2>
-<p class="small">Click “Select Text Area”, then drag around the white date/location/speed text. Only pixels inside that box are processed.</p>
-<div class="controls">
-<button id="selectText" disabled>Select Text Area</button>
-<button id="remove" disabled>Remove White Text</button>
-<button id="clear" class="secondary" disabled>Clear</button>
 </div>
 
-<label>Detection sensitivity: <span id="sensVal">72</span></label>
-<input id="sensitivity" type="range" min="40" max="95" value="72">
-<label>Text stroke size: <span id="thickVal">3</span> px</label>
-<input id="thickness" type="range" min="1" max="7" value="3">
-<label>Reconstruction strength: <span id="growVal">2</span></label>
-<input id="grow" type="range" min="1" max="4" value="2">
-<label class="check"><input id="showMask" type="checkbox"> Show detected pixels in red</label>
-<label class="check"><input id="moving" type="checkbox" checked> Text changes while video plays</label>
+<div class="section">
+<h3>Crop</h3>
+<button id="cropMode" class="secondary">Crop: OFF</button>
+<button id="applyCrop" disabled>Apply Crop</button>
+<button id="resetCrop" class="secondary">Reset Crop</button>
+<div class="small">Turn Crop ON, then drag a rectangular box over the part you want to KEEP, like a gallery crop tool.</div>
+</div>
 
-<h3>GeoTag</h3>
-<input id="state" type="text" placeholder="State">
-<input id="district" type="text" placeholder="District" style="margin-top:6px">
-<input id="location" type="text" placeholder="Location text" style="margin-top:6px">
+<div class="section">
+<h3>White Text Removal</h3>
+<button id="removeMode" class="secondary">Select White Text Area</button>
+<button id="removeWhite" disabled>Remove White Text</button>
+<button id="clearWhite" class="secondary">Clear Selection</button>
+<label>White detection sensitivity <b id="whiteVal">115</b></label>
+<input id="whiteThreshold" type="range" min="80" max="245" value="115">
+<label>Removal strength <b id="removeOpacityVal">100%</b></label>
+<input id="removeOpacity" type="range" min="50" max="100" value="100">
+<label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
+<input id="inpaintPasses" type="range" min="1" max="8" value="5">
+<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get cloned over with real neighbouring pixels, so nothing else is blurred.</div>
+</div>
 
+<div class="section">
 <h3>Export</h3>
-<button id="export" disabled>Export Edited Video</button>
-<div class="progress"><div id="progress"></div></div>
-<div id="status" class="status">No video selected.</div>
-<div id="error" class="error"></div>
+<button id="goGeo" disabled>Continue to GeoTag →</button>
+<button id="downloadVideo" disabled>Download Video</button>
+<div id="exportStatus" class="status">Load a video to begin.</div>
+</div>
 </aside>
 
 <main class="card">
+<h2>Video Preview</h2>
 <div class="stage" id="stage">
-<canvas id="preview"></canvas>
-<div id="textBox" class="box"></div>
-<div id="cropBox" class="cropbox"></div>
+<canvas id="viewCanvas"></canvas>
+<div id="selection"></div>
 </div>
-
-<div class="controls">
-<button id="crop" disabled>Crop Mode</button>
-<button id="resetCrop" class="secondary" disabled>Reset Crop</button>
+<div class="row">
+<button id="playBtn" disabled>▶ Play</button>
+<button id="pauseBtn" class="secondary" disabled>⏸ Pause</button>
+<button id="frameBack" class="secondary" disabled>◀ Frame</button>
+<button id="frameNext" class="secondary" disabled>Frame ▶</button>
 </div>
-
-<div class="timeline">
-<canvas id="timeline"></canvas>
-<div class="timebar">
-<span id="now">0.00</span>
-<input id="seek" type="range" min="0" max="0" step=".01" value="0" disabled>
-<span id="dur">0.00</span>
-</div>
-<div class="badges"><span>Blue = current time</span><span>Yellow = trim range</span></div>
-</div>
-
-<div class="small" style="margin-top:10px">
-Export is browser-based. The text remover copies real neighbouring texture into the detected strokes instead of blurring them.
+<div class="status" id="editStatus">Select a video.</div>
+<div class="galleryTimeline">
+  <div class="timelineHead"><b>VIDEO TIMELINE <span class="badge">Like Gallery</span></b><span>Drag the yellow handles • tap anywhere to move</span></div>
+  <div id="timelineWrap">
+    <button id="timelinePrev" class="timelineArrow left" title="Previous section">‹</button>
+    <canvas id="timelineCanvas" width="1400" height="132"></canvas>
+    <button id="timelineNext" class="timelineArrow right" title="Next section">›</button>
+  </div>
+  <div class="timelineTimes"><span id="timelineStartLabel">00:00</span><span id="timelineCurrentLabel">00:00</span><span id="timelineEndLabel">00:00</span></div>
+  <div class="timelineHint">Yellow area = selected video • Yellow handles = trim • Blue line = current position</div>
 </div>
 </main>
 </div>
+</section>
 
-<video id="video" preload="auto" playsinline muted style="display:none"></video>
+<section id="geoSection">
+  <div class="geoPage">
+    <!-- Video preview first -->
+    <main class="card geoPreviewCard">
+      <div class="geoPreviewHead">
+        <div>
+          <h2>GeoTag Preview</h2>
+          <div id="geoCounter" class="badge">Video not ready</div>
+        </div>
+        <div class="geoPreviewHint">Drag the map on the preview to move it. Drag its bottom-right corner to resize it.</div>
+      </div>
+      <div class="stage"><canvas id="geoCanvas"></canvas></div>
+      <div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
+    </main>
+
+    <!-- Overlay + logo directly below the video -->
+    <div class="geoOptionGrid">
+      <div class="card geoOptionCard">
+        <h3>Overlay</h3>
+        <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
+        <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
+        <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
+        <div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
+        <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
+        <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
+      </div>
+
+      <div class="card geoOptionCard">
+        <h3>Blue Camera Logo Position</h3>
+        <div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
+        <div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
+        <div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
+      </div>
+    </div>
+
+    <!-- Compact location/date controls below the main options -->
+    <div class="geoInfoGrid">
+      <div class="card">
+        <h3>Location</h3>
+        <div class="geoFields3">
+          <div><label>State</label><input id="gState" type="text" value="Jammu and Kashmir"></div>
+          <div><label>District / Town</label><input id="gPlace" type="text" value="Beerwah"></div>
+          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
+        </div>
+        <button id="findLocation">📍 Find Location</button>
+        <div id="gCoords" class="status">Enter a location and press Find Location.</div>
+        <div class="runningBox">
+          <h3>Running Latitude / Longitude</h3>
+          <div class="small">Latitude and longitude move continuously while the video plays and exports.</div>
+          <div class="row">
+            <div><label>Start Latitude</label><input id="startLat" type="number" step="0.000001" placeholder="34.014362"></div>
+            <div><label>Start Longitude</label><input id="startLon" type="number" step="0.000001" placeholder="74.592252"></div>
+            <div><label>End Latitude</label><input id="endLat" type="number" step="0.000001" placeholder="34.020000"></div>
+            <div><label>End Longitude</label><input id="endLon" type="number" step="0.000001" placeholder="74.610000"></div>
+          </div>
+          <button id="useCurrentAsStart" class="secondary">Use Found Location as Start</button>
+          <button id="useCurrentAsEnd" class="secondary">Use Found Location as End</button>
+          <div id="runningCoords" class="status">Running Lat —° Long —°</div>
+        </div>
+        <canvas id="mapPreview"></canvas>
+      </div>
+
+      <div class="card geoDateCard">
+        <h3>Date &amp; Moving Time</h3>
+        <div class="row">
+          <div><label>Date</label><input id="gDate" type="date"></div>
+          <div><label>Start Time</label><input id="gTime" type="time" step="1"></div>
+        </div>
+        <div class="small">During export, the displayed time advances with the video.</div>
+        <div class="geoActions">
+          <button id="backEdit" class="secondary">← Back</button>
+          <button id="exportGeo">⬇ Render GeoTagged Video</button>
+          <button id="downloadGeo" disabled>⬇ Download GeoTagged Video</button>
+        </div>
+        <div id="geoStatus" class="status">Find a location, then export.</div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<video id="video" playsinline preload="metadata" style="display:none"></video>
+<canvas id="workCanvas" style="display:none"></canvas>
+<canvas id="logoCanvas" width="200" height="120"></canvas>
 
 <script>
-"use strict";
+const $=id=>document.getElementById(id);
+const video=$('video'), view=$('viewCanvas'), vctx=view.getContext('2d',{willReadFrequently:true});
+const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true});
+const geo=$('geoCanvas'), gctx=geo.getContext('2d',{willReadFrequently:true});
+// The export/white-text-removal canvas is read repeatedly with getImageData.
+// Keep this context explicitly optimized for readback-heavy processing.
+if(!wctx) throw new Error('Export canvas context unavailable');
+const stage=$('stage'), selBox=$('selection');
 
-const $ = id => document.getElementById(id);
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let file=null, videoURL=null, duration=0, playing=false;
+let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
+let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
+let startLat=null, startLon=null, endLat=null, endLon=null;
+let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
+let outputW=0, outputH=0;
+let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
-const video=$("video"), preview=$("preview"), pctx=preview.getContext("2d",{willReadFrequently:true});
-const timeline=$("timeline"), tctx=timeline.getContext("2d");
-const stage=$("stage");
-
-let objectURL=null, duration=0, raf=0, ready=false;
-let textRect=null, cropRect=null, selectingText=false, selectingCrop=false, dragStart=null;
-let removed=false, cachedMask=null, cachedSource=null, cachedW=0, cachedH=0;
-let mapState={state:"",district:"",location:""};
-
-function status(s){$("status").textContent=s}
-function error(s){$("error").style.display="block";$("error").textContent=s}
-function clearError(){$("error").style.display="none";$("error").textContent=""}
-function enableControls(on){
-  ["play","back","next","selectText","remove","clear","crop","resetCrop","export","seek"].forEach(id=>$(id).disabled=!on);
-}
-function setProgress(x){$("progress").style.width=clamp(x,0,100)+"%"}
-
-$("open").onclick=()=>$("file").click();
-$("file").onchange=e=>{
-  const f=e.target.files[0]; if(!f)return;
-  clearError();
-  if(objectURL)URL.revokeObjectURL(objectURL);
-  objectURL=URL.createObjectURL(f);
-  video.src=objectURL;
-  video.load();
-  status("Loading "+f.name+"...");
+const state={
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:30,mapH:35,
+ logoX:90,logoY:50,logoSize:70
 };
 
-video.onloadedmetadata=()=>{
-  duration=video.duration||0;
-  ready=true;
-  $("start").value="0";
-  $("end").value=duration.toFixed(2);
-  $("seek").max=duration;
-  $("seek").value=0;
-  $("dur").textContent=duration.toFixed(2);
-  enableControls(true);
-  textRect=null; cropRect=null; removed=false;
-  cachedMask=null; cachedSource=null;
-  drawFrame();
-  drawTimeline();
-  status("Video loaded. Select the white text area.");
-};
-
-video.onerror=()=>{
-  error("The browser could not decode this video. Try MP4/H.264 or WebM.");
-  status("Video load failed.");
-};
-
-function fit(){
-  if(!video.videoWidth)return;
-  const maxW=Math.min(stage.clientWidth-4,1280);
-  const maxH=Math.min(window.innerHeight*.68,720);
-  const s=Math.min(maxW/video.videoWidth,maxH/video.videoHeight,1);
-  preview.width=Math.max(2,Math.round(video.videoWidth*s));
-  preview.height=Math.max(2,Math.round(video.videoHeight*s));
+function fmt(n){return Number(n||0).toFixed(1)}
+function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
+function setToday(){
+ const d=new Date();
+ $('gDate').value=d.toISOString().slice(0,10);
+ $('gTime').value=[d.getHours(),d.getMinutes(),d.getSeconds()].map((x,i)=>String(x).padStart(i===0?2:2,'0')).join(':');
 }
-window.onresize=()=>{if(ready){fit();drawFrame();drawTimeline()}};
+setToday();
 
-function cropSourceRect(){
-  if(!cropRect)return {x:0,y:0,w:video.videoWidth,h:video.videoHeight};
-  return {
-    x:clamp(Math.round(cropRect.x/videoScaleX()),0,video.videoWidth-1),
-    y:clamp(Math.round(cropRect.y/videoScaleY()),0,video.videoHeight-1),
-    w:clamp(Math.round(cropRect.w/videoScaleX()),1,video.videoWidth),
-    h:clamp(Math.round(cropRect.h/videoScaleY()),1,video.videoHeight)
-  };
+function setStatus(t){$('editStatus').textContent=t}
+function resizePreview(){
+ if(!video.videoWidth)return;
+ const max=1100, s=Math.min(1,max/video.videoWidth);
+ view.width=Math.max(1,Math.round(video.videoWidth*s));
+ view.height=Math.max(1,Math.round(video.videoHeight*s));
+ drawPreview();
 }
-function videoScaleX(){return preview.width/video.videoWidth}
-function videoScaleY(){return preview.height/video.videoHeight}
+function sourceRect(){
+ const W=video.videoWidth,H=video.videoHeight;
+ if(!crop)return {x:0,y:0,w:W,h:H};
+ return crop;
+}
+function drawBase(ctx2,W,H){
+ const r=sourceRect();
+ ctx2.clearRect(0,0,W,H);
+ ctx2.drawImage(video,r.x,r.y,r.w,r.h,0,0,W,H);
+}
+function isWhite(data,i,t){
+ const r=data[i],g=data[i+1],b=data[i+2];
+ const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+ // Neutral check keeps this from flagging saturated bright colors (yellow
+ // vests, orange signage) while still catching real white/light-gray text,
+ // including the slightly off-white/gray tint video compression adds.
+ const neutral=(mx-mn)<=95;
+ const brightness=(r+g+b)/3;
+ return neutral && (mx>=t || brightness>=t-15);
+}
+function removeWhiteFromCanvas(ctx2,W,H,rect){
+ if(!rect)return;
+ const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
+ const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
+ if(x1<=x0||y1<=y0)return;
+ const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
+ const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
+ const W2=x1-x0,H2=y1-y0,N=W2*H2;
+ const mask=new Uint8Array(N);
+ for(let y=0;y<H2;y++){
+   for(let x=0;x<W2;x++){
+     const p=y*W2+x,i=p*4;
+     if(isWhite(d,i,t)) mask[p]=1;
+   }
+ }
+ const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
+ const expanded=new Uint8Array(mask);
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x; if(mask[p]){
+     for(let dy=-grow;dy<=grow;dy++) for(let dx=-grow;dx<=grow;dx++){
+       if(dx*dx+dy*dy>grow*grow+1)continue;
+       const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
+     }
+   }
+ }
+ const out=new Uint8ClampedArray(d);
+ const maxSearch=60;
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x; if(!expanded[p])continue;
+   let sr=0,sg=0,sb=0,n=0;
+   for(let k=1;k<=maxSearch;k++){const xx=x-k;if(xx<0)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const xx=x+k;if(xx>=W2)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const yy=y-k;if(yy<0)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   for(let k=1;k<=maxSearch;k++){const yy=y+k;if(yy>=H2)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
+   if(n){
+     const i=p*4,a=strength;
+     out[i]=d[i]*(1-a)+(sr/n)*a;
+     out[i+1]=d[i+1]*(1-a)+(sg/n)*a;
+     out[i+2]=d[i+2]*(1-a)+(sb/n)*a;
+   }
+ }
+ ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
+}
+function drawPreview(){
+ if(!video.videoWidth)return;
+ const r=sourceRect();
+ const s=Math.min(1,1100/r.w);
+ view.width=Math.round(r.w*s);view.height=Math.round(r.h*s);
+ vctx.clearRect(0,0,view.width,view.height);
+ vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
+ if(whiteRect){
+   const wr=whiteRect;
+   removeWhiteFromCanvas(vctx,view.width,view.height,{
+     x:wr.x/r.w*view.width,
+     y:wr.y/r.h*view.height,
+     w:wr.w/r.w*view.width,
+     h:wr.h/r.h*view.height
+   });
+ }
+}
+function updateSelectionBox(){
+ if(!selecting && !whiteRect && !crop)return;
+ const r=sourceRect();
+ const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
+ let q=whiteRect||crop;
+ if(!q){selBox.style.display='none';return}
+ const x=C.left-R.left+q.x/r.w*C.width;
+ const y=C.top-R.top+q.y/r.h*C.height;
+ const w=q.w/r.w*C.width,h=q.h/r.h*C.height;
+ selBox.style.left=x+'px';selBox.style.top=y+'px';selBox.style.width=w+'px';selBox.style.height=h+'px';selBox.style.display='block';
+}
+function pointerPos(e){
+ const R=view.getBoundingClientRect(),r=sourceRect();
+ return {x:clamp((e.clientX-R.left)/R.width*r.w,0,r.w),y:clamp((e.clientY-R.top)/R.height*r.h,0,r.h)}
+}
+view.addEventListener('pointerdown',e=>{
+ if(!cropMode&&!removeMode)return;
+ selecting=true;view.setPointerCapture(e.pointerId);
+ const p=pointerPos(e);sx=p.x;sy=p.y;selBox.style.display='block';
+});
+view.addEventListener('pointermove',e=>{
+ if(!selecting)return;
+ const p=pointerPos(e);
+ const q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
+ const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
+ selBox.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
+ selBox.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
+ selBox.style.width=(q.w/r.w*C.width)+'px';selBox.style.height=(q.h/r.h*C.height)+'px';
+});
+view.addEventListener('pointerup',e=>{
+ if(!selecting)return;selecting=false;
+ const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
+ if(q.w<5||q.h<5){return}
+ if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
+ if(removeMode){whiteRect={...q};$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
+ updateSelectionBox();
+});
 
-function drawBase(ctx,w,h){
-  ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
-  if(video.readyState>=2)ctx.drawImage(video,0,0,w,h);
+function timelineFmt(sec){
+  sec=Math.max(0,Number(sec)||0); const m=Math.floor(sec/60), s=Math.floor(sec%60);
+  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
 }
+function drawTimeline(){
+  const c=$('timelineCanvas'),ctx=c.getContext('2d');
+  const W=c.width,H=c.height; ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#05090d';ctx.fillRect(0,0,W,H);
+  const top=27, thumbH=76, frames=timelineFrames;
 
-function rectToCanvas(r){
-  return {x:r.x*videoScaleX(),y:r.y*videoScaleY(),w:r.w*videoScaleX(),h:r.h*videoScaleY()};
-}
-function normalizedRect(a,b){
-  const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);
-  return {x,y,w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)};
-}
-
-function applyGeo(ctx,w,h){
-  const s=(($("state").value||"")+" "+($("district").value||"")+" "+($("location").value||"")).trim();
-  if(!s)return;
-  const lines=[];
-  if($("state").value)lines.push("State: "+$("state").value);
-  if($("district").value)lines.push("District: "+$("district").value);
-  if($("location").value)lines.push($("location").value);
-  ctx.save();
-  ctx.font=Math.max(16,Math.round(w/65))+"px Arial";
-  ctx.textAlign="right";
-  ctx.textBaseline="bottom";
-  let y=h-18;
-  for(let i=lines.length-1;i>=0;i--){
-    ctx.lineWidth=5;ctx.strokeStyle="rgba(0,0,0,.8)";ctx.strokeText(lines[i],w-18,y);
-    ctx.fillStyle="#fff";ctx.fillText(lines[i],w-18,y);y-=Math.max(22,w/45);
+  if(frames.length){
+    const fw=W/frames.length;
+    frames.forEach((im,i)=>{
+      const x=i*fw;
+      ctx.drawImage(im,x,top,Math.ceil(fw)+1,thumbH);
+      ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(x+fw-1,top,1,thumbH);
+    });
+  }else{
+    ctx.fillStyle='#18232d';ctx.fillRect(0,top,W,thumbH);
+    ctx.fillStyle='#72808c';ctx.font='14px Arial';ctx.fillText('Load a video to create the gallery timeline',20,top+40);
   }
+  if(!duration){return;}
+
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start,duration);
+  const cur=clamp(video.currentTime||0,0,duration);
+  const xS=start/duration*W,xE=end/duration*W,xC=cur/duration*W;
+
+  ctx.fillStyle='rgba(0,0,0,.68)';
+  if(xS>0)ctx.fillRect(0,top,xS,thumbH);
+  if(xE<W)ctx.fillRect(xE,top,W-xE,thumbH);
+
+  ctx.strokeStyle='#ffd400';ctx.lineWidth=4;
+  ctx.strokeRect(Math.max(1,xS),top+1,Math.max(2,xE-xS-2),thumbH-2);
+
+  [xS,xE].forEach(x=>{
+    ctx.fillStyle='#ffd400';ctx.fillRect(x-5,top-6,10,thumbH+12);
+    ctx.fillStyle='#222';ctx.fillRect(x-2,top+24,4,28);
+    ctx.beginPath();ctx.moveTo(x-5,top-9);ctx.lineTo(x+5,top-9);ctx.lineTo(x,top-3);ctx.closePath();ctx.fillStyle='#ffd400';ctx.fill();
+  });
+
+  ctx.font='10px Arial';ctx.textAlign='center';
+  const tickCount=Math.min(12,Math.max(5,Math.ceil(duration/5)+1));
+  for(let i=0;i<tickCount;i++){
+    const t=duration*i/(tickCount-1||1),x=t/duration*W;
+    ctx.strokeStyle='rgba(210,220,230,.35)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,18);ctx.lineTo(x,25);ctx.stroke();
+    ctx.fillStyle='#9ba8b3';ctx.fillText(timelineFmt(t),x,12);
+  }
+  ctx.textAlign='start';
+
+  ctx.strokeStyle='#1597ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(xC,17);ctx.lineTo(xC,H-8);ctx.stroke();
+  ctx.fillStyle='#1597ff';ctx.beginPath();ctx.moveTo(xC-7,17);ctx.lineTo(xC+7,17);ctx.lineTo(xC,25);ctx.closePath();ctx.fill();
+
+  const label=timelineFmt(cur);ctx.font='bold 12px Arial';const tw=ctx.measureText(label).width+16;
+  const bx=clamp(xC-tw/2,2,W-tw-2);ctx.fillStyle='#253542';
+  roundRect(ctx,bx,0,tw,18,4);ctx.fill();
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(label,bx+tw/2,13);ctx.textAlign='start';
+
+  $('timelineStartLabel').textContent=timelineFmt(start);
+  $('timelineCurrentLabel').textContent=timelineFmt(cur);
+  $('timelineEndLabel').textContent=timelineFmt(end);
+}
+function roundRectCorners(ctx,x,y,w,h,tl,tr,br,bl){
+  ctx.beginPath();
+  ctx.moveTo(x+tl,y);
+  ctx.lineTo(x+w-tr,y);
+  ctx.arcTo(x+w,y,x+w,y+tr,tr);
+  ctx.lineTo(x+w,y+h-br);
+  ctx.arcTo(x+w,y+h,x+w-br,y+h,br);
+  ctx.lineTo(x+bl,y+h);
+  ctx.arcTo(x,y+h,x,y+h-bl,bl);
+  ctx.lineTo(x,y+tl);
+  ctx.arcTo(x,y,x+tl,y,tl);
+  ctx.closePath();
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+async function buildTimeline(){
+  if(!duration||!video.videoWidth)return;
+  timelineFrames=[];timelineReady=false;drawTimeline();
+  const saved=video.currentTime;
+  const n=Math.min(18,Math.max(8,Math.ceil(duration/2)));
+  for(let i=0;i<n;i++){
+    const t=duration*(i/(n-1||1));
+    video.currentTime=t;
+    await new Promise(res=>{const f=()=>res();video.addEventListener('seeked',f,{once:true});setTimeout(res,250)});
+    const im=document.createElement('canvas');
+    const w=120,h=Math.max(68,Math.round(120*video.videoHeight/video.videoWidth));im.width=w;im.height=76;
+    const ictx=im.getContext('2d');
+    ictx.fillStyle='#111';ictx.fillRect(0,0,w,76);
+    const scale=Math.min(w/video.videoWidth,76/video.videoHeight);const dw=video.videoWidth*scale,dh=video.videoHeight*scale;
+    ictx.drawImage(video,(w-dw)/2,(76-dh)/2,dw,dh);timelineFrames.push(im);
+    drawTimeline();
+  }
+  video.currentTime=clamp(saved,0,duration);timelineReady=true;drawTimeline();
+}
+function timelineTimeFromEvent(e){
+  const r=$('timelineCanvas').getBoundingClientRect();return clamp((e.clientX-r.left)/r.width,0,1)*duration;
+}
+$('timelineCanvas').addEventListener('pointerdown',e=>{
+  if(!duration)return;
+  const t=timelineTimeFromEvent(e),start=+$('trimStart').value||0,end=+$('trimEnd').value||duration;
+  const r=$('timelineCanvas').getBoundingClientRect(),px=t/duration*r.width,ps=start/duration*r.width,pe=end/duration*r.width;
+  if(Math.abs(px-ps)<18)timelineDragging='start';
+  else if(Math.abs(px-pe)<18)timelineDragging='end';
+  else timelineDragging='playhead';
+  $('timelineCanvas').setPointerCapture(e.pointerId);
+  timelineMove(e);
+});
+function timelineMove(e){
+  if(!timelineDragging||!duration)return;
+  const t=timelineTimeFromEvent(e),step=.1;
+  if(timelineDragging==='start'){
+    const end=+$('trimEnd').value||duration; $('trimStart').value=fmt(Math.min(t,end-.1));
+    if(video.currentTime<+$('trimStart').value)video.currentTime=+$('trimStart').value;
+  }else if(timelineDragging==='end'){
+    const start=+$('trimStart').value||0; $('trimEnd').value=fmt(Math.max(t,start+.1));
+    if(video.currentTime>+$('trimEnd').value)video.currentTime=+$('trimEnd').value;
+  }else{
+    video.currentTime=clamp(t,+$('trimStart').value||0,+$('trimEnd').value||duration);
+  }
+  drawTimeline();drawPreview();drawGeoPreview();
+}
+$('timelineCanvas').addEventListener('pointermove',timelineMove);
+$('timelineCanvas').addEventListener('pointerup',()=>timelineDragging=null);
+$('timelineCanvas').addEventListener('pointercancel',()=>timelineDragging=null);
+$('timelinePrev').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)-5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
+$('timelineNext').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)+5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
+
+document.querySelectorAll('.quickTrim').forEach(btn=>btn.addEventListener('click',()=>{
+ const sec=Math.min(+$('durationBadge').textContent||duration,+btn.dataset.sec); $('trimStart').value='0.0'; $('trimEnd').value=fmt(Math.min(duration,+btn.dataset.sec)); video.currentTime=0; drawTimeline();
+}));
+$('videoFile').addEventListener('change',()=>{
+ file=$('videoFile').files[0]; if(!file)return;
+ if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
+ $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
+});
+video.addEventListener('loadedmetadata',()=>{
+ duration=video.duration||0;
+ $('durationBadge').textContent=fmt(duration)+' s';
+ $('trimStart').value='0';$('trimEnd').value=fmt(duration);
+ $('trimRange').max=duration; $('trimRange').value=0;
+ resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
+ $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
+ buildTimeline();
+});
+video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
+video.addEventListener('play',()=>{playing=true;});
+video.addEventListener('pause',()=>{playing=false;});
+$('trimRange').addEventListener('input',()=>{video.currentTime=+$('trimRange').value;drawTimeline()});
+$('trimStart').addEventListener('input',()=>{let v=clamp(+$('trimStart').value||0,0,duration);let e=+$('trimEnd').value||duration;if(v>=e)v=Math.max(0,e-.1);$('trimStart').value=fmt(v);if(video.currentTime<v)video.currentTime=v;drawTimeline()});
+$('trimEnd').addEventListener('input',()=>{let v=clamp(+$('trimEnd').value||duration,0,duration);let s=+$('trimStart').value||0;if(v<=s)v=Math.min(duration,s+.1);$('trimEnd').value=fmt(v);if(video.currentTime>v)video.currentTime=v;drawTimeline()});
+$('setStart').onclick=()=>{$('trimStart').value=fmt(clamp(video.currentTime,0,(+$('trimEnd').value||duration)-.1));drawTimeline()}
+$('setEnd').onclick=()=>{$('trimEnd').value=fmt(clamp(video.currentTime,(+$('trimStart').value||0)+.1,duration));drawTimeline()}
+$('playBtn').onclick=()=>video.play();
+$('pauseBtn').onclick=()=>video.pause();
+$('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.currentTime-1/30)}
+$('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
+$('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
+$('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
+$('applyCrop').onclick=()=>{if(!crop)return;const old=sourceRect();crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
+$('removeWhite').onclick=()=>{if(!whiteRect)return;setStatus('White-text removal will be applied to every frame during export.');drawPreview()}
+$('clearWhite').onclick=()=>{whiteRect=null;$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
+$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;drawPreview()}
+$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';drawPreview()}
+$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;drawPreview()}
+
+function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
+function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
+function formatMovingTime(base,delta){
+ let t=parseStartTime(base)+Math.max(0,delta),h=Math.floor(t/3600)%24,m=Math.floor(t/60)%60,s=Math.floor(t%60);
+ return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function wrapText(ctx,text,max,font,maxLines=3){
+ ctx.font=font;const words=String(text||'').trim().split(/\s+/),lines=[];let line='';
+ for(const word of words){const test=line?line+' '+word:word;if(ctx.measureText(test).width>max&&line){lines.push(line);line=word;if(lines.length>=maxLines)break}else line=test}
+ if(line&&lines.length<maxLines)lines.push(line);return lines;
+}
+function drawLogo(ctx,x,y,size){
+  ctx.save();
+  ctx.translate(x,y);
+  const r=Math.max(8,size*.18);
+  ctx.fillStyle='#149bd3';
+  ctx.beginPath();
+  ctx.roundRect(-size/2,-size/2,size,size,r);
+  ctx.fill();
+
+  const bodyW=size*.68, bodyH=size*.40, bodyX=-bodyW/2, bodyY=-bodyH/2+size*.035;
+  ctx.fillStyle='#fff';
+  ctx.beginPath();
+  ctx.roundRect(bodyX,bodyY,bodyW,bodyH,Math.max(3,size*.025));
+  ctx.fill();
+
+  const bumpW=size*.25, bumpH=size*.10;
+  ctx.beginPath();
+  ctx.roundRect(-bumpW*.42,bodyY-bumpH*.72,bumpW,bumpH,Math.max(2,size*.015));
+  ctx.fill();
+
+  ctx.fillStyle='#149bd3';
+  ctx.beginPath();
+  ctx.arc(0,bodyY+bodyH/2,size*.145,0,Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle='#fff';
+  ctx.lineWidth=Math.max(2,size*.035);
+  ctx.beginPath();
+  ctx.arc(0,bodyY+bodyH/2,size*.19,0,Math.PI*2);
+  ctx.stroke();
   ctx.restore();
 }
+async function findLocation(){
+ const q=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+ if(!q){$('gCoords').textContent='Enter a district/town.';return}
+ $('gCoords').textContent='Finding location…';
+ try{
+  const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
+  const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
+  lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
+  if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
+  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
+  mapImg=await makeMap(lat,lon);
+  loadRealGPSRoute();drawGeoPreview();
+ }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
+}
+$('findLocation').onclick=findLocation;
 
-/* ---------- WHITE TEXT DETECTOR ---------- */
-/* Detects bright, low-colour pixels that are brighter than their local
-   neighbourhood. This is much more useful for white date/GPS text than
-   simply checking for white pixels. */
-function detectTextMask(data,w,h,roi){
-  const mask=new Uint8Array(w*h);
-  const lum=new Float32Array(w*h);
+function tileXY(lat,lon,z){
+ const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
+}
+async function makeMap(lat,lon){
+ const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
+ const c=document.createElement('canvas');c.width=size;c.height=size;
+ const cctx=c.getContext('2d');
+ cctx.clearRect(0,0,size,size);
 
-  const sens=+$("sensitivity").value;
-  const thick=+$("thickness").value;
-  const threshold=205-(sens-40)*0.72; // 205..165
-  const x0=clamp(Math.floor(roi.x),1,w-2), y0=clamp(Math.floor(roi.y),1,h-2);
-  const x1=clamp(Math.ceil(roi.x+roi.w),1,w-1), y1=clamp(Math.ceil(roi.y+roi.h),1,h-1);
+ // Load all 25 tiles in parallel. The old version loaded them one-by-one,
+ // which made the map take a long time to become available. Export waits for
+ // this function, so the very first exported frame can contain the map.
+ const jobs=[];
+ for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+   jobs.push(new Promise(res=>{
+     const im=new Image();
+     im.crossOrigin='anonymous';
+     const draw=()=>{
+       try{
+         cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);
+       }catch(e){}
+       res();
+     };
+     im.onload=draw;
+     im.onerror=()=>res();
+     im.src=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
+   }));
+ }
+ await Promise.all(jobs);
 
-  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-    const p=y*w+x,i=p*4;
-    const R=data[i],G=data[i+1],B=data[i+2];
-    lum[p]=.299*R+.587*G+.114*B;
-  }
-
-  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-    const p=y*w+x,i=p*4;
-    const R=data[i],G=data[i+1],B=data[i+2],L=lum[p];
-    const mx=Math.max(R,G,B),mn=Math.min(R,G,B);
-    const chroma=mx-mn;
-    if(L<threshold || chroma>78)continue;
-
-    let dark1=0,dark2=0,local=0,n=0;
-    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-      if(!dx&&!dy)continue;
-      const q=(y+dy)*w+x+dx,qL=lum[q];
-      local+=qL;n++;
-      if(L-qL>=8)dark2++;
-    }
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      if(!dx&&!dy){
-        continue;
-      }
-      const q=(y+dy)*w+x+dx;
-      if(L-lum[q]>=5)dark1++;
-    }
-    const avg=local/n;
-    if(dark1>=1 || dark2>=3 || L-avg>=7)mask[p]=1;
-  }
-
-  // Grow only a little. This catches anti-aliased white text edges without
-  // turning the whole selected rectangle into one giant mask.
-  const out=mask.slice();
-  for(let pass=0;pass<Math.min(2,Math.max(1,Math.round(thick/3)));pass++){
-    for(let y=y0+1;y<y1-1;y++)for(let x=x0+1;x<x1-1;x++){
-      const p=y*w+x;if(out[p])continue;
-      let n=0;
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(mask[(y+dy)*w+x+dx])n++;
-      if(n>=2){
-        const i=p*4,R=data[i],G=data[i+1],B=data[i+2];
-        const L=.299*R+.587*G+.114*B;
-        if(L>145)out[p]=1;
-      }
-    }
-    mask.set(out);
-  }
-  return mask;
+ cctx.fillStyle='#e53935';
+ cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();
+ cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
+ cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);
+ cctx.fillStyle='#333';cctx.font='12px Arial';
+ cctx.fillText('© OpenStreetMap contributors',12,size-14);
+ return c;
 }
 
-/* Patch reconstruction:
-   - never averages the text itself
-   - uses original pixels only
-   - searches real nearby texture
-   - copies a matching source pixel/patch
-   - fills boundary inward so newly filled pixels are not reused as sources */
-function reconstruct(data,w,h,mask){
-  const out=new Uint8ClampedArray(data);
-  const known=new Uint8Array(w*h);
-  for(let p=0;p<w*h;p++)known[p]=mask[p]?0:1;
-
-  const offsets=[];
-  for(let r=3;r<=32;r+=3){
-    offsets.push(
-      [r,0],[-r,0],[0,r],[0,-r],
-      [r,r],[-r,r],[r,-r],[-r,-r],
-      [Math.round(r*.7),r],[-Math.round(r*.7),r],
-      [Math.round(r*.7),-r],[-Math.round(r*.7),-r]
-    );
-  }
-
-  const inside=(x,y)=>x>=0&&y>=0&&x<w&&y<h;
-
-  // Process from the outside of the mask toward its centre.
-  let remaining=0;
-  for(let p=0;p<w*h;p++)if(mask[p])remaining++;
-
-  const maxRounds=70;
-  for(let round=0;round<maxRounds&&remaining>0;round++){
-    const frontier=[];
-    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
-      const p=y*w+x;
-      if(!mask[p]||known[p])continue;
-      let near=0;
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)
-        if(known[(y+dy)*w+x+dx])near++;
-      if(near)frontier.push([x,y]);
-    }
-    if(!frontier.length)break;
-
-    for(const [x,y] of frontier){
-      const p=y*w+x;
-      let best=null,bestScore=1e20;
-
-      // Compare a small cross/patch around target with the candidate source.
-      // Only compare pixels that are known in the target patch.
-      for(const [ox,oy] of offsets){
-        const sx=x+ox,sy=y+oy;
-        if(!inside(sx,sy))continue;
-        const sp=sy*w+sx;
-        if(!known[sp])continue;
-
-        let score=0,n=0;
-        for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-          const tx=x+dx,ty=y+dy;
-          const cx=sx+dx,cy=sy+dy;
-          if(!inside(tx,ty)||!inside(cx,cy))continue;
-          const tp=ty*w+tx;
-          if(!known[tp])continue;
-          const ti=tp*4,ci=(cy*w+cx)*4;
-          const dr=data[ti]-data[ci],dg=data[ti+1]-data[ci+1],db=data[ti+2]-data[ci+2];
-          score+=dr*dr+dg*dg+db*db;n++;
-        }
-        if(!n)continue;
-
-        // Prefer closer sources when texture scores are similar.
-        score=score/n + (Math.abs(ox)+Math.abs(oy))*2.2;
-        if(score<bestScore){bestScore=score;best=[sx,sy]}
-      }
-
-      if(!best){
-        // Small local fallback, never a large rectangular fill.
-        for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]){
-          const sx=x+dx,sy=y+dy;
-          if(inside(sx,sy)&&known[sy*w+sx]){best=[sx,sy];break}
-        }
-      }
-
-      if(best){
-        const si=(best[1]*w+best[0])*4,di=p*4;
-        out[di]=data[si];out[di+1]=data[si+1];out[di+2]=data[si+2];out[di+3]=data[si+3];
-        known[p]=1;remaining--;
-      }
-    }
-  }
-  return out;
+function readRunningCoords(){
+  startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
+  endLat=parseFloat($('endLat').value); endLon=parseFloat($('endLon').value);
+  return [startLat,startLon].every(Number.isFinite);
 }
 
-function showMaskOnCanvas(ctx,w,h,mask){
-  const img=ctx.getImageData(0,0,w,h);
-  for(let p=0;p<w*h;p++)if(mask[p]){
-    const i=p*4;
-    img.data[i]=255;img.data[i+1]=25;img.data[i+2]=25;img.data[i+3]=220;
-  }
-  ctx.putImageData(img,0,0);
+// Build a route from real roads using OpenStreetMap's public OSRM routing
+// service. The GeoTag then follows the returned road geometry instead of
+// drawing an artificial straight line between two coordinates.
+async function loadRealGPSRoute(){
+  if(!readRunningCoords()) return;
+  if(!Number.isFinite(endLat)||!Number.isFinite(endLon)) return;
+  const key=[startLat,startLon,endLat,endLon].map(v=>v.toFixed(6)).join(',');
+  if(key===gpsRouteKey || gpsRouteLoading) return;
+  gpsRouteLoading=true;
+  $('runningCoords').textContent='Loading real road route…';
+  try{
+    const url='https://router.project-osrm.org/route/v1/driving/'+
+      `${startLon},${startLat};${endLon},${endLat}`+
+      '?overview=full&geometries=geojson&steps=false';
+    const r=await fetch(url,{headers:{Accept:'application/json'}});
+    if(!r.ok) throw Error('Route request failed');
+    const j=await r.json();
+    if(j.code!=='Ok'||!j.routes?.[0]?.geometry?.coordinates?.length) throw Error('No route');
+
+    gpsRoute=j.routes[0].geometry.coordinates.map(([lo,la])=>({lat:la,lon:lo}));
+    gpsRouteDistances=[0];
+    for(let i=1;i<gpsRoute.length;i++){
+      gpsRouteDistances[i]=gpsRouteDistances[i-1]+gpsDistanceMeters(
+        gpsRoute[i-1].lat,gpsRoute[i-1].lon,gpsRoute[i].lat,gpsRoute[i].lon
+      );
+    }
+    gpsRouteTotal=gpsRouteDistances[gpsRouteDistances.length-1]||0;
+    gpsRouteKey=key;
+    $('runningCoords').textContent='Real road GPS route loaded';
+    drawGeoPreview();
+  }catch(e){
+    gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;gpsRouteKey='';
+    $('runningCoords').textContent='Road route unavailable — using smooth GPS movement';
+    drawGeoPreview();
+  }finally{gpsRouteLoading=false;}
 }
 
-function processFrameCanvas(ctx,w,h){
-  drawBase(ctx,w,h);
-  if(!textRect)return;
+function gpsDistanceMeters(aLat,aLon,bLat,bLon){
+  const R=6371000, p1=aLat*Math.PI/180, p2=bLat*Math.PI/180;
+  const dp=(bLat-aLat)*Math.PI/180, dl=(bLon-aLon)*Math.PI/180;
+  const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
 
-  const roi={
-    x:Math.floor(textRect.x),
-    y:Math.floor(textRect.y),
-    w:Math.floor(textRect.w),
-    h:Math.floor(textRect.h)
+function getRoutePoint(progress){
+  if(!gpsRoute.length) return null;
+  if(progress<=0) return gpsRoute[0];
+  if(progress>=1) return gpsRoute[gpsRoute.length-1];
+  const target=progress*gpsRouteTotal;
+  let lo=0,hi=gpsRouteDistances.length-1;
+  while(lo<hi){
+    const mid=(lo+hi)>>1;
+    if(gpsRouteDistances[mid]<target) lo=mid+1; else hi=mid;
+  }
+  const i=Math.max(1,lo), a=gpsRoute[i-1], b=gpsRoute[i];
+  const span=Math.max(0.000001,gpsRouteDistances[i]-gpsRouteDistances[i-1]);
+  const t=(target-gpsRouteDistances[i-1])/span;
+  return {lat:a.lat+(b.lat-a.lat)*t,lon:a.lon+(b.lon-a.lon)*t};
+}
+
+// If a road route is available, use it. Otherwise use a gentle curved
+// fallback so the coordinates still move naturally when the routing service
+// is temporarily unavailable.
+function getRunningCoords(seconds){
+  const trimStart=+$('trimStart').value||0;
+  const trimEnd=+$('trimEnd').value||duration;
+  const length=Math.max(0.001,trimEnd-trimStart);
+  const p=clamp(seconds/length,0,1);
+  if(!readRunningCoords()) return {lat,lon};
+
+  // GPS-style wandering path. The coordinate does NOT move in a straight
+  // line. It makes small, smooth changes and comes back exactly to the
+  // starting point at the middle of the video, then starts wandering again.
+  // The seed keeps the path stable during preview/export instead of changing
+  // randomly on every frame.
+  const seed=(startLat*1000003+startLon*9176+(endLat||0)*37+(endLon||0)*13);
+  const rand=(n)=>{
+    const x=Math.sin(seed+n*12.9898)*43758.5453;
+    return x-Math.floor(x);
   };
-  if(roi.w<3||roi.h<3)return;
 
-  const img=ctx.getImageData(0,0,w,h);
-  const mask=detectTextMask(img.data,w,h,roi);
-  let count=0;for(const v of mask)count+=v;
-  if(!count)return;
+  const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
+  const mToLat=m=>m/111320;
+  const mToLon=m=>m/(111320*cosLat);
 
-  const cleaned=reconstruct(img.data,w,h,mask);
-  const out=new ImageData(cleaned,w,h);
-  ctx.putImageData(out,0,0);
-
-  if($("showMask").checked)showMaskOnCanvas(ctx,w,h,mask);
-}
-
-function drawFrame(){
-  if(!ready)return;
-  fit();
-  processFrameCanvas(pctx,preview.width,preview.height);
-  if(!textRect){
-    drawBase(pctx,preview.width,preview.height);
+  // Keep the movement believable: tens of metres rather than huge jumps.
+  const radius=Math.max(18,Math.min(90,25+length*0.7));
+  const points=[];
+  for(let i=0;i<13;i++){
+    const q=i/12;
+    if(i===0||i===12){ points.push({x:0,y:0}); continue; }
+    const angle=rand(i)*Math.PI*2;
+    const r=radius*(0.35+rand(i+30)*0.65);
+    points.push({x:Math.cos(angle)*r,y:Math.sin(angle)*r});
   }
-  applyGeo(pctx,preview.width,preview.height);
 
-  if(textRect){
-    const r=rectToCanvas(textRect);
-    $("textBox").style.display="block";
-    $("textBox").style.left=r.x+"px";$("textBox").style.top=r.y+"px";
-    $("textBox").style.width=r.w+"px";$("textBox").style.height=r.h+"px";
-  }else $("textBox").style.display="none";
-
-  if(cropRect){
-    const r=rectToCanvas(cropRect);
-    $("cropBox").style.display="block";
-    $("cropBox").style.left=r.x+"px";$("cropBox").style.top=r.y+"px";
-    $("cropBox").style.width=r.w+"px";$("cropBox").style.height=r.h+"px";
-  }else $("cropBox").style.display="none";
-
-  $("now").textContent=video.currentTime.toFixed(2);
-  $("seek").value=video.currentTime;
-}
-
-function loop(){
-  drawFrame();
-  if(!video.paused)raf=requestAnimationFrame(loop);
-}
-$("play").onclick=()=>{
-  if(video.paused){video.play();$("play").textContent="Pause";loop()}
-  else{video.pause();$("play").textContent="Play";cancelAnimationFrame(raf)}
-};
-$("back").onclick=()=>{video.pause();$("play").textContent="Play";video.currentTime=clamp(video.currentTime-1/30,0,duration);drawFrame()};
-$("next").onclick=()=>{video.pause();$("play").textContent="Play";video.currentTime=clamp(video.currentTime+1/30,0,duration);drawFrame()};
-video.ontimeupdate=()=>{if(video.paused)drawFrame()};
-
-$("seek").oninput=e=>{video.currentTime=+e.target.value;drawFrame()};
-$("start").onchange=()=>{let v=clamp(+$("start").value,0,duration);$("start").value=v; if(v>+$("end").value){$("end").value=duration} drawTimeline()};
-$("end").onchange=()=>{let v=clamp(+$("end").value,0,duration);$("end").value=v; if(v<+$("start").value){$("start").value=0} drawTimeline()};
-document.querySelectorAll(".quick").forEach(b=>b.onclick=()=>{
-  $("start").value=b.dataset.s;
-  $("end").value=Math.min(duration,+b.dataset.e).toFixed(2);
-  drawTimeline();
-});
-
-$("selectText").onclick=()=>{
-  selectingText=true;selectingCrop=false;status("Drag around ONLY the white text. Release when the box covers it.");
-};
-$("crop").onclick=()=>{
-  selectingCrop=true;selectingText=false;status("Drag a crop rectangle.");
-};
-$("clear").onclick=()=>{
-  textRect=null;removed=false;cachedMask=null;cachedSource=null;
-  $("textBox").style.display="none";drawFrame();status("Text selection cleared.");
-};
-$("resetCrop").onclick=()=>{
-  cropRect=null;$("cropBox").style.display="none";drawFrame();status("Crop reset.");
-};
-
-function pointerPos(e){
-  const r=preview.getBoundingClientRect();
-  return {x:clamp(e.clientX-r.left,0,preview.width),y:clamp(e.clientY-r.top,0,preview.height)};
-}
-preview.onpointerdown=e=>{
-  if(!selectingText&&!selectingCrop)return;
-  dragStart=pointerPos(e);
-  preview.setPointerCapture(e.pointerId);
-};
-preview.onpointermove=e=>{
-  if(!dragStart)return;
-  const cur=pointerPos(e),r=normalizedRect(dragStart,cur);
-  if(selectingText){
-    $("textBox").style.display="block";
-    $("textBox").style.left=r.x+"px";$("textBox").style.top=r.y+"px";
-    $("textBox").style.width=r.w+"px";$("textBox").style.height=r.h+"px";
-  }else{
-    $("cropBox").style.display="block";
-    $("cropBox").style.left=r.x+"px";$("cropBox").style.top=r.y+"px";
-    $("cropBox").style.width=r.w+"px";$("cropBox").style.height=r.h+"px";
+  function wander(q){
+    q=clamp(q,0,1);
+    const pos=q*12;
+    const i=Math.min(11,Math.floor(pos));
+    const t=pos-i;
+    const ease=t*t*(3-2*t);
+    const a=points[i], b=points[i+1];
+    return {x:a.x+(b.x-a.x)*ease,y:a.y+(b.y-a.y)*ease};
   }
-};
-preview.onpointerup=e=>{
-  if(!dragStart)return;
-  const cur=pointerPos(e),r=normalizedRect(dragStart,cur);
-  dragStart=null;
-  if(r.w<5||r.h<5)return;
-  if(selectingText){
-    textRect={x:r.x/videoScaleX(),y:r.y/videoScaleY(),w:r.w/videoScaleX(),h:r.h/videoScaleY()};
-    selectingText=false;removed=false;cachedMask=null;cachedSource=null;
-    status("Text area selected. Click Remove White Text.");
-  }else{
-    cropRect=r;selectingCrop=false;
-    status("Crop selected.");
+
+  // First half: wander away and return exactly to the start.
+  if(p<=0.5){
+    const w=wander(p*2);
+    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
   }
-  drawFrame();
-};
 
-$("remove").onclick=()=>{
-  if(!textRect){status("Select the white text area first.");return}
-  removed=true;cachedMask=null;cachedSource=null;
-  status("White-text removal enabled. Play the video to check it.");
-  drawFrame();
-};
+  // Second half: start again from the exact starting coordinate and wander
+  // toward the requested end coordinate (if supplied).
+  const q=(p-0.5)*2;
+  const w=wander(q);
+  const hasEnd=Number.isFinite(endLat)&&Number.isFinite(endLon)&&
+               (Math.abs(endLat-startLat)>0.0000001||Math.abs(endLon-startLon)>0.0000001);
+  if(!hasEnd){
+    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
+  }
 
-["sensitivity","thickness","grow","showMask","moving"].forEach(id=>{
-  $(id).oninput=()=>{
-    if(id==="sensitivity")$("sensVal").textContent=$(id).value;
-    if(id==="thickness")$("thickVal").textContent=$(id).value;
-    if(id==="grow")$("growVal").textContent=$(id).value;
-    if(id==="sensitivity"||id==="thickness"||id==="grow"||id==="showMask"){
-      if(ready)drawFrame();
-    }
+  const endNorth=(endLat-startLat)*111320;
+  const endEast=(endLon-startLon)*111320*cosLat;
+  const routeWeight=q*q*(3-2*q);
+  return {
+    lat:startLat+mToLat(w.y*(1-routeWeight)+endNorth*routeWeight),
+    lon:startLon+mToLon(w.x*(1-routeWeight)+endEast*routeWeight)
   };
-});
-
-["state","district","location"].forEach(id=>{
-  $(id).oninput=()=>drawFrame();
-});
-
-function drawTimeline(){
-  const w=timeline.clientWidth||800,h=100;
-  timeline.width=w*devicePixelRatio;timeline.height=h*devicePixelRatio;
-  tctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
-  tctx.fillStyle="#0a1016";tctx.fillRect(0,0,w,h);
-  if(!duration)return;
-  const n=18;
-  for(let i=0;i<n;i++){
-    const x=i*w/n;
-    tctx.fillStyle=i%2?"#17222c":"#1c2933";tctx.fillRect(x,0,w/n-2,h);
-    tctx.fillStyle="#5c6b77";tctx.font="11px Arial";tctx.fillText((duration*i/(n-1)).toFixed(0)+"s",x+4,18);
-  }
-  const s=+$("start").value||0,e=+$("end").value||duration;
-  tctx.fillStyle="rgba(255,216,61,.16)";tctx.fillRect(w*s/duration,0,w*(e-s)/duration,h);
-  tctx.strokeStyle="#ffd83d";tctx.strokeRect(w*s/duration+1,1,w*(e-s)/duration-2,h-2);
-  const x=w*video.currentTime/duration;
-  tctx.strokeStyle="#4da3ff";tctx.lineWidth=2;tctx.beginPath();tctx.moveTo(x,0);tctx.lineTo(x,h);tctx.stroke();
 }
-timeline.onclick=e=>{
-  if(!duration)return;
-  const r=timeline.getBoundingClientRect();
-  video.currentTime=clamp((e.clientX-r.left)/r.width*duration,0,duration);
-  drawFrame();drawTimeline();
-};
+function updateRunningCoords(seconds){
+  const c=getRunningCoords(seconds);
+  if(c.lat!=null&&c.lon!=null) $('runningCoords').textContent=`Running Lat ${c.lat.toFixed(6)}°  Long ${c.lon.toFixed(6)}°`;
+  return c;
+}
+$('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat').value=lat.toFixed(6); $('startLon').value=lon.toFixed(6); if(!$('endLat').value)$('endLat').value=lat.toFixed(6); if(!$('endLon').value)$('endLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
+$('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
+['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
 
-$("open").disabled=false;
+function drawGeoFrame(baseCtx,W,H,seconds){
+  // ================================================================
+  // GEO OVERLAY = TWO COMPLETELY INDEPENDENT BLOCKS
+  // 1) MAP BLOCK: its own position, width and height.
+  // 2) STAMP BLOCK: its own position, width and height, text and logo.
+  // The ONLY relationship is that the map bottom touches the stamp top.
+  // ================================================================
+  const stampOpacity=clamp(state.gOpacity/100,0,1);
+  const mapOpacity=clamp(state.gMapO/100,0,1);
 
-/* ---------- EXPORT ---------- */
-function wait(ms){return new Promise(r=>setTimeout(r,ms))}
-function seekVideo(t){
+  // ------------------------- STAMP BLOCK -------------------------
+  const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
+  const stampX=0;
+  const stampY=Math.round(H-stampH);
+  const stampW=W;
+  const stampRadius=Math.max(18,Math.round(stampH*.14));
+  const stampPad=Math.max(5,Math.round(stampH*.022));
+  const stampGap=Math.max(12,Math.round(stampH*.045));
+
+  // -------------------------- MAP BLOCK --------------------------
+  // The map has its OWN position and size. It can be dragged and resized
+  // directly on the video preview without changing the stamp block.
+  const mapX=clamp(W*state.mapX/100,0,Math.max(0,W-20));
+  const mapY=clamp(H*state.mapY/100,0,Math.max(0,H-20));
+  const mapW=clamp(W*state.mapW/100,20,W-mapX);
+  const mapH=clamp(H*state.mapH/100,20,H-mapY);
+
+  // Draw STAMP block first.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='rgba(0,0,0,.76)';
+  roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
+  baseCtx.fill();
+  baseCtx.restore();
+
+  // Draw MAP block on the LEFT side of the STAMP, at the EXACT same Y.
+  // The map and stamp have the same height and share the same top/bottom edges.
+  if(mapImg){
+    baseCtx.save();
+    baseCtx.globalAlpha=stampOpacity*mapOpacity;
+    baseCtx.beginPath();
+    baseCtx.rect(mapX,mapY,mapW,mapH);
+    baseCtx.clip();
+    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
+    baseCtx.restore();
+  }
+
+  // Everything below belongs ONLY to the STAMP block.
+  const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
+  const logoCenterX=clamp(
+    W*state.logoX/100,
+    stampX+stampW*.72+logoSize/2,
+    stampX+stampW-logoSize/2-stampPad
+  );
+  const logoCenterY=clamp(
+    stampY+stampH*(state.logoY/100),
+    stampY+logoSize/2+stampPad,
+    stampY+stampH-logoSize/2-stampPad
+  );
+  const logoLeft=logoCenterX-logoSize/2;
+
+  // STAMP text is independent from the map. The map can be moved/resized
+  // without changing the title/details position.
+  const textX=stampX+stampW*.255;
+  const textRight=logoLeft-stampGap;
+  const maxW=Math.max(150,textRight-textX);
+  const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
+  const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
+  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+  const address=$('gAddress').value.trim();
+  const running=getRunningCoords(seconds);
+  const coordText=`Lat ${running.lat==null?'—':running.lat.toFixed(6)}°  Long ${running.lon==null?'—':running.lon.toFixed(6)}°`;
+  updateRunningCoords(seconds);
+  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
+
+  // STAMP TEXT BLOCK ONLY.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='#fff';
+  baseCtx.textBaseline='alphabetic';
+  baseCtx.shadowColor='rgba(0,0,0,.30)';
+  baseCtx.shadowBlur=Math.max(1,stampH*.008);
+
+  baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
+  const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
+  let yy=stampY+stampPad+titleSize;
+  titleLines.forEach(line=>{baseCtx.fillText(line,textX,yy);yy+=titleSize*1.02});
+
+  baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
+  const lineGap=Math.max(3,detailSize*.25);
+  const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
+  addressLines.forEach(line=>{if(yy<=stampY+stampH-stampPad)baseCtx.fillText(line,textX,yy);yy+=detailSize+lineGap});
+  if(yy<=stampY+stampH-stampPad){baseCtx.fillText(coordText,textX,yy);yy+=detailSize+lineGap*1.05;}
+  if(yy<=stampY+stampH-stampPad)baseCtx.fillText(dateTime,textX,yy);
+  baseCtx.restore();
+
+  // STAMP LOGO BLOCK ONLY.
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
+  baseCtx.restore();
+
+  // Preview-only map controls. They are never rendered into the exported video.
+  if(baseCtx===gctx && mapImg){
+    baseCtx.save();
+    baseCtx.strokeStyle='rgba(255,255,255,.95)';
+    baseCtx.lineWidth=Math.max(1,2*W/geo.width);
+    baseCtx.setLineDash([6,4]);
+    baseCtx.strokeRect(mapX,mapY,mapW,mapH);
+    baseCtx.setLineDash([]);
+    const hs=Math.max(8,12*W/geo.width);
+    baseCtx.fillStyle='rgba(255,255,255,.95)';
+    baseCtx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
+    baseCtx.restore();
+  }
+}
+
+function prepareOutput(){
+ const r=sourceRect();
+ outputW=Math.max(2,Math.round(r.w/2)*2);
+ outputH=Math.max(2,Math.round(r.h/2)*2);
+ work.width=outputW;work.height=outputH;
+}
+function removeWhiteFromCanvasExport(ctx2,W,H,rect){
+  if(!rect)return;
+  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
+  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const rw=x1-x0, rh=y1-y0;
+  if(rw<2||rh<2)return;
+
+  const img=ctx2.getImageData(x0,y0,rw,rh);
+  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
+  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
+  for(let y=0;y<rh;y++){
+    for(let x=0;x<rw;x++){
+      const p=y*rw+x,i=p*4;
+      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
+      const neutral=(mx-mn)<=115;
+      const bright=(rr+gg+bb)/3;
+      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
+    }
+  }
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(mask[p]){
+      for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+        const xx=x+dx,yy=y+dy;
+        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
+      }
+    }
+  }
+
+  const maxSearch=Math.min(50,Math.max(24,Math.round(Math.max(rw,rh)/2)));
+  const filled=new Uint8ClampedArray(d);
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;
+    if(!expanded[p])continue;
+    let sr=0,sg=0,sb=0,n=0;
+    for(let k=1;k<=maxSearch;k++){const lx=x-k;if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const rx=x+k;if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const ty=y-k;if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    for(let k=1;k<=maxSearch;k++){const by=y+k;if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
+    if(n){const i=p*4;filled[i]=d[i]*(1-strength)+(sr/n)*strength;filled[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;filled[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
+  }
+
+  const out=new Uint8ClampedArray(filled);
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x; if(!expanded[p])continue;
+    let sr=0,sg=0,sb=0,n=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const xx=x+dx,yy=y+dy;
+      if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
+      const q=yy*rw+xx,j=q*4;
+      sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;
+    }
+    if(n){const i=p*4;out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;}
+  }
+  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
+}
+
+function removeWhiteFromCanvasFast(ctx2,W,H,rect){
+  if(!rect)return;
+  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
+  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const rw=x1-x0, rh=y1-y0;
+  if(rw<2||rh<2)return;
+
+  // Fast inpaint: detect white pixels once, then use only the four nearest
+  // non-white neighbours. This avoids the old long per-pixel searches.
+  const img=ctx2.getImageData(x0,y0,rw,rh);
+  const d=img.data, threshold=+$('whiteThreshold').value||115;
+  const strength=(+$('removeOpacity').value||100)/100;
+  const N=rw*rh, mask=new Uint8Array(N);
+
+  for(let p=0,i=0;p<N;p++,i+=4){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx=r>g?(r>b?r:b):(g>b?g:b);
+    const mn=r<g?(r<b?r:b):(g<b?g:b);
+    if(mx>=threshold && (r+g+b)/3>=threshold && mx-mn<=115) mask[p]=1;
+  }
+
+  const out=new Uint8ClampedArray(d);
+  for(let y=0;y<rh;y++){
+    const row=y*rw;
+    for(let x=0;x<rw;x++){
+      const p=row+x;
+      if(!mask[p])continue;
+      let sr=0,sg=0,sb=0,n=0,j;
+      if(x>0 && !mask[p-1]){j=(p-1)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
+      if(x+1<rw && !mask[p+1]){j=(p+1)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
+      if(y>0 && !mask[p-rw]){j=(p-rw)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
+      if(y+1<rh && !mask[p+rw]){j=(p+rw)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
+      if(n){
+        j=p*4;
+        out[j]=d[j]*(1-strength)+(sr/n)*strength;
+        out[j+1]=d[j+1]*(1-strength)+(sg/n)*strength;
+        out[j+2]=d[j+2]*(1-strength)+(sb/n)*strength;
+      }
+    }
+  }
+  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
+}
+
+let fastGL=null;
+function initFastGL(){
+  if(fastGL && fastGL.c.width===outputW && fastGL.c.height===outputH)return fastGL;
+  fastGL=null;
+  const c=document.createElement('canvas');
+  c.width=outputW;c.height=outputH;
+  const gl=c.getContext('webgl',{premultipliedAlpha:false,antialias:false,preserveDrawingBuffer:false});
+  if(!gl)return null;
+  const vs=`attribute vec2 p; varying vec2 uv; void main(){uv=(p+1.0)*0.5; gl_Position=vec4(p,0.,1.);}`;
+  const fs=`precision mediump float; varying vec2 uv; uniform sampler2D tex; uniform vec4 rr; uniform float th; uniform float strength; uniform vec2 px;
+  bool white(vec3 c){float mx=max(c.r,max(c.g,c.b));float mn=min(c.r,min(c.g,c.b));float bright=(c.r+c.g+c.b)/3.0;return mx>=th && bright>=th && (mx-mn)<=0.45;}
+  void main(){
+    vec4 c=texture2D(tex,uv);
+    bool inside=uv.x>=rr.x&&uv.x<=rr.z&&uv.y>=rr.y&&uv.y<=rr.w;
+    if(inside && white(c.rgb)){
+      vec3 s=vec3(0.0);float n=0.0;
+      vec3 a=texture2D(tex,uv+vec2(-px.x,0.)).rgb;if(!white(a)){s+=a;n+=1.0;}
+      vec3 b=texture2D(tex,uv+vec2(px.x,0.)).rgb;if(!white(b)){s+=b;n+=1.0;}
+      vec3 d=texture2D(tex,uv+vec2(0.,-px.y)).rgb;if(!white(d)){s+=d;n+=1.0;}
+      vec3 e=texture2D(tex,uv+vec2(0.,px.y)).rgb;if(!white(e)){s+=e;n+=1.0;}
+      vec3 q=texture2D(tex,uv+vec2(-px.x,-px.y)).rgb;if(!white(q)){s+=q;n+=1.0;}
+      vec3 r=texture2D(tex,uv+vec2(px.x,-px.y)).rgb;if(!white(r)){s+=r;n+=1.0;}
+      vec3 t=texture2D(tex,uv+vec2(-px.x,px.y)).rgb;if(!white(t)){s+=t;n+=1.0;}
+      vec3 u=texture2D(tex,uv+vec2(px.x,px.y)).rgb;if(!white(u)){s+=u;n+=1.0;}
+      if(n>0.0)c.rgb=mix(c.rgb,s/n,strength);
+    }
+    gl_FragColor=c;
+  }`;
+  function sh(type,src){const shd=gl.createShader(type);gl.shaderSource(shd,src);gl.compileShader(shd);return shd}
+  const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){return null}
+  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  const pos=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+  fastGL={gl,c,pr,tex,rr:gl.getUniformLocation(pr,'rr'),th:gl.getUniformLocation(pr,'th'),strength:gl.getUniformLocation(pr,'strength'),px:gl.getUniformLocation(pr,'px')};
+  return fastGL;
+}
+function drawWhiteRemovalGPU(rect){
+  const g=initFastGL(); if(!g)return false;
+  const {gl,c,pr,tex}=g;
+  gl.viewport(0,0,outputW,outputH);gl.useProgram(pr);
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,work);
+  gl.uniform1f(g.th,(+$('whiteThreshold').value||115)/255);
+  gl.uniform1f(g.strength,(+$('removeOpacity').value||100)/100);
+  gl.uniform2f(g.px,1/outputW,1/outputH);
+  const x=rect.x/outputW, y=rect.y/outputH, w=rect.w/outputW, h=rect.h/outputH;
+  gl.uniform4f(g.rr,x,1-(y+h),x+w,1-y);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  wctx.clearRect(0,0,outputW,outputH);
+  wctx.drawImage(c,0,0,outputW,outputH);
+  return true;
+}
+
+function exportNeedsFrameProcessing(){
+  // Crop/trim are represented by sourceRect()/start-end below. Only run
+  // expensive per-pixel/overlay work when the user actually enabled it.
+  return !!whiteRect || (lat!=null && lon!=null);
+}
+
+function drawExportFrame(elapsedOverride){
+  const r=sourceRect();
+  wctx.clearRect(0,0,outputW,outputH);
+  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+
+  // White-text removal is completely skipped when no white-text area was
+  // selected. This avoids getImageData/putImageData on every exported frame.
+  if(whiteRect){
+    const rectOnOutput={
+      x:whiteRect.x/r.w*outputW,
+      y:whiteRect.y/r.h*outputH,
+      w:whiteRect.w/r.w*outputW,
+      h:whiteRect.h/r.h*outputH
+    };
+    // Use the export-grade inpainting routine here. The ultra-fast 4-neighbour
+    // version can leave the middle of thick white letters untouched because
+    // those pixels have no immediate non-white neighbour.
+    removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
+  }
+
+  // GeoTag/map/logo are skipped entirely unless a location has actually
+  // been selected. This keeps plain crop/trim exports much lighter.
+  if(lat!=null&&lon!=null){
+    const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
+    drawGeoFrame(wctx,outputW,outputH,elapsed);
+  }
+}
+
+function seekVideo(target){
   return new Promise(resolve=>{
-    const target=clamp(t,0,duration);
-    if(Math.abs(video.currentTime-target)<0.003){setTimeout(resolve,0);return}
+    const t=clamp(target,0,duration||target);
     let done=false;
-    const finish=()=>{if(done)return;done=true;video.removeEventListener("seeked",finish);resolve()};
-    video.addEventListener("seeked",finish,{once:true});
-    video.currentTime=target;
-    setTimeout(finish,250);
+    const finish=()=>{
+      if(done)return; done=true;
+      video.removeEventListener('seeked',onSeeked);
+      resolve();
+    };
+    const onSeeked=()=>{
+      requestAnimationFrame(()=>requestAnimationFrame(finish));
+    };
+    video.addEventListener('seeked',onSeeked,{once:true});
+    video.currentTime=t;
+    setTimeout(finish,2000);
   });
 }
 
-$("export").onclick=async()=>{
-  if(!ready){status("Choose a video first.");return}
-  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){
-    error("This browser does not support canvas video recording. Use current Chrome or Edge.");
-    return;
+async function pickVideoCodec(width,height,fps){
+  const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
+  // Hardware first: much faster on most modern Chrome/Windows systems.
+  for(const codec of candidates){
+    try{
+      const support=await VideoEncoder.isConfigSupported({
+        codec,width,height,bitrate:8_000_000,framerate:fps,
+        hardwareAcceleration:'prefer-hardware'
+      });
+      if(support&&support.supported)return {codec,hardwareAcceleration:'prefer-hardware'};
+    }catch(e){}
   }
-
-  clearError();
-  const s=clamp(+$("start").value,0,duration),e=clamp(+$("end").value,0,duration);
-  if(e<=s){error("Export end time must be greater than start time.");return}
-
-  const srcW=cropRect?Math.max(2,Math.round(cropRect.w/videoScaleX())):video.videoWidth;
-  const srcH=cropRect?Math.max(2,Math.round(cropRect.h/videoScaleY())):video.videoHeight;
-  const out=document.createElement("canvas");
-  out.width=srcW;out.height=srcH;
-  const ctx=out.getContext("2d",{willReadFrequently:true});
-  const stream=out.captureStream(30);
-
-  // Add source audio when the browser exposes it.
-  try{
-    if(video.captureStream){
-      const vs=video.captureStream();
-      vs.getAudioTracks().forEach(t=>stream.addTrack(t));
-    }
-  }catch(_){}
-
-  let mime="";
-  for(const m of ["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"]){
-    if(MediaRecorder.isTypeSupported(m)){mime=m;break}
+  for(const codec of candidates){
+    try{
+      const support=await VideoEncoder.isConfigSupported({
+        codec,width,height,bitrate:8_000_000,framerate:fps,
+        hardwareAcceleration:'no-preference'
+      });
+      if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
+    }catch(e){}
   }
-  if(!mime){error("No supported WebM recorder was found.");return}
+  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
+}
 
-  const rec=new MediaRecorder(stream,{mimeType:mime});
-  const chunks=[];
-  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  const stopped=new Promise(resolve=>rec.onstop=resolve);
+async function exportVideoFrameAccurate(){
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=Math.max(0.05,end-start);
+  const fps=30;
+  const frameCount=Math.max(1,Math.ceil(length*fps));
 
-  const fps=30, total=Math.max(1,Math.ceil((e-s)*fps));
-  $("export").disabled=true;
-  $("play").disabled=true;
-  status("Rendering...");
-  setProgress(0);
-
-  const oldTime=video.currentTime;
-  const wasPaused=video.paused;
+  prepareOutput();
   video.pause();
 
-  rec.start(100);
-  try{
-    for(let frame=0;frame<total;frame++){
-      const t=s+frame/fps;
-      await seekVideo(Math.min(t,e));
-      ctx.clearRect(0,0,out.width,out.height);
-
-      if(cropRect){
-        const sx=Math.round(cropRect.x/videoScaleX()),sy=Math.round(cropRect.y/videoScaleY());
-        const sw=Math.round(cropRect.w/videoScaleX()),sh=Math.round(cropRect.h/videoScaleY());
-        ctx.drawImage(video,sx,sy,sw,sh,0,0,out.width,out.height);
-      }else{
-        ctx.drawImage(video,0,0,out.width,out.height);
-      }
-
-      if(textRect){
-        // Convert the selected preview rectangle to output coordinates.
-        let roi={x:textRect.x,y:textRect.y,w:textRect.w,h:textRect.h};
-        if(cropRect){
-          const cx=cropRect.x/videoScaleX(),cy=cropRect.y/videoScaleY();
-          roi={x:roi.x-cx,y:roi.y-cy,w:roi.w,h:roi.h};
-        }
-        const img=ctx.getImageData(0,0,out.width,out.height);
-        const mask=detectTextMask(img.data,out.width,out.height,roi);
-        const cleaned=reconstruct(img.data,out.width,out.height,mask);
-        ctx.putImageData(new ImageData(cleaned,out.width,out.height),0,0);
-        if($("showMask").checked)showMaskOnCanvas(ctx,out.width,out.height,mask);
-      }
-
-      applyGeo(ctx,out.width,out.height);
-      const track=stream.getVideoTracks()[0];
-      if(track&&track.requestFrame)track.requestFrame();
-
-      if(frame%3===0){
-        setProgress((frame+1)/total*100);
-        status("Rendering frame "+(frame+1)+" / "+total);
-      }
-    }
-  }catch(err){
-    rec.stop();
-    await stopped;
-    error("Export error: "+(err&&err.message?err.message:err));
-    status("Export stopped.");
-    $("export").disabled=false;$("play").disabled=false;
-    setProgress(0);
-    return;
+  // The map MUST be ready before the first exported frame.
+  if(lat!=null && lon!=null && !mapImg){
+    $('exportStatus').textContent='Preparing map…';
+    mapImg=await makeMap(lat,lon);
+  }
+  if(lat!=null && lon!=null && !mapImg){
+    throw new Error('Map could not be loaded. Check your internet connection and try again.');
   }
 
-  rec.stop();
-  await stopped;
-  const blob=new Blob(chunks,{type:mime});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="edited-video.webm";
-  document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  const audioPromise=(async()=>{
+    try{
+      const arr=await file.arrayBuffer();
+      const actx=new (window.AudioContext||window.webkitAudioContext)();
+      return await actx.decodeAudioData(arr);
+    }catch(e){
+      console.warn('No usable audio track for export',e);
+      return null;
+    }
+  })();
 
-  await seekVideo(oldTime);
-  if(!wasPaused){video.play();$("play").textContent="Pause";loop()}else $("play").textContent="Play";
-  $("export").disabled=false;$("play").disabled=false;
-  setProgress(100);
-  status("Export complete. Downloaded edited-video.webm");
+  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
+  const audioBuffer=await audioPromise;
+  const hasAudio=!!audioBuffer;
+  const muxer=new Mp4Muxer.Muxer({
+    target:new Mp4Muxer.ArrayBufferTarget(),
+    fastStart:'in-memory',
+    video:{codec:'avc',width:outputW,height:outputH},
+    audio:hasAudio?{
+      codec:'aac',
+      numberOfChannels:audioBuffer.numberOfChannels,
+      sampleRate:audioBuffer.sampleRate
+    }:undefined,
+  });
+
+  let encoderFailed=null;
+  let rejectEncoding=null;
+  let videoEncoder=null;
+  let restoreMute=video.muted;
+
+  try{
+    videoEncoder=new VideoEncoder({
+      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
+      error:e=>{
+        console.error('video encoder error',e);
+        encoderFailed=e;
+        if(rejectEncoding) rejectEncoding(e);
+      }
+    });
+
+    videoEncoder.configure({
+      codec,
+      width:outputW,
+      height:outputH,
+      bitrate:8_000_000,
+      framerate:fps,
+      hardwareAcceleration,
+      // Do not use latencyMode:'realtime' for an offline export.
+      // Offline encoding is allowed to drain the queue naturally.
+      firstTimestampBehavior:'offset'
+    });
+
+    const needsFrameProcessing=exportNeedsFrameProcessing();
+    $('exportStatus').textContent=needsFrameProcessing
+      ? 'Rendering selected changes… 0% (accelerated)'
+      : 'Rendering crop/trim only… 0% (accelerated)';
+    await seekVideo(start);
+
+    restoreMute=video.muted;
+    video.muted=true;
+    video.playbackRate=2.5; // decode faster; encoded timestamps still preserve normal output duration
+
+    const hasRVFC=typeof video.requestVideoFrameCallback==='function';
+    let frameIndex=0;
+    let firstFrameTimestamp=null;
+    let callbackId=null;
+    let rafId=0;
+
+    await new Promise((resolve,reject)=>{
+      rejectEncoding=reject;
+      let finished=false;
+
+      const cleanup=()=>{
+        if(callbackId!==null && video.cancelVideoFrameCallback){
+          try{video.cancelVideoFrameCallback(callbackId)}catch(e){}
+        }
+        if(rafId)cancelAnimationFrame(rafId);
+        video.removeEventListener('ended',onEnded);
+      };
+
+      const finish=()=>{
+        if(finished)return;
+        finished=true;
+        cleanup();
+        try{video.pause()}catch(e){}
+        resolve();
+      };
+
+      const fail=(err)=>{
+        if(finished)return;
+        finished=true;
+        cleanup();
+        try{video.pause()}catch(e){}
+        reject(err);
+      };
+
+      const onEnded=()=>finish();
+
+      const scheduleNext=()=>{
+        if(finished)return;
+        if(hasRVFC){
+          callbackId=video.requestVideoFrameCallback(onFrame);
+        }else{
+          rafId=requestAnimationFrame(()=>onFrame(performance.now(),null));
+        }
+      };
+
+      const onFrame=async(now,metadata)=>{
+        if(finished)return;
+        try{
+          const mediaTime=(metadata&&metadata.mediaTime!=null)
+            ?metadata.mediaTime
+            :video.currentTime;
+
+          if(firstFrameTimestamp===null)firstFrameTimestamp=mediaTime;
+          const elapsed=Math.max(0,mediaTime-firstFrameTimestamp);
+
+          // Draw one final frame before finishing.
+          const clampedElapsed=Math.min(length,elapsed);
+          if(frameIndex>=frameCount || elapsed>=length-0.005){
+            drawExportFrame(length);
+            finish();
+            return;
+          }
+
+          drawExportFrame(clampedElapsed);
+          const timestamp=Math.max(0,Math.round((clampedElapsed)*1e6));
+          const vf=new VideoFrame(work,{timestamp});
+          videoEncoder.encode(vf,{keyFrame:frameIndex===0 || frameIndex%(fps*4)===0});
+          vf.close();
+          frameIndex++;
+
+          // Apply backpressure without calling flush() during frame capture.
+          // flush() waits for the entire encoder queue and can make the render
+          // look frozen around 88–89%. Instead, briefly wait for the queue to
+          // drain below a safe level, with a hard timeout.
+          if(videoEncoder.encodeQueueSize>=96){
+            $('exportStatus').textContent='Encoding video… '+Math.min(99,Math.max(1,Math.round((clampedElapsed/length)*99)))+'%';
+            const queueWaitStart=performance.now();
+            while(videoEncoder.encodeQueueSize>=32 && !encoderFailed){
+              if(performance.now()-queueWaitStart>3000){
+                throw new Error('Video encoder is not draining. Switching to stable export.');
+              }
+              await new Promise(r=>setTimeout(r,10));
+            }
+            if(encoderFailed)throw encoderFailed;
+          }
+
+          const pct=Math.min(99,Math.max(1,Math.round((clampedElapsed/length)*99)));
+          $('exportStatus').textContent=(needsFrameProcessing?'Rendering selected changes… ':'Rendering crop/trim only… ')+pct+'%';
+          scheduleNext();
+        }catch(err){
+          fail(err);
+        }
+      };
+
+      video.addEventListener('ended',onEnded,{once:true});
+      scheduleNext();
+      video.play().catch(fail);
+    });
+
+    video.playbackRate=1;
+    video.muted=restoreMute;
+
+    if(encoderFailed)throw encoderFailed;
+
+    $('exportStatus').textContent='Finishing video encoding… 91%';
+    await Promise.race([
+      videoEncoder.flush(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out after 5 seconds.')),5000))
+    ]);
+
+    videoEncoder.close();
+    videoEncoder=null;
+    rejectEncoding=null;
+
+    if(hasAudio){
+      $('exportStatus').textContent='Encoding audio… 94%';
+      const sr=audioBuffer.sampleRate;
+      const ch=audioBuffer.numberOfChannels;
+      const s0=Math.floor(start*sr);
+      const s1=Math.min(audioBuffer.length,Math.floor(end*sr));
+      const audioEncoder=new AudioEncoder({
+        output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),
+        error:e=>console.error('audio encoder error',e)
+      });
+      audioEncoder.configure({
+        codec:'mp4a.40.2',
+        sampleRate:sr,
+        numberOfChannels:ch,
+        bitrate:128000
+      });
+
+      const chunkSize=8192;
+      const totalSamples=Math.max(1,s1-s0);
+      for(let s=s0;s<s1;s+=chunkSize){
+        const n=Math.min(chunkSize,s1-s);
+        const interleaved=new Float32Array(n*ch);
+        for(let c=0;c<ch;c++){
+          const data=audioBuffer.getChannelData(c);
+          for(let k=0;k<n;k++)interleaved[k*ch+c]=data[s+k];
+        }
+        const audioData=new AudioData({
+          format:'f32',
+          sampleRate:sr,
+          numberOfFrames:n,
+          numberOfChannels:ch,
+          timestamp:Math.round((s-s0)/sr*1e6),
+          data:interleaved
+        });
+        audioEncoder.encode(audioData);
+        audioData.close();
+        const pct=94+Math.round(((s-s0)/totalSamples)*5);
+        $('exportStatus').textContent='Encoding audio… '+Math.min(98,pct)+'%';
+      }
+
+      $('exportStatus').textContent='Finishing audio… 99%';
+      await Promise.race([
+        audioEncoder.flush(),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out.')),15000))
+      ]);
+      audioEncoder.close();
+    }
+
+    $('exportStatus').textContent='Finalizing MP4…';
+    muxer.finalize();
+    exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
+    $('exportStatus').textContent='Video rendered — 100% complete. Download button is ready.';
+    $('downloadVideo').disabled=false;
+  }finally{
+    rejectEncoding=null;
+    video.muted=restoreMute;
+    video.playbackRate=1;
+    if(videoEncoder){
+      try{videoEncoder.close()}catch(e){}
+    }
+  }
+}
+
+async function exportVideoRealtimeFallback(){
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=end-start;
+
+  prepareOutput();
+  video.pause();
+  await seekVideo(start);
+
+  const canvasStream=work.captureStream(0);
+  const canvasVideoTrack=canvasStream.getVideoTracks()[0];
+  try{
+    const sourceStream=video.captureStream ? video.captureStream() :
+                       (video.mozCaptureStream ? video.mozCaptureStream() : null);
+    if(sourceStream) sourceStream.getAudioTracks().forEach(track=>canvasStream.addTrack(track));
+  }catch(e){console.warn('Audio capture unavailable',e)}
+
+  let mime='';
+  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){
+    if(MediaRecorder.isTypeSupported(m)){mime=m;break}
+  }
+  if(!mime){$('exportStatus').textContent='This browser cannot record video in a supported format.';return}
+
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:8000000,audioBitsPerSecond:128000});
+  const chunks=[];
+  rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
+
+  let stopped=false, frameCallbackId=null, rafId=0;
+  const stop=()=>{
+    if(stopped)return; stopped=true;
+    if(rafId)cancelAnimationFrame(rafId);
+    if(frameCallbackId!==null && video.cancelVideoFrameCallback){try{video.cancelVideoFrameCallback(frameCallbackId)}catch(e){}}
+    try{video.pause()}catch(e){}
+    try{rec.stop()}catch(e){}
+  };
+
+  $('exportStatus').textContent='Rendering video… 0%';
+  rec.start(250);
+
+  const renderFrame=()=>{
+    if(stopped)return;
+    const elapsed=Math.max(0,video.currentTime-start);
+    if(elapsed>=length-0.03){drawExportFrame();if(canvasVideoTrack.requestFrame)canvasVideoTrack.requestFrame();stop();return}
+    drawExportFrame();
+    if(canvasVideoTrack.requestFrame)canvasVideoTrack.requestFrame();
+    $('exportStatus').textContent='Rendering video… '+clamp(Math.round(elapsed/length*100),0,99)+'%';
+    if(video.requestVideoFrameCallback){
+      frameCallbackId=video.requestVideoFrameCallback(renderFrame);
+    }else{
+      rafId=requestAnimationFrame(renderFrame);
+    }
+  };
+
+  renderFrame();
+  await video.play();
+
+  while(!stopped){
+    if(video.currentTime>=end-0.03){stop();break}
+    await new Promise(r=>setTimeout(r,50));
+  }
+
+  exportBlob=await done;
+  $('exportStatus').textContent='Video rendered at normal speed ('+(mime.includes('mp4')?'MP4':'WebM')+'). Download button is ready.';
+  $('downloadVideo').disabled=false;
+}
+
+async function exportVideo(){
+  if(!file)return;
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=end-start;
+  prepareOutput();
+  video.pause();
+  await seekVideo(start);
+
+  const fps=Math.min(30,Math.max(24,video.getVideoPlaybackQuality?30:30));
+  const canvasStream=work.captureStream(fps);
+  const sourceStream=video.captureStream?video.captureStream():null;
+  if(sourceStream) sourceStream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
+  let mime='';
+  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
+  if(!mime)throw new Error('This Chrome cannot record video.');
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
+  const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
+  let stopped=false,frameId=null,raf=0;
+  const stop=()=>{if(stopped)return;stopped=true;if(frameId!==null&&video.cancelVideoFrameCallback)try{video.cancelVideoFrameCallback(frameId)}catch(e){}if(raf)cancelAnimationFrame(raf);try{video.pause()}catch(e){}try{rec.stop()}catch(e){}};
+  const render=(now,meta)=>{
+    if(stopped)return;
+    const t=meta&&meta.mediaTime!=null?meta.mediaTime:video.currentTime;
+    const elapsed=t-start;
+    if(elapsed>=length-0.02){drawExportFrame(length);stop();return}
+    drawExportFrame(elapsed);
+    if(Math.floor(elapsed*10)%5===0)$('exportStatus').textContent='Fast rendering… '+Math.min(99,Math.round(elapsed/length*100))+'%';
+    if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  };
+  $('exportStatus').textContent='Fast rendering… 0%';
+  rec.start(500);
+  video.muted=true;video.playbackRate=1;
+  if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  await video.play();
+  while(!stopped){if(video.currentTime>=end-0.02){stop();break}await new Promise(r=>setTimeout(r,30));}
+  exportBlob=await done;
+  video.muted=false;
+  $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
+  $('downloadVideo').disabled=false;
+}
+async function doExport(){
+  const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
+  if(hasWebCodecs){
+    try{
+      await exportVideoFrameAccurate();
+      return;
+    }catch(err){
+      console.warn('Frame-accurate MP4 export failed, falling back to recorder export.',err);
+    }
+  }
+  await exportVideo();
+  if(exportBlob && exportBlob.type.includes('webm')){
+    const statusEl = ($('geoSection').style.display!=='none') ? $('geoStatus') : $('exportStatus');
+    const reason = (typeof window.isSecureContext!=='undefined' && !window.isSecureContext)
+      ? ' Reason: this page isn\'t served over HTTPS or localhost, so Chrome disables the MP4 encoder (WebCodecs) — deploy this file to a host like Vercel, or run it via a local server, to get real MP4 output.'
+      : ' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
+    statusEl.textContent += reason;
+  }
+}
+$('downloadVideo').onclick=async()=>{
+ if(!file)return;
+ $('downloadVideo').disabled=true;
+ const prevStatus=$('exportStatus').textContent;
+ try{
+   await doExport();
+ }catch(err){
+   console.error(err);
+   $('exportStatus').textContent='Export failed: '+(err.message||err);
+   $('downloadVideo').disabled=false;
+   return;
+ }
+ if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
+ const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
+ const base=file.name.replace(/\.[^.]+$/,'');
+ const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
+ const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+tag+'.'+ext; a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+ $('downloadVideo').disabled=false;
+}
+$('goGeo').onclick=()=>{$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
+$('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview()}
+$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
+$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
+
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
+ $(id).oninput=()=>{
+   state[id]=+$(id).value;
+   if(id==='gMapW') state.mapW=+$(id).value;
+   if(id==='mapH') state.mapH=+$(id).value;
+   $(id+'Val').textContent=$(id).value+'%';
+   drawGeoPreview();
+ }
+}
+let mapDrag=null;
+function getMapRectOnPreview(){
+ if(!geo.width||!geo.height)return null;
+ const W=geo.width,H=geo.height;
+ const mx=clamp(W*state.mapX/100,0,Math.max(0,W-20));
+ const my=clamp(H*state.mapY/100,0,Math.max(0,H-20));
+ const mw=clamp(W*state.mapW/100,20,W-mx);
+ const mh=clamp(H*state.mapH/100,20,H-my);
+ return {x:mx,y:my,w:mw,h:mh,W,H};
+}
+function mapPointerPos(e){
+ const r=geo.getBoundingClientRect();
+ return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};
+}
+geo.addEventListener('pointerdown',e=>{
+ if(!mapImg||!geo.width)return;
+ const r=getMapRectOnPreview(); if(!r)return;
+ const p=mapPointerPos(e); const hs=Math.max(10,16*geo.width/Math.max(1,geo.getBoundingClientRect().width));
+ const resize=Math.abs(p.x-(r.x+r.w))<=hs && Math.abs(p.y-(r.y+r.h))<=hs;
+ if(resize || (p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h)){
+   e.preventDefault(); geo.setPointerCapture(e.pointerId);
+   mapDrag={mode:resize?'resize':'move',startX:p.x,startY:p.y,x:r.x,y:r.y,w:r.w,h:r.h,W:r.W,H:r.H};
+ }
+});
+geo.addEventListener('pointermove',e=>{
+ if(!mapDrag)return;
+ const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
+ if(mapDrag.mode==='move'){
+   state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
+   state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
+ }else{
+   state.mapW=clamp((mapDrag.w+dx)/mapDrag.W*100,5,100-state.mapX);
+   state.mapH=clamp((mapDrag.h+dy)/mapDrag.H*100,5,100-state.mapY);
+   $('gMapW').value=Math.round(state.mapW); $('gMapWVal').textContent=Math.round(state.mapW)+'%';
+   $('mapH').value=Math.round(state.mapH); $('mapHVal').textContent=Math.round(state.mapH)+'%';
+ }
+ drawGeoPreview();
+});
+function endMapDrag(){mapDrag=null;}
+geo.addEventListener('pointerup',endMapDrag); geo.addEventListener('pointercancel',endMapDrag); geo.addEventListener('pointerleave',()=>{if(mapDrag)endMapDrag();});
+
+function drawGeoPreview(){
+ if(!video.videoWidth)return;
+ const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
+ gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
+ if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
+ if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
+}
+$('exportGeo').onclick=async()=>{
+ if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}
+ $('exportGeo').disabled=true;
+ $('downloadGeo').disabled=true;
+ $('geoStatus').textContent='Rendering GeoTagged Video…';
+ try{
+   await doExport();
+   if(exportBlob){
+     $('downloadGeo').disabled=false;
+     $('geoStatus').textContent='GeoTagged video rendered successfully. Download button is ready.';
+   }else{
+     $('geoStatus').textContent='Could not render the GeoTagged video.';
+   }
+ }catch(err){
+   console.error(err);
+   $('geoStatus').textContent='GeoTagged video export failed: '+(err.message||err);
+ }finally{
+   $('exportGeo').disabled=false;
+ }
+}
+$('downloadGeo').onclick=()=>{
+ if(!exportBlob||!file)return;
+ const a=document.createElement('a');
+ const url=URL.createObjectURL(exportBlob);
+ a.href=url;
+ const base=file.name.replace(/\.[^.]+$/,'');
+ const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+'_geotag.'+ext;
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),3000);
 };
 
-window.addEventListener("error",e=>{
-  error("JavaScript error: "+(e.message||"Unknown error"));
-});
-window.addEventListener("unhandledrejection",e=>{
-  error("Unexpected error: "+(e.reason&&e.reason.message?e.reason.message:e.reason));
-});
-
-fit();
-drawTimeline();
+video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
+setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
 </script>
 </body>
 </html>

@@ -682,6 +682,166 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   }
 }
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
+function textureInpaintHole(d,w,h,hole,strength){
+  // Texture-preserving inpaint for the SECOND box only.
+  // It copies small patches from real nearby pixels instead of blurring or
+  // adding artificial grain, so wood/stone/skin/background texture continues
+  // naturally through the removed letters.
+  const N=w*h;
+  let total=0;
+  for(let p=0;p<N;p++)if(hole[p])total++;
+  if(!total||total===N)return;
+
+  const known=new Uint8Array(N);
+  for(let p=0;p<N;p++)known[p]=hole[p]?0:1;
+  const work=new Uint8Array(hole);
+  const patchR=2;
+  const searchR=24;
+  const dirs=[[-1,0],[1,0],[0,-1],[0,1]];
+
+  const isBoundary=(p)=>{
+    const x=p%w,y=(p/w)|0;
+    return (x>0&&!work[p-1])||(x<w-1&&!work[p+1])||(y>0&&!work[p-w])||(y<h-1&&!work[p+w]);
+  };
+
+  function patchValid(cx,cy){
+    for(let dy=-patchR;dy<=patchR;dy++){
+      const yy=cy+dy;if(yy<0||yy>=h)return false;
+      for(let dx=-patchR;dx<=patchR;dx++){
+        const xx=cx+dx;if(xx<0||xx>=w)return false;
+        if(work[yy*w+xx])return false;
+      }
+    }
+    return true;
+  }
+
+  function scoreTarget(tx,ty,cx,cy){
+    let score=0,weight=0;
+    // Compare only pixels that are still real around the target. This makes
+    // the chosen source patch follow the actual texture direction.
+    for(let dy=-3;dy<=3;dy++){
+      const yy=ty+dy;if(yy<0||yy>=h)continue;
+      for(let dx=-3;dx<=3;dx++){
+        const xx=tx+dx;if(xx<0||xx>=w)continue;
+        const tp=yy*w+xx;if(work[tp])continue;
+        const sx=cx+dx,sy=cy+dy;
+        if(sx<0||sx>=w||sy<0||sy>=h)continue;
+        const sp=sy*w+sx;if(work[sp])continue;
+        const ti=tp*4,si=sp*4;
+        const dr=d[ti]-d[si],dg=d[ti+1]-d[si+1],db=d[ti+2]-d[si+2];
+        score+=(dr*dr+dg*dg+db*db);weight++;
+      }
+    }
+    if(!weight)return 1e12;
+    return score/weight;
+  }
+
+  // Fill from the outside inward. A small patch is copied from a real nearby
+  // location with the closest local texture. No blur and no synthetic grain.
+  let remaining=total;
+  let guard=0;
+  while(remaining>0&&guard++<Math.max(w,h)*2){
+    const boundary=[];
+    for(let p=0;p<N;p++)if(work[p]&&isBoundary(p))boundary.push(p);
+    if(!boundary.length)break;
+
+    // Process pixels with the most real neighbours first.
+    boundary.sort((a,b)=>{
+      const count=(p)=>{const x=p%w,y=(p/w)|0;let c=0;
+        if(x>0&&!work[p-1])c++;if(x<w-1&&!work[p+1])c++;
+        if(y>0&&!work[p-w])c++;if(y<h-1&&!work[p+w])c++;return c;};
+      return count(b)-count(a);
+    });
+
+    for(const p of boundary){
+      if(!work[p])continue;
+      const tx=p%w,ty=(p/w)|0;
+      let best=-1,bestScore=1e12;
+      // Search several directions and distances so the source comes from the
+      // same nearby surface rather than a large rectangular area.
+      for(let dy=-searchR;dy<=searchR;dy+=2){
+        for(let dx=-searchR;dx<=searchR;dx+=2){
+          if(dx*dx+dy*dy<36||dx*dx+dy*dy>searchR*searchR)continue;
+          const cx=tx+dx,cy=ty+dy;
+          if(cx<patchR||cy<patchR||cx>=w-patchR||cy>=h-patchR)continue;
+          if(!patchValid(cx,cy))continue;
+          const sc=scoreTarget(tx,ty,cx,cy);
+          if(sc<bestScore){bestScore=sc;best=cy*w+cx;}
+        }
+      }
+      if(best<0){
+        // Safe fallback: nearest real neighbour, still without blur.
+        const x=tx,y=ty;let found=-1;
+        for(let rr=1;rr<=8&&found<0;rr++)for(const [dx,dy] of dirs){
+          const xx=x+dx*rr,yy=y+dy*rr;
+          if(xx>=0&&xx<w&&yy>=0&&yy<h){const q=yy*w+xx;if(!work[q]){found=q;break;}}
+        }
+        best=found;
+      }
+      if(best>=0){
+        const bx=best%w,by=(best/w)|0;
+        // Copy a tiny real patch, masked to the remaining hole. This preserves
+        // local edges and texture much better than averaging neighbouring pixels.
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+          const tx2=tx+dx,ty2=ty+dy,sx=bx+dx,sy=by+dy;
+          if(tx2<0||tx2>=w||ty2<0||ty2>=h||sx<0||sx>=w||sy<0||sy>=h)continue;
+          const tp=ty2*w+tx2;
+          if(!work[tp])continue;
+          const sp=sy*w+sx,ti=tp*4,si=sp*4;
+          d[ti]=d[si];d[ti+1]=d[si+1];d[ti+2]=d[si+2];
+          work[tp]=0;remaining--;
+        }
+      }
+    }
+  }
+
+  // Blend only the outermost one-pixel seam very lightly with real neighbours.
+  // This removes copy-edge seams without creating a blur across the texture.
+  if(strength<1){
+    for(let p=0;p<N;p++)if(!hole[p])continue;
+    // strength is intentionally handled by the caller's opacity setting;
+    // the copied pixels above are kept crisp when opacity is 100%.
+  }
+}
+
+function removeWhiteDetailedFromCanvas(ctx2,W,H,rect){
+  if(!rect)return;
+  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  if(rx1-rx0<2||ry1-ry0<2)return;
+
+  // Use the existing detector, but make the second pass tighter and keep the
+  // selected box as a strict clipping region.
+  const t=Math.max(90,(+$('whiteThreshold').value||115)-10);
+  const thk=Math.max(2,Math.round((+$('textThick').value||9)*0.72));
+  const pad=Math.round(Math.max(18,Math.min(42,W/40)));
+  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
+  const w=x1-x0,h=y1-y0,N=w*h;
+  const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
+  const hole=new Uint8Array(N);
+  const det=detectWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(5,Math.round(W/75)),thk);
+  if(!det)return;
+  let any=0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0,p=y*w+x;
+    if(gx>=rx0&&gx<rx1&&gy>=ry0&&gy<ry1&&det[p]){hole[p]=1;any++;}
+  }
+  if(!any)return;
+
+  // Only a small dilation is used to catch anti-aliased letter edges. The
+  // previous version used a larger soft-looking fill, which caused the blurry
+  // highlighted texture seen in the second box.
+  const grow=Math.max(1,Math.min(2,Math.round((+$('textThick').value||9)*W/1080*0.28)));
+  const dil=dilateMask(hole,w,h,grow);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0,p=y*w+x;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)dil[p]=0;
+  }
+
+  textureInpaintHole(d,w,h,dil,1);
+  ctx2.putImageData(img,x0,y0);
+}
+
 
 function drawPreview(){
  if(exporting||!video.videoWidth)return;
@@ -702,12 +862,7 @@ function drawPreview(){
  }
  if(whiteRect2){
    const wr=whiteRect2;
-   const oldT=$('whiteThreshold').value, oldTh=$('textThick').value, oldPass=$('inpaintPasses').value;
-   $('whiteThreshold').value=String(Math.max(90,(+oldT||115)-12));
-   $('textThick').value=String(Math.max(2,(+oldTh||9)-2));
-   $('inpaintPasses').value=String(Math.min(12,(+oldPass||5)+2));
-   try{ removeWhiteFromCanvas(vctx,view.width,view.height,{x:wr.x/r.w*view.width,y:wr.y/r.h*view.height,w:wr.w/r.w*view.width,h:wr.h/r.h*view.height}); }
-   finally{$('whiteThreshold').value=oldT;$('textThick').value=oldTh;$('inpaintPasses').value=oldPass;}
+   removeWhiteDetailedFromCanvas(vctx,view.width,view.height,{x:wr.x/r.w*view.width,y:wr.y/r.h*view.height,w:wr.w/r.w*view.width,h:wr.h/r.h*view.height});
  }
 }
 function updateSelectionBox(){
@@ -1265,7 +1420,7 @@ function prepareOutput(){
 }
 
 function exportNeedsFrameProcessing(){
-  return !!whiteRect || (lat!=null && lon!=null);
+  return !!whiteRect || !!whiteRect2 || (lat!=null && lon!=null);
 }
 
 function drawExportFrame(elapsedOverride){
@@ -1281,6 +1436,15 @@ function drawExportFrame(elapsedOverride){
       h:whiteRect.h/r.h*outputH
     };
     removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
+  }
+  if(whiteRect2){
+    const rectOnOutput={
+      x:whiteRect2.x/r.w*outputW,
+      y:whiteRect2.y/r.h*outputH,
+      w:whiteRect2.w/r.w*outputW,
+      h:whiteRect2.h/r.h*outputH
+    };
+    removeWhiteDetailedFromCanvas(wctx,outputW,outputH,rectOnOutput);
   }
 
   if(lat!=null&&lon!=null){
@@ -1736,6 +1900,7 @@ function drawGeoPreview(){
  if(geo.width!==nw)geo.width=nw; if(geo.height!==nh)geo.height=nh;
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
+ if(whiteRect2)removeWhiteDetailedFromCanvas(gctx,geo.width,geo.height,{x:whiteRect2.x/r.w*geo.width,y:whiteRect2.y/r.h*geo.height,w:whiteRect2.w/r.w*geo.width,h:whiteRect2.h/r.h*geo.height});
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{

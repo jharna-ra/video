@@ -25,7 +25,8 @@ input[type=range]{width:100%}
 .status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
 .stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
 #viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#selection{position:absolute;border:2px dashed #ffd400;background:rgba(255,212,0,.04);display:none;pointer-events:none}
+#selection{position:absolute;border:2px solid #ff3b30;background:transparent;display:none;pointer-events:none}
+#selection2{position:absolute;border:2px dashed #00e5ff;background:transparent;display:none;pointer-events:none}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
@@ -169,7 +170,7 @@ input[type=range]{width:100%}
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
 <label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
 <input id="textThick" type="range" min="2" max="30" value="9">
-<div class="small">Draw the yellow box around the text. The yellow box is only a search area; it is NOT itself removed. Only detected white/gray letter strokes are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see exactly which pixels will be removed: if red covers the text, you are set; if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
+<div class="small">Draw the box around the text. Only detected white/gray text strokes are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see exactly which pixels will be removed: if red covers the text, you are set; if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
 <div class="section">
@@ -185,6 +186,7 @@ input[type=range]{width:100%}
 <div class="stage" id="stage">
 <canvas id="viewCanvas"></canvas>
 <div id="selection"></div>
+<div id="selection2"></div>
 </div>
 <div class="row">
 <button id="playBtn" disabled>▶ Play</button>
@@ -380,7 +382,7 @@ if(!wctx) throw new Error('Export canvas context unavailable');
 const stage=$('stage'), selBox=$('selection');
 
 let file=null, videoURL=null, duration=0, playing=false;
-let crop=null, cropMode=false, whiteRect=null, removeMode=false, removalEnabled=false, selecting=false, sx=0, sy=0;
+let crop=null, cropMode=false, whiteRect=null, whiteRect2=null, removeMode=false, removalEnabled=false, selecting=false, sx=0, sy=0;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
@@ -783,101 +785,111 @@ function inpaintHole(d,w,h,hole,strength){
 
 function removeWhiteFromCanvas(ctx2,W,H,rect){
   if(!rect||!removalEnabled)return;
-  const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
-  const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
+  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
   const rw=x1-x0,rh=y1-y0;
   if(rw<3||rh<3)return;
 
-  const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data,N=rw*rh;
+  const img=ctx2.getImageData(x0,y0,rw,rh), d=img.data;
   const threshold=+$('whiteThreshold').value||200;
   const thick=+$('textThick').value||9;
+  const N=rw*rh;
+  const lum=new Uint16Array(N), core=new Uint8Array(N);
 
-  const lum=new Float32Array(N),chroma=new Uint8Array(N);
-  for(let p=0,i=0;p<N;p++,i+=4){
-    lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-    chroma[p]=Math.max(d[i],d[i+1],d[i+2])-Math.min(d[i],d[i+1],d[i+2]);
+  for(let p=0,i=0;p<N;p++,i+=4) lum[p]=Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2]);
+
+  // The user's rectangle is the search boundary. Inside it, detect actual
+  // white/grey character strokes, not the whole rectangle.
+  const minL=Math.max(145,threshold-45);
+  for(let y=1;y<rh-1;y++) for(let x=1;x<rw-1;x++){
+    const p=y*rw+x,i=p*4,L=lum[p];
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(L<minL||mx-mn>95)continue;
+
+    let darker=0, localMin=255;
+    for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+      if(!dx&&!dy)continue;
+      const q=(y+dy)*rw+x+dx,v=lum[q];
+      if(v<L-3)darker++;
+      if(v<localMin)localMin=v;
+    }
+    // White text has a bright core and some darker pixels immediately around it.
+    if(darker>=2 && L-localMin>=5) core[p]=1;
   }
 
-  // Robust detector: bright/neutral pixels first, then reject large background blobs.
-  const bright=new Uint8Array(N);
-  const brightCut=Math.max(120,threshold-45);
-  for(let p=0;p<N;p++)if(lum[p]>=brightCut&&chroma[p]<=105)bright[p]=1;
-
-  // Recover small anti-aliased gaps inside letters.
-  const expanded=bright.slice();
-  for(let y=1;y<rh-1;y++)for(let x=1;x<rw-1;x++){
-    const p=y*rw+x;
-    if(bright[p]||lum[p]<Math.max(105,threshold-80)||chroma[p]>115)continue;
-    let near=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)
-      if((dx||dy)&&bright[(y+dy)*rw+x+dx])near++;
-    if(near>=2)expanded[p]=1;
-  }
-
-  const seen=new Uint8Array(N),mask=new Uint8Array(N),stack=new Int32Array(N);
+  // Connected components: keep small character-like structures and reject
+  // large bright regions. The selected rectangle is never itself a mask.
+  const seen=new Uint8Array(N), keep=new Uint8Array(N), stack=new Int32Array(N);
+  const maxArea=Math.max(80,Math.floor(N*.16));
   for(let p0=0;p0<N;p0++){
-    if(!expanded[p0]||seen[p0])continue;
-    let head=0,tail=0,area=0,minX=rw,maxX=-1,minY=rh,maxY=-1;
+    if(!core[p0]||seen[p0])continue;
+    let head=0,tail=0,area=0,minX=rw,maxX=0,minY=rh,maxY=0;
     stack[tail++]=p0;seen[p0]=1;
     while(head<tail){
-      const p=stack[head++],x=p%rw,y=(p/rw)|0;
-      area++;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+      const p=stack[head++],x=p%rw,y=(p/rw)|0;area++;
+      if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;
       for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
         if(!dx&&!dy)continue;
         const nx=x+dx,ny=y+dy;
         if(nx<0||ny<0||nx>=rw||ny>=rh)continue;
         const q=ny*rw+nx;
-        if(expanded[q]&&!seen[q]){seen[q]=1;stack[tail++]=q;}
+        if(core[q]&&!seen[q]){seen[q]=1;stack[tail++]=q;}
       }
     }
-    const bw=maxX-minX+1,bh=maxY-minY+1,density=area/Math.max(1,bw*bh);
-    const tooBig=area>Math.max(2500,N*.18)||(bw>rw*.82&&bh>rh*.55)||
-      (bw>Math.max(320,rw*.92)&&bh>Math.max(100,rh*.35));
-    const textLike=!tooBig&&area>=2&&bh<=Math.max(120,rh*.85)&&
-      bw<=Math.max(500,rw*.98)&&(density>=.008||(bw/Math.max(1,bh)>3&&bh<=Math.max(35,rh*.35)));
-    if(textLike)for(let k=0;k<tail;k++)mask[stack[k]]=1;
+    const bw=maxX-minX+1,bh=maxY-minY+1;
+    const plausible=area<=maxArea &&
+      bw<=Math.max(90,bh*24) && bh<=Math.max(90,bw*24) &&
+      (area<=12 || area/(bw*bh)>=.015);
+    if(plausible)for(let k=0;k<tail;k++)keep[stack[k]]=1;
   }
 
-  // Anti-aliased edge pixels around detected strokes.
-  const finalMask=mask.slice(),edgeLum=Math.max(105,threshold-95);
+  // Anti-aliased edge: only one/two pixels immediately around an accepted stroke.
+  const finalMask=keep.slice();
+  const halo=Math.max(1,Math.min(2,Math.round(thick/7)));
   for(let y=1;y<rh-1;y++)for(let x=1;x<rw-1;x++){
-    const p=y*rw+x;
-    if(mask[p]||lum[p]<edgeLum||chroma[p]>125)continue;
+    const p=y*rw+x;if(keep[p])continue;
+    const i=p*4,L=lum[p],mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(L<minL-50||mx-mn>105)continue;
     let near=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)
-      if((dx||dy)&&mask[(y+dy)*rw+x+dx])near++;
-    if(near>=1)finalMask[p]=1;
+    for(let dy=-halo;dy<=halo;dy++)for(let dx=-halo;dx<=halo;dx++)
+      if(keep[(y+dy)*rw+x+dx])near++;
+    if(near>=2)finalMask[p]=1;
   }
 
-  let count=0;for(let p=0;p<N;p++)if(finalMask[p])count++;
-  if(!count){
-    if(!exporting)setStatus('No white pixels detected. Lower White detection sensitivity and make the yellow box tighter around the letters.');
-    return;
-  }
+  let count=0;for(let p=0;p<N;p++)count+=finalMask[p];
+  if(!count)return;
 
   if($('showMask').checked&&!exporting){
     const dbg=new Uint8ClampedArray(d);
-    for(let p=0;p<N;p++)if(finalMask[p]){const i=p*4;dbg[i]=255;dbg[i+1]=0;dbg[i+2]=35;dbg[i+3]=255;}
+    for(let p=0;p<N;p++)if(finalMask[p]){
+      const i=p*4;dbg[i]=255;dbg[i+1]=0;dbg[i+2]=45;dbg[i+3]=235;
+    }
     ctx2.putImageData(new ImageData(dbg,rw,rh),x0,y0);
-    setStatus('Detected '+count+' white/gray letter pixels. Red = pixels that will be dissolved.');
+    setStatus('Detected '+count+' white-text pixels. If the red covers the letters, click Remove White Text.');
     return;
   }
 
-  // Per-pixel, boundary-first dissolve. Each replacement is copied from a real
-  // neighbouring video pixel; no blur, averaging, grain or rectangular patch.
-  const original=new Uint8ClampedArray(d),known=new Uint8Array(N);
+  // Letter-by-letter texture dissolve.
+  // Each masked pixel copies a REAL nearby pixel from the original frame.
+  // No blur, averaging, grain, or rectangle fill is used.
+  const original=new Uint8ClampedArray(d), known=new Uint8Array(N);
   for(let p=0;p<N;p++)known[p]=finalMask[p]?0:1;
-  const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
-  const order=[],queued=new Uint8Array(N);
 
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const order=[];
+  const queued=new Uint8Array(N);
+
+  // Start from the outside edge of every letter and move inward.
   for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){
     const p=y*rw+x;if(!finalMask[p])continue;
+    let boundary=false;
     for(const [dx,dy] of dirs){
       const nx=x+dx,ny=y+dy;
-      if(nx>=0&&ny>=0&&nx<rw&&ny<rh&&known[ny*rw+nx]){queued[p]=1;order.push(p);break;}
+      if(nx>=0&&ny>=0&&nx<rw&&ny<rh&&known[ny*rw+nx]){boundary=true;break}
     }
+    if(boundary){order.push(p);queued[p]=1;}
   }
+  // Then add interior pixels adjacent to already queued pixels.
   for(let k=0;k<order.length;k++){
     const p=order[k],x=p%rw,y=(p/rw)|0;
     for(const [dx,dy] of dirs){
@@ -888,41 +900,198 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
     }
   }
 
-  const maxR=Math.max(4,Math.min(22,Math.round(5+thick*1.15)));
+  const maxR=Math.max(7,Math.min(22,Math.round(5+thick*1.1)));
   for(const p of order){
     const x=p%rw,y=(p/rw)|0;
-    let best=-1,bestScore=Infinity;
+    let best=-1,bestScore=1e30;
     for(const [dx,dy] of dirs){
       const px=-dy,py=dx;
       for(let r=1;r<=maxR;r++){
-        const sx2=x+dx*r,sy2=y+dy*r;
-        if(sx2<1||sy2<1||sx2>=rw-1||sy2>=rh-1)break;
-        const q=sy2*rw+sx2;if(!known[q])continue;
-        let score=r;
-        for(let k2=-3;k2<=3;k2++){
-          const tx=x+px*k2,ty=y+py*k2,cx=sx2+px*k2,cy=sy2+py*k2;
+        const sx=x+dx*r,sy=y+dy*r;
+        if(sx<1||sy<1||sx>=rw-1||sy>=rh-1)break;
+        const q=sy*rw+sx;
+        if(!known[q])continue;
+
+        // Compare a tiny perpendicular strip on ORIGINAL pixels. This helps
+        // choose the side of the text whose texture continues naturally.
+        let score=r*1.5;
+        for(let k=-2;k<=2;k++){
+          const tx=x+px*k,ty=y+py*k,cx=sx+px*k,cy=sy+py*k;
           if(tx<0||ty<0||tx>=rw||ty>=rh||cx<0||cy<0||cx>=rw||cy>=rh)continue;
           const a=(ty*rw+tx)*4,b=(cy*rw+cx)*4;
-          const dr=d[a]-d[b],dg=d[a+1]-d[b+1],db=d[a+2]-d[b+2];
-          score+=(dr*dr*.299+dg*dg*.587+db*db*.114)*.045;
+          const dr=original[a]-original[b],dg=original[a+1]-original[b+1],db=original[a+2]-original[b+2];
+          score+=(dr*dr+dg*dg+db*db)*.045;
         }
         if(score<bestScore){bestScore=score;best=q;}
+        break;
       }
-    }
-    if(best<0)for(const [dx,dy] of dirs){
-      const nx=x+dx,ny=y+dy;
-      if(nx>=0&&ny>=0&&nx<rw&&ny<rh&&known[ny*rw+nx]){best=ny*rw+nx;break;}
     }
     if(best>=0){
       const di=p*4,si=best*4;
-      d[di]=d[si];d[di+1]=d[si+1];d[di+2]=d[si+2];d[di+3]=255;
+      d[di]=original[si];d[di+1]=original[si+1];d[di+2]=original[si+2];d[di+3]=original[di+3];
       known[p]=1;
     }
   }
-
   ctx2.putImageData(new ImageData(d,rw,rh),x0,y0);
-  if(!exporting)setStatus('Removed '+count+' detected white-text pixels by dissolving individual letter strokes into nearby real video pixels.');
 }
+
+
+function removeWhiteFromCanvasPrecise(ctx2,W,H,rect){
+  if(!rect||!removalEnabled)return;
+  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
+  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const rw=x1-x0,rh=y1-y0;
+  if(rw<3||rh<3)return;
+
+  const img=ctx2.getImageData(x0,y0,rw,rh);
+  const d=img.data;
+  const original=new Uint8ClampedArray(d);
+  const N=rw*rh;
+  const lum=new Float32Array(N);
+  const core=new Uint8Array(N);
+  const threshold=+$('whiteThreshold').value||200;
+  const minL=Math.max(150,threshold-28);
+
+  for(let p=0,i=0;p<N;p++,i+=4){
+    lum[p]=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+  }
+
+  // Detect individual bright, low-chroma strokes only. The yellow/blue
+  // selection rectangle is never used as a fill mask.
+  for(let y=2;y<rh-2;y++) for(let x=2;x<rw-2;x++){
+    const p=y*rw+x,i=p*4,L=lum[p];
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(L<minL||mx-mn>75)continue;
+    let darker=0,bestContrast=0;
+    for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+      if(!dx&&!dy)continue;
+      const q=(y+dy)*rw+x+dx;
+      const c=L-lum[q];
+      if(c>=7)darker++;
+      if(c>bestContrast)bestContrast=c;
+    }
+    if(darker>=3&&bestContrast>=9)core[p]=1;
+  }
+
+  // Keep compact character-like components and reject large bright areas.
+  const seen=new Uint8Array(N),keep=new Uint8Array(N),stack=new Int32Array(N);
+  const maxArea=Math.max(120,Math.floor(N*.10));
+  for(let p0=0;p0<N;p0++){
+    if(!core[p0]||seen[p0])continue;
+    let head=0,tail=0,area=0,minX=rw,maxX=-1,minY=rh,maxY=-1;
+    stack[tail++]=p0;seen[p0]=1;
+    while(head<tail){
+      const p=stack[head++],x=p%rw,y=(p/rw)|0; area++;
+      if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=rw||ny>=rh)continue;
+        const q=ny*rw+nx;
+        if(core[q]&&!seen[q]){seen[q]=1;stack[tail++]=q;}
+      }
+    }
+    const bw=maxX-minX+1,bh=maxY-minY+1;
+    const plausible=area<=maxArea && bw<=Math.max(70,bh*18) && bh<=Math.max(70,bw*18) && (area<=10||area/(bw*bh)>=.018);
+    if(plausible)for(let k=0;k<tail;k++)keep[stack[k]]=1;
+  }
+
+  // Only one-pixel anti-aliasing halo around actual detected strokes.
+  const mask=keep.slice();
+  for(let y=1;y<rh-1;y++) for(let x=1;x<rw-1;x++){
+    const p=y*rw+x;if(keep[p])continue;
+    const i=p*4,L=lum[p];
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(L<minL-40||mx-mn>90)continue;
+    let near=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++) if(keep[(y+dy)*rw+x+dx])near++;
+    if(near>=2)mask[p]=1;
+  }
+
+  let count=0;for(let p=0;p<N;p++)count+=mask[p];
+  if(!count)return;
+
+  if($('showMask').checked&&!exporting){
+    const dbg=new Uint8ClampedArray(d);
+    for(let p=0;p<N;p++)if(mask[p]){const i=p*4;dbg[i]=0;dbg[i+1]=225;dbg[i+2]=255;dbg[i+3]=235;}
+    ctx2.putImageData(new ImageData(dbg,rw,rh),x0,y0);
+    setStatus('Second box: detected '+count+' text pixels. Cyan = pixels that will be dissolved.');
+    return;
+  }
+
+  const known=new Uint8Array(N);
+  for(let p=0;p<N;p++)known[p]=mask[p]?0:1;
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const order=[],queued=new Uint8Array(N);
+
+  // Boundary-first order makes each character disappear progressively inward.
+  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+    const p=y*rw+x;if(!mask[p])continue;
+    let boundary=false;
+    for(const [dx,dy] of dirs){
+      const nx=x+dx,ny=y+dy;
+      if(nx>=0&&ny>=0&&nx<rw&&ny<rh&&known[ny*rw+nx]){boundary=true;break;}
+    }
+    if(boundary){queued[p]=1;order.push(p);}
+  }
+  for(let k=0;k<order.length;k++){
+    const p=order[k],x=p%rw,y=(p/rw)|0;
+    for(const [dx,dy] of dirs){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=rw||ny>=rh)continue;
+      const q=ny*rw+nx;
+      if(mask[q]&&!queued[q]){queued[q]=1;order.push(q);}
+    }
+  }
+
+  const maxR=26;
+  function patchScore(tx,ty,sx,sy){
+    let score=0,n=0;
+    for(let ky=-2;ky<=2;ky++) for(let kx=-2;kx<=2;kx++){
+      const ax=tx+kx,ay=ty+ky,bx=sx+kx,by=sy+ky;
+      if(ax<0||ay<0||ax>=rw||ay>=rh||bx<0||by<0||bx>=rw||by>=rh)continue;
+      const ap=ay*rw+ax,bp=by*rw+bx;
+      if(mask[ap])continue;
+      const a=ap*4,b=bp*4;
+      const dr=original[a]-original[b],dg=original[a+1]-original[b+1],db=original[a+2]-original[b+2];
+      score+=(dr*dr*.299+dg*dg*.587+db*db*.114);n++;
+    }
+    return n?score/n:1e9;
+  }
+
+  for(const p of order){
+    const x=p%rw,y=(p/rw)|0;
+    let best=-1,bestScore=1e30;
+    for(const [dx,dy] of dirs){
+      for(let r=2;r<=maxR;r++){
+        const sx=x+dx*r,sy=y+dy*r;
+        if(sx<3||sy<3||sx>=rw-3||sy>=rh-3)break;
+        const q=sy*rw+sx;
+        if(!known[q])continue;
+        const score=patchScore(x,y,sx,sy)+r*.65;
+        if(score<bestScore){bestScore=score;best=q;}
+      }
+    }
+    if(best<0){
+      for(const [dx,dy] of dirs){
+        for(let r=1;r<=8;r++){
+          const sx=x+dx*r,sy=y+dy*r;
+          if(sx<1||sy<1||sx>=rw-1||sy>=rh-1)break;
+          const q=sy*rw+sx;
+          if(known[q]){best=q;break;}
+        }
+        if(best>=0)break;
+      }
+    }
+    if(best>=0){
+      const di=p*4,si=best*4;
+      d[di]=original[si];d[di+1]=original[si+1];d[di+2]=original[si+2];
+      known[p]=1;
+    }
+  }
+  ctx2.putImageData(new ImageData(d,rw,rh),x0,y0);
+}
+
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){
   removeWhiteFromCanvas(ctx2,W,H,rect);
 }
@@ -945,17 +1114,34 @@ function drawPreview(){
      h:wr.h/r.h*view.height
    });
  }
+ if(whiteRect2){
+   const wr=whiteRect2;
+   removeWhiteFromCanvasPrecise(vctx,view.width,view.height,{
+     x:wr.x/r.w*view.width,
+     y:wr.y/r.h*view.height,
+     w:wr.w/r.w*view.width,
+     h:wr.h/r.h*view.height
+   });
+ }
 }
 function updateSelectionBox(){
- if(!selecting && !whiteRect && !crop)return;
+ if(!selecting && !whiteRect && !whiteRect2 && !crop){
+   selBox.style.display='none';
+   selection2.style.display='none';
+   return;
+ }
  const r=sourceRect();
  const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- let q=whiteRect||crop;
- if(!q){selBox.style.display='none';return}
- const x=C.left-R.left+q.x/r.w*C.width;
- const y=C.top-R.top+q.y/r.h*C.height;
- const w=q.w/r.w*C.width,h=q.h/r.h*C.height;
- selBox.style.left=x+'px';selBox.style.top=y+'px';selBox.style.width=w+'px';selBox.style.height=h+'px';selBox.style.display='block';
+ const drawBox=(el,q)=>{
+   if(!q){el.style.display='none';return;}
+   el.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
+   el.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
+   el.style.width=(q.w/r.w*C.width)+'px';
+   el.style.height=(q.h/r.h*C.height)+'px';
+   el.style.display='block';
+ };
+ drawBox(selBox,whiteRect||crop);
+ drawBox(selection2,whiteRect2);
 }
 function pointerPos(e){
  const R=view.getBoundingClientRect(),r=sourceRect();
@@ -964,23 +1150,37 @@ function pointerPos(e){
 view.addEventListener('pointerdown',e=>{
  if(!cropMode&&!removeMode)return;
  selecting=true;view.setPointerCapture(e.pointerId);
- const p=pointerPos(e);sx=p.x;sy=p.y;selBox.style.display='block';
+ const p=pointerPos(e);sx=p.x;sy=p.y;
+ const active=removeMode&&whiteRect&&!cropMode?selection2:selBox;
+ active.style.display='block';
 });
 view.addEventListener('pointermove',e=>{
  if(!selecting)return;
  const p=pointerPos(e);
  const q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
  const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- selBox.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
- selBox.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
- selBox.style.width=(q.w/r.w*C.width)+'px';selBox.style.height=(q.h/r.h*C.height)+'px';
+ const active=removeMode&&whiteRect&&!cropMode?selection2:selBox;
+ active.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
+ active.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
+ active.style.width=(q.w/r.w*C.width)+'px';
+ active.style.height=(q.h/r.h*C.height)+'px';
+ active.style.display='block';
 });
 view.addEventListener('pointerup',e=>{
  if(!selecting)return;selecting=false;
  const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
- if(q.w<5||q.h<5){return}
+ if(q.w<5||q.h<5){updateSelectionBox();return;}
  if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
- if(removeMode){whiteRect={...q};removalEnabled=false;invalidateWR();$('removeWhite').disabled=false;setStatus('White text area selected. Now click Remove White Text to start the letter-by-letter removal.')}
+ if(removeMode){
+   if(!whiteRect){
+     whiteRect={...q};
+     setStatus('First white-text area selected. It keeps the original remover. Drag again to create the detailed second box.');
+   }else{
+     whiteRect2={...q};
+     setStatus('Second white-text area selected. This box uses the more detailed texture-matching remover.');
+   }
+   removalEnabled=false;invalidateWR();$('removeWhite').disabled=false;
+ }
  updateSelectionBox();
 });
 
@@ -1277,19 +1477,19 @@ $('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.cur
 $('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
 $('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
 $('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
-$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;removalEnabled=false;invalidateWR();$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
-$('resetCrop').onclick=()=>{crop=null;whiteRect=null;removalEnabled=false;invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
+$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;whiteRect2=null;removalEnabled=false;invalidateWR();$('removeWhite').disabled=true;selection2.style.display='none';resizePreview();setStatus('Crop applied.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;whiteRect2=null;removalEnabled=false;invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;selection2.style.display='none';resizePreview();setStatus('Crop reset.')}
 $('removeWhite').onclick=()=>{
- if(!whiteRect){setStatus('Select the white text area first.');return;}
+ if(!whiteRect&&!whiteRect2){setStatus('Select at least one white-text area first.');return;}
  video.pause();
  removalEnabled=true;
  invalidateWR();
  drawPreview();
  drawGeoPreview();
- setStatus('White-text remover ON — individual letter pixels are being dissolved into real neighbouring video texture.');
+ setStatus(whiteRect2?'White-text remover ON — first box uses the original remover; second box uses the more detailed texture-matching remover.':'White-text remover ON — individual letter pixels are being dissolved into real neighbouring video texture.');
 }
-$('clearWhite').onclick=()=>{whiteRect=null;removalEnabled=false;invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
-$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview();drawGeoPreview()}
+$('clearWhite').onclick=()=>{whiteRect=null;whiteRect2=null;removalEnabled=false;invalidateWR();$('removeWhite').disabled=true;selection2.style.display='none';updateSelectionBox();drawPreview();setStatus('White-text areas cleared.')}
+$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
 $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
@@ -1625,7 +1825,7 @@ function prepareOutput(){
 }
 
 function exportNeedsFrameProcessing(){
-  return (removalEnabled&&!!whiteRect) || (lat!=null && lon!=null);
+  return (removalEnabled&&(!!whiteRect||!!whiteRect2)) || (lat!=null && lon!=null);
 }
 
 function drawExportFrame(elapsedOverride){
@@ -1641,6 +1841,11 @@ function drawExportFrame(elapsedOverride){
       h:whiteRect.h/r.h*outputH
     };
     removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
+  }
+
+  if(removalEnabled&&whiteRect2){
+    const wr=whiteRect2;
+    removeWhiteFromCanvasPrecise(wctx,outputW,outputH,{x:wr.x/r.w*outputW,y:wr.y/r.h*outputH,w:wr.w/r.w*outputW,h:wr.h/r.h*outputH});
   }
 
   if(lat!=null&&lon!=null){
@@ -2081,6 +2286,7 @@ function drawGeoPreview(){
  if(geo.width!==nw)geo.width=nw; if(geo.height!==nh)geo.height=nh;
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
+ if(whiteRect2)removeWhiteFromCanvasPrecise(gctx,geo.width,geo.height,{x:whiteRect2.x/r.w*geo.width,y:whiteRect2.y/r.h*geo.height,w:whiteRect2.w/r.w*geo.width,h:whiteRect2.h/r.h*geo.height});
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{

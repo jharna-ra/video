@@ -1793,7 +1793,6 @@ function drawExportFrame(elapsedOverride){
 
   // Apply the same subtle texture to the complete exported frame, including
   // untouched areas, so repaired pixels do not stand out from the video.
-  applyNaturalGrain(wctx,outputW,outputH,7.0);
 
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
@@ -2249,7 +2248,6 @@ function drawGeoPreview(){
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
  if(whiteRect2)removeWhiteDetailedFromCanvasV2(gctx,geo.width,geo.height,{x:whiteRect2.x/r.w*geo.width,y:whiteRect2.y/r.h*geo.height,w:whiteRect2.w/r.w*geo.width,h:whiteRect2.h/r.h*geo.height});
- applyNaturalGrain(gctx,geo.width,geo.height,2.6);
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{

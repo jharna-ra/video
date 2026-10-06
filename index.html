@@ -915,166 +915,175 @@ function removeWhiteDetailedFromCanvas(ctx2,W,H,rect){
    prevents the magenta/black/blur artifacts seen in the earlier version. */
 function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
   if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const rx0=Math.max(0,Math.floor(rect.x)), ry0=Math.max(0,Math.floor(rect.y));
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
   if(rx1-rx0<4||ry1-ry0<4)return;
 
-  // BOX 2: the rectangle is only a search area.  The repair mask is made from
-  // bright/low-saturation text candidates, then every replacement value is an
-  // exact RGB pixel from the SAME CURRENT VIDEO FRAME. No blur, haze, grain,
-  // averaging, or synthetic texture is introduced.
-  const pad=12;
-  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad);
-  const x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
-  const w=x1-x0,h=y1-y0,N=w*h;
-  const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
+  /* SECOND BOX V4 — MICRO-PIXEL EXEMPLAR INPAINTING
+     The selection is ONLY a search area.  We never blur, average, haze, grain,
+     brighten, or process the rectangle.  The only pixels changed are pixels
+     confidently identified as the white/grey lettering. Every replacement RGB
+     value is copied from a real, untouched pixel in THIS SAME VIDEO FRAME. */
+  const pad=10;
+  const x0=Math.max(0,rx0-pad), y0=Math.max(0,ry0-pad);
+  const x1=Math.min(W,rx1+pad), y1=Math.min(H,ry1+pad);
+  const w=x1-x0, h=y1-y0, N=w*h;
+  const img=ctx2.getImageData(x0,y0,w,h), d=img.data;
   const original=new Uint8ClampedArray(d);
   const mask=new Uint8Array(N);
   const userT=+$('whiteThreshold').value||115;
-  const thk=Math.max(2,Math.min(7,Math.round((+$('textThick').value||9)*0.55)));
+  const baseThk=+$('textThick').value||9;
   const area=Math.max(1,(rx1-rx0)*(ry1-ry0));
 
-  // Several conservative passes catch compressed white/grey letter edges.
-  // We deliberately cap coverage so natural bright objects cannot become a
-  // processed region.
+  // High-sensitivity text detection, but keep a strict coverage ceiling so
+  // ordinary bright clothing/floor/background cannot become a giant mask.
   const passes=[
-    {t:Math.max(96,userT-12),m:Math.max(5,Math.round(W/82))},
-    {t:Math.max(104,userT-4),m:Math.max(5,Math.round(W/72))},
-    {t:Math.max(112,userT+4),m:Math.max(4,Math.round(W/64))}
+    {t:Math.max(72,userT-34), thk:2, mr:Math.max(3,Math.round(W/110))},
+    {t:Math.max(82,userT-24), thk:Math.max(2,Math.round(baseThk*.42)), mr:Math.max(4,Math.round(W/96))},
+    {t:Math.max(92,userT-14), thk:Math.max(2,Math.round(baseThk*.58)), mr:Math.max(4,Math.round(W/84))},
+    {t:Math.max(102,userT-4), thk:Math.max(2,Math.round(baseThk*.72)), mr:Math.max(4,Math.round(W/72))}
   ];
   for(const cfg of passes){
-    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,cfg.m,thk);
+    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,cfg.mr,cfg.thk);
     if(!m)continue;
     const before=mask.slice();
     for(let p=0;p<N;p++)if(m[p])mask[p]=1;
     let c=0;
     for(let yy=ry0-y0;yy<ry1-y0;yy++)for(let xx=rx0-x0;xx<rx1-x0;xx++)if(mask[yy*w+xx])c++;
-    if(c/area>0.045)mask.set(before);
+    // Never let a detector consume the scene.  If it would, discard only that
+    // pass and retain stricter detections from previous passes.
+    if(c/area>0.055)mask.set(before);
   }
 
-  // Catch only bright, neutral anti-aliased edge pixels next to an already
-  // detected text pixel. This avoids turning ordinary floor texture into mask.
+  // Faint anti-aliased residue: only accept a neutral, locally bright pixel
+  // immediately adjacent to an already detected stroke.
   const edge=mask.slice();
   for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
     for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
       const p=y*w+x;if(mask[p])continue;
       let near=false;
       for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
-        if(mask[(y+dy)*w+x+dx]){near=true;break;}
+        if(dx||dy){if(mask[(y+dy)*w+x+dx]){near=true;break;}}
       }
       if(!near)continue;
       const i=p*4,mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
       const L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-      if(mx-mn<70 && L>=Math.max(78,userT-30))edge[p]=1;
+      if(mx-mn<62 && L>=Math.max(74,userT-34))edge[p]=1;
     }
   }
   mask.set(edge);
 
-  // Remove isolated detections. Real letter strokes have connected neighbours.
+  // Tiny connectivity cleanup: preserve real strokes, remove isolated bright
+  // scene pixels that happen to be inside the search rectangle.
   const clean=mask.slice();
-  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++)for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
-    const p=y*w+x;if(!mask[p])continue;
-    let n=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if((dx||dy)&&mask[(y+dy)*w+x+dx])n++;
-    if(n===0)clean[p]=0;
+  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
+    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
+      const p=y*w+x;if(!mask[p])continue;
+      let n=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy&&mask[(y+dy)*w+x+dx])n++;
+      if(n===0)clean[p]=0;
+    }
   }
   mask.set(clean);
 
   let total=0;
   for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++)if(mask[y*w+x])total++;
-  if(!total || total/area>0.05)return;
+  if(!total || total/area>0.065)return;
 
-  // Small patch-based, front-propagating inpaint. Each repaired pixel is
-  // copied from a real nearby pixel in this exact frame. The source is chosen
-  // using the still-clean 7x7 neighbourhood around the target, so the floor,
-  // clothing, edges and moving details remain locally consistent.
+  // Keep all original pixels outside the text mask byte-for-byte unchanged.
   const work=new Uint8ClampedArray(original);
   const filled=new Uint8Array(mask);
-  const radius=28;
-  const ps=3; // 7x7 context
-  const candidates=[];
+  const R=Math.min(22,Math.max(10,Math.round(Math.max(12,W/90))));
+  const ctxR=2; // compare a tiny 5x5 neighbourhood — minute-pixel matching
+  const inside=(x,y)=>x>=ctxR&&y>=ctxR&&x<w-ctxR&&y<h-ctxR;
 
-  const inside=(xx,yy)=>xx>=0&&xx<w&&yy>=0&&yy<h;
-  const cleanPatch=(cx,cy)=>{
-    for(let yy=-ps;yy<=ps;yy++)for(let xx=-ps;xx<=ps;xx++){
-      const q=(cy+yy)*w+(cx+xx);
-      if(!inside(cx+xx,cy+yy)||filled[q])return false;
+  function lumaAt(buf,p){const i=p*4;return buf[i]*.299+buf[i+1]*.587+buf[i+2]*.114;}
+
+  // A candidate must be entirely untouched. We never sample from another
+  // repaired pixel, preventing texture smearing from propagating inward.
+  function sourceClean(sx,sy){
+    for(let yy=-ctxR;yy<=ctxR;yy++)for(let xx=-ctxR;xx<=ctxR;xx++){
+      if(filled[(sy+yy)*w+(sx+xx)])return false;
     }
     return true;
-  };
-
-  function patchScore(tx,ty,sx,sy){
-    let score=0,n=0;
-    // Only compare pixels that are still original/known around the target.
-    for(let yy=-ps;yy<=ps;yy++)for(let xx=-ps;xx<=ps;xx++){
-      const tp=(ty+yy)*w+(tx+xx);
-      if(!inside(tx+xx,ty+yy)||filled[tp])continue;
-      const sp=(sy+yy)*w+(sx+xx);
-      const ti=tp*4,si=sp*4;
-      const dr=work[ti]-original[si],dg=work[ti+1]-original[si+1],db=work[ti+2]-original[si+2];
-      score+=dr*dr+dg*dg+db*db;
-      n++;
-      if(n>36)break;
-    }
-    if(n<5)return Infinity;
-    return score/n;
   }
 
-  // Process from the outside of the text inward. Newly copied pixels become
-  // context for the next layer, which prevents a single large pasted patch.
-  for(let pass=0;pass<24;pass++){
-    const boundary=[];
-    for(let y=Math.max(ry0-y0,ps);y<Math.min(ry1-y0,h-ps);y++)for(let x=Math.max(rx0-x0,ps);x<Math.min(rx1-x0,w-ps);x++){
-      const p=y*w+x;if(!filled[p])continue;
-      let b=false;
-      for(let dy=-1;dy<=1&&!b;dy++)for(let dx=-1;dx<=1;dx++){
-        if(!dx&&!dy)continue;
-        if(!filled[(y+dy)*w+x+dx]){b=true;break;}
+  function contextScore(tx,ty,sx,sy){
+    let score=0,n=0;
+    // Compare only target pixels that are still real/unmodified. This lets the
+    // algorithm infer what texture should continue behind the removed stroke.
+    for(let yy=-ctxR;yy<=ctxR;yy++){
+      for(let xx=-ctxR;xx<=ctxR;xx++){
+        const tp=(ty+yy)*w+(tx+xx);
+        if(!inside(tx+xx,ty+yy)||filled[tp])continue;
+        const sp=(sy+yy)*w+(sx+xx);
+        const ti=tp*4,si=sp*4;
+        const dr=original[ti]-original[si],dg=original[ti+1]-original[si+1],db=original[ti+2]-original[si+2];
+        score+=(dr*dr+dg*dg+db*db)*0.72;
+        n++;
       }
-      if(b)boundary.push(p);
+    }
+    if(n<4)return Infinity;
+    // Add local gradient agreement. This strongly prefers the same direction
+    // of real texture instead of a flat/blurred-looking patch.
+    const tp=ty*w+tx,sp=sy*w+sx;
+    const tgx=lumaAt(original,tp+1)-lumaAt(original,tp-1);
+    const tgy=lumaAt(original,tp+w)-lumaAt(original,tp-w);
+    const sgx=lumaAt(original,sp+1)-lumaAt(original,sp-1);
+    const sgy=lumaAt(original,sp+w)-lumaAt(original,sp-w);
+    score+=(tgx-sgx)*(tgx-sgx)+(tgy-sgy)*(tgy-sgy);
+    return score/n + 0.025*((sx-tx)*(sx-tx)+(sy-ty)*(sy-ty));
+  }
+
+  // Process the mask from its outer boundary inward. Each destination pixel
+  // gets one exact RGB value from an untouched local source pixel. No blending.
+  for(let pass=0;pass<32;pass++){
+    const boundary=[];
+    for(let y=Math.max(ctxR,ry0-y0);y<Math.min(h-ctxR,ry1-y0);y++){
+      for(let x=Math.max(ctxR,rx0-x0);x<Math.min(w-ctxR,rx1-x0);x++){
+        const p=y*w+x;if(!filled[p])continue;
+        let isBoundary=false;
+        for(let dy=-1;dy<=1&&!isBoundary;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy){
+          if(!filled[(y+dy)*w+x+dx]){isBoundary=true;break;}
+        }
+        if(isBoundary)boundary.push(p);
+      }
     }
     if(!boundary.length)break;
 
-    for(const tp of boundary){
-      const tx=tp%w,ty=(tp/w)|0;
-      let best=null,bestScore=Infinity;
-      // Search candidates around the same local texture. Prefer close patches,
-      // but let context similarity dominate distance.
-      for(let dy=-radius;dy<=radius;dy+=2){
-        for(let dx=-radius;dx<=radius;dx+=2){
+    for(const p of boundary){
+      const tx=p%w,ty=(p/w)|0;
+      let bestS=null,best=Infinity;
+      for(let dy=-R;dy<=R;dy+=2){
+        for(let dx=-R;dx<=R;dx+=2){
+          if(dx===0&&dy===0)continue;
           const sx=tx+dx,sy=ty+dy;
-          if(sx<ps||sy<ps||sx>=w-ps||sy>=h-ps)continue;
-          if(!cleanPatch(sx,sy))continue;
-          const sc=patchScore(tx,ty,sx,sy)+(dx*dx+dy*dy)*0.018;
-          if(sc<bestScore){bestScore=sc;best={sx,sy};}
+          if(!inside(sx,sy)||!sourceClean(sx,sy))continue;
+          const sc=contextScore(tx,ty,sx,sy);
+          if(sc<best){best=sc;bestS={sx,sy};}
         }
       }
-      if(!best)continue;
-      const si=(best.sy*w+best.sx)*4,di=tp*4;
-      // Exact current-frame RGB copy: no generated/averaged colour.
-      work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=255;
-      filled[tp]=0;
+      if(!bestS)continue;
+      const si=(bestS.sy*w+bestS.sx)*4,di=p*4;
+      work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=original[di+3];
+      filled[p]=0;
     }
   }
 
-  // Any mask pixels that remain are filled with the best clean direct source
-  // pixel in a small neighbourhood, still using only original frame pixels.
+  // Any tiny interior residue gets one nearest texture-consistent source pixel.
   for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
     const p=y*w+x;if(!filled[p])continue;
-    let best=null,bs=Infinity;
-    for(let dy=-radius;dy<=radius;dy+=2)for(let dx=-radius;dx<=radius;dx+=2){
-      const sx=x+dx,sy=y+dy;if(sx<0||sy<0||sx>=w||sy>=h)continue;
-      if(filled[sy*w+sx])continue;
-      const si=(sy*w+sx)*4,ti=p*4;
-      const dr=work[ti]-original[si],dg=work[ti+1]-original[si+1],db=work[ti+2]-original[si+2];
-      const sc=dr*dr+dg*dg+db*db+(dx*dx+dy*dy)*0.35;
-      if(sc<bs){bs=sc;best={sx,sy};}
+    let bestS=null,best=Infinity;
+    for(let dy=-R;dy<=R;dy+=2)for(let dx=-R;dx<=R;dx+=2){
+      const sx=x+dx,sy=y+dy;
+      if(!inside(sx,sy)||!sourceClean(sx,sy))continue;
+      const sc=contextScore(x,y,sx,sy);
+      if(sc<best){best=sc;bestS={sx,sy};}
     }
-    if(best){const si=(best.sy*w+best.sx)*4,di=p*4;work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=255;}
+    if(bestS){const si=(bestS.sy*w+bestS.sx)*4,di=p*4;work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=original[si+3];filled[p]=0;}
   }
 
-  // Commit ONLY pixels that belonged to the text mask. The rest of the frame
-  // is byte-for-byte unchanged.
+  // Commit only the detected text pixels. Everything else is untouched.
   for(let p=0;p<N;p++)if(mask[p]){
     const i=p*4;d[i]=work[i];d[i+1]=work[i+1];d[i+2]=work[i+2];d[i+3]=original[i+3];
   }

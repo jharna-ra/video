@@ -1126,10 +1126,7 @@ function removeWhiteDetailedFromCanvasV2(ctx2,W,H,rect){
   ctx2.putImageData(img,x0,y0);
 }
 
-// Subtle full-frame natural grain. It is deliberately applied to the ENTIRE video,
-// not just the edited area, so the texture of repaired pixels blends with the
-// original footage instead of looking like a processed strip. The noise is
-// low-amplitude and deterministic per frame to avoid harsh flicker.
+// No global grain/noise is applied. The video remains at its original pixel texture.
 let grainFrameSeed=0;
 
 // Very subtle full-frame haze/softening. The same effect is applied everywhere
@@ -1207,7 +1204,6 @@ function drawPreview(){
    const wr=whiteRect2;
    removeWhiteDetailedFromCanvasV2(vctx,view.width,view.height,{x:wr.x/r.w*view.width,y:wr.y/r.h*view.height,w:wr.w/r.w*view.width,h:wr.h/r.h*view.height});
  }
- applyNaturalGrain(vctx,view.width,view.height,7.0);
 }
 function updateSelectionBox(){
  if(!selecting && !whiteRect && !whiteRect2 && !crop){selBox.style.display='none';selection2.style.display='none';return;}

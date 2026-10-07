@@ -164,7 +164,7 @@ input[type=range]{width:100%}
 <label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
 <label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
 <label>White detection sensitivity <b id="whiteVal">200</b></label>
-<input id="whiteThreshold" type="range" min="80" max="245" value="155">
+<input id="whiteThreshold" type="range" min="80" max="245" value="200">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
@@ -422,67 +422,39 @@ function sepFilter(src,w,h,r,useMax){
 }
 
 function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
-  // Robust detector: the user has already selected the exact text area, so use
-  // several signals instead of requiring perfectly white pixels.
-  const N=w*h,lum=new Float32Array(N);
+  const N=w*h, lum=new Float32Array(N);
   for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  const r=Math.max(1,Math.floor((thk||8)/2));
-  const opened=sepFilter(sepFilter(lum,w,h,r,false),w,h,r,true);
+  x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);
+  const radius=Math.max(2,Math.min(8,Math.round((thk||8)/2)));
   const mask=new Uint8Array(N); let any=false;
-  x0=Math.max(1,x0);y0=Math.max(1,y0);x1=Math.min(w-1,x1);y1=Math.min(h-1,y1);
-  const floor=Math.max(70,t-65);
+  // Text is detected from BOTH absolute brightness and local contrast. This is deliberately
+  // per-frame: text that appears later or moves is not dependent on the initial sample frames.
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
     const p=y*w+x,i=p*4,L=lum[p];
-    if(L<floor)continue;
     const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    const chroma=mx-mn, top=L-opened[p];
-    let score=0;
-    if(L>=t)score+=2;
-    if(chroma<=90)score+=1;
-    if(top>=10)score+=1;
-    let sum=0,n=0,darker=0;
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy){
-      const q=(y+dy)*w+(x+dx),qi=q*4;
-      const qL=d[qi]*.299+d[qi+1]*.587+d[qi+2]*.114;
-      sum+=qL;n++;if(qL<L-6)darker++;
+    const chroma=mx-mn;
+    if(chroma>105)continue;
+    let sum=0,n=0;
+    const yy0=Math.max(y0,y-radius),yy1=Math.min(y1,y+radius);
+    const xx0=Math.max(x0,x-radius),xx1=Math.min(x1,x+radius);
+    for(let yy=yy0;yy<yy1;yy+=2)for(let xx=xx0;xx<xx1;xx+=2){sum+=lum[yy*w+xx];n++;}
+    const local=n?sum/n:L;
+    const contrast=L-local;
+    const bright=L>=t;
+    // Catch normal white text, compressed grey/white text, and anti-aliased edges.
+    if((bright && chroma<=90) || (L>=Math.max(70,t-55) && chroma<=75 && contrast>=10) ||
+       (L>=Math.max(85,t-40) && chroma<=60 && contrast>=6)){
+      mask[p]=1; any=true;
     }
-    const avg=sum/n;
-    if(L-avg>=7 && darker>=2)score+=2;
-    if(L-avg>=14)score+=1;
-    if(score>=4 && chroma<=105){mask[p]=1;any=true;}
   }
   if(!any)return null;
-  const near=dilateMask(mask,w,h,Math.max(1,Math.min(3,Math.round((thk||8)/6))));
+  // Include neighboring anti-aliased letter pixels, but only inside the selected box.
+  const near=dilateMask(mask,w,h,1);
   for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-    const p=y*w+x;if(mask[p]||!near[p])continue;
-    const i=p*4,L=lum[p],mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    if(mx-mn<=110 && L>=Math.max(62,t-85))mask[p]=1;
+    const p=y*w+x;
+    if(near[p] && !mask[p] && lum[p]>=Math.max(65,t-65))mask[p]=1;
   }
   return mask;
-}
-
-// Per-frame fallback for text that appears later or moves/changes.
-// Unlike the static mask, this is evaluated on EVERY exported frame.
-function detectDynamicWhite(d,w,h,t,x0,y0,x1,y1,thk){
-  const N=w*h, m=new Uint8Array(N); let any=false;
-  x0=Math.max(1,x0); y0=Math.max(1,y0); x1=Math.min(w-1,x1); y1=Math.min(h-1,y1);
-  const threshold=Math.max(95,t-28);
-  for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){
-    const p=y*w+x, i=p*4, L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-    if(L<threshold) continue;
-    const mx=Math.max(d[i],d[i+1],d[i+2]), mn=Math.min(d[i],d[i+1],d[i+2]);
-    if(mx-mn>95) continue;
-    const l=d[((y)*w+(x-1))*4]*.299+d[((y)*w+(x-1))*4+1]*.587+d[((y)*w+(x-1))*4+2]*.114;
-    const r=d[((y)*w+(x+1))*4]*.299+d[((y)*w+(x+1))*4+1]*.587+d[((y)*w+(x+1))*4+2]*.114;
-    const u=d[(((y-1)*w+x))*4]*.299+d[(((y-1)*w+x))*4+1]*.587+d[(((y-1)*w+x))*4+2]*.114;
-    const dn=d[(((y+1)*w+x))*4]*.299+d[(((y+1)*w+x))*4+1]*.587+d[(((y+1)*w+x))*4+2]*.114;
-    const local=(l+r+u+dn)*0.25;
-    // Bright, nearly-neutral pixels that stand out from their immediate background.
-    if(L-local>=10 || L>=t+8){m[p]=1;any=true;}
-  }
-  if(!any) return null;
-  const grow=Math.max(1,Math.min(3,Math.round((thk||9)/7)));
-  return dilateMask(m,w,h,grow);
 }
 
 async function buildStaticMask(){
@@ -629,9 +601,8 @@ function inpaintHole(d,w,h,hole,strength){
 
   for(let j=0;j<hn;j++){
     const p=idx[j],i=p*4;
-    const g=(Math.random()+Math.random()+Math.random()+Math.random()-2)*1.732*amp;
     for(let q=0;q<3;q++){
-      let v=fill[p*3+q]+g;v=v<0?0:v>255?255:v;
+      let v=fill[p*3+q];v=v<0?0:v>255?255:v;
       d[i+q]=d[i+q]*(1-strength)+v*strength;
     }
   }
@@ -674,26 +645,13 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
     const rw=rx1-rx0,rh=ry1-ry0,sc=scaledStatic(sm,rw,rh);
     let c=0;
     for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;c++;}}
-    if(c/rectArea>0.35){hole.fill(0);staticTooBig=true;}else if(c)any=true;
+    if(c)any=true;
   }
-  if(dynamic||!useStatic||staticTooBig){
-    let tt=t,det=null;
-    for(let k=0;k<4;k++){
-      det=detectWhite(d,w,h,tt,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
-      if(!det)break;
-      let c=0;for(let p=0;p<N;p++)c+=det[p];
-      // Do not discard a valid mask just because the selected box is large.
-      // A second, per-frame detector below handles text that appears later.
-      if(c/rectArea<=0.55)break;
-      if(k===3)det=null;
-      tt+=12;
-    }
+  // Always run the per-frame detector. The text can appear, disappear or move after the
+  // static mask was built, so relying on the static mask causes the text to reappear later.
+  {
+    const det=detectWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
     if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
-
-    // Critical: detect newly appearing/moving text on THIS frame, not only in
-    // the sampled static mask. This prevents text from reappearing later.
-    const dyn=detectDynamicWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,thk);
-    if(dyn)for(let p=0;p<N;p++)if(dyn[p]){hole[p]=1;any=true;}
   }
   if(showMask){
     let c=0;

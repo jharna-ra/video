@@ -827,30 +827,118 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
 }
 
 // Apply every extra box to a canvas. (rw,rh) = source-rect size, (W,H) = canvas size.
-function applyExtraBoxes(ctx2,W,H,r){
-  for(const q of extraRects.slice()){
-    removeTextRect(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
+function applyExtraBoxes(ctx2, W, H, r) {
+  // Every orange box works on the result of the previous box.
+  // Canvas is intentionally NOT cleared between boxes.
+  for (let i = 0; i < extraRects.length; i++) {
+    const q = extraRects[i];
+
+    const rect = {
+      x: q.x / r.w * W,
+      y: q.y / r.h * H,
+      w: q.w / r.w * W,
+      h: q.h / r.h * H
+    };
+
+    removeTextRect(ctx2, W, H, rect);
   }
 }
 
-function drawPreview(){
- if(exporting||!video.videoWidth)return;
- const r=sourceRect();
- const s=Math.min(1,1100/r.w);
- const nw=Math.round(r.w*s),nh=Math.round(r.h*s);
- if(view.width!==nw)view.width=nw; if(view.height!==nh)view.height=nh;
- vctx.clearRect(0,0,view.width,view.height);
- vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
- if(whiteRect){
-   const wr=whiteRect;
-   removeWhiteFromCanvas(vctx,view.width,view.height,{
-     x:wr.x/r.w*view.width,
-     y:wr.y/r.h*view.height,
-     w:wr.w/r.w*view.width,
-     h:wr.h/r.h*view.height
-   });
- }
- applyExtraBoxes(vctx,view.width,view.height,r);
+function applyAllTextRemoval(ctx2, W, H, r, exportMode = false) {
+
+  // ============================================================
+  // BOX 1 — FIRST / RED BOX
+  // ============================================================
+  if (whiteRect) {
+
+    const rect = {
+      x: whiteRect.x / r.w * W,
+      y: whiteRect.y / r.h * H,
+      w: whiteRect.w / r.w * W,
+      h: whiteRect.h / r.h * H
+    };
+
+    if (exportMode) {
+      removeWhiteFromCanvasExport(
+        ctx2,
+        W,
+        H,
+        rect
+      );
+    } else {
+      removeWhiteFromCanvas(
+        ctx2,
+        W,
+        H,
+        rect
+      );
+    }
+  }
+
+  // ============================================================
+  // BOX 2, 3, 4... — ALWAYS WORK ON THE ALREADY-CLEANED CANVAS
+  // ============================================================
+  for (const q of extraRects) {
+
+    const rect = {
+      x: q.x / r.w * W,
+      y: q.y / r.h * H,
+      w: q.w / r.w * W,
+      h: q.h / r.h * H
+    };
+
+    removeTextRect(
+      ctx2,
+      W,
+      H,
+      rect
+    );
+  }
+}
+
+function drawPreview() {
+
+  if (exporting || !video.videoWidth) return;
+
+  const r = sourceRect();
+
+  const s = Math.min(1, 1100 / r.w);
+
+  const nw = Math.max(1, Math.round(r.w * s));
+  const nh = Math.max(1, Math.round(r.h * s));
+
+  if (view.width !== nw) view.width = nw;
+  if (view.height !== nh) view.height = nh;
+
+  // ------------------------------------------------------------
+  // ORIGINAL FRAME
+  // ------------------------------------------------------------
+
+  vctx.clearRect(0, 0, view.width, view.height);
+
+  vctx.drawImage(
+    video,
+    r.x,
+    r.y,
+    r.w,
+    r.h,
+    0,
+    0,
+    view.width,
+    view.height
+  );
+
+  // ------------------------------------------------------------
+  // ALL TEXT REMOVERS — SEQUENTIAL
+  // ------------------------------------------------------------
+
+  applyAllTextRemoval(
+    vctx,
+    view.width,
+    view.height,
+    r,
+    false
+  );
 }
 function updateSelectionBox(){
  const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
@@ -1385,14 +1473,50 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.fill();
   baseCtx.restore();
 
-  if(mapImg){
+  if (
+    mapImg &&
+    mapImg.width > 0 &&
+    mapImg.height > 0
+  ) {
+
     baseCtx.save();
-    baseCtx.globalAlpha=mapOpacity;
+
+    baseCtx.globalAlpha = mapOpacity;
+
     baseCtx.beginPath();
-    baseCtx.rect(mapX,mapY,mapW,mapH);
+
+    baseCtx.rect(
+      mapX,
+      mapY,
+      mapW,
+      mapH
+    );
+
     baseCtx.clip();
-    const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height),sw=mapW/ms,sh=mapH/ms;
-    baseCtx.drawImage(mapImg,(mapImg.width-sw)/2,(mapImg.height-sh)/2,sw,sh,mapX,mapY,mapW,mapH);
+
+    const ms = Math.max(
+      mapW / mapImg.width,
+      mapH / mapImg.height
+    );
+
+    const sw = mapW / ms;
+    const sh = mapH / ms;
+
+    baseCtx.imageSmoothingEnabled = true;
+    baseCtx.imageSmoothingQuality = 'high';
+
+    baseCtx.drawImage(
+      mapImg,
+      Math.max(0, (mapImg.width - sw) / 2),
+      Math.max(0, (mapImg.height - sh) / 2),
+      Math.min(mapImg.width, sw),
+      Math.min(mapImg.height, sh),
+      mapX,
+      mapY,
+      mapW,
+      mapH
+    );
+
     baseCtx.restore();
   }
 
@@ -1472,25 +1596,67 @@ function exportNeedsFrameProcessing(){
   return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null);
 }
 
-function drawExportFrame(elapsedOverride){
-  const r=sourceRect();
-  wctx.clearRect(0,0,outputW,outputH);
-  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+function drawExportFrame(elapsedOverride) {
 
-  if(whiteRect){
-    const rectOnOutput={
-      x:whiteRect.x/r.w*outputW,
-      y:whiteRect.y/r.h*outputH,
-      w:whiteRect.w/r.w*outputW,
-      h:whiteRect.h/r.h*outputH
-    };
-    removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
-  }
-  applyExtraBoxes(wctx,outputW,outputH,r);
+  const r = sourceRect();
 
-  if(lat!=null&&lon!=null){
-    const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
-    drawGeoFrame(wctx,outputW,outputH,elapsed);
+  // ------------------------------------------------------------
+  // START WITH ORIGINAL VIDEO FRAME
+  // ------------------------------------------------------------
+
+  wctx.clearRect(
+    0,
+    0,
+    outputW,
+    outputH
+  );
+
+  wctx.drawImage(
+    video,
+    r.x,
+    r.y,
+    r.w,
+    r.h,
+    0,
+    0,
+    outputW,
+    outputH
+  );
+
+  // ------------------------------------------------------------
+  // BOX 1 → BOX 2 → BOX 3 → ...
+  // ------------------------------------------------------------
+
+  applyAllTextRemoval(
+    wctx,
+    outputW,
+    outputH,
+    r,
+    true
+  );
+
+  // ------------------------------------------------------------
+  // MAP + GEOTAG + LOGO
+  // MUST BE LAST
+  // ------------------------------------------------------------
+
+  if (lat != null && lon != null) {
+
+    const elapsed =
+      elapsedOverride != null
+        ? elapsedOverride
+        : Math.max(
+            0,
+            video.currentTime -
+            (+$('trimStart').value || 0)
+          );
+
+    drawGeoFrame(
+      wctx,
+      outputW,
+      outputH,
+      elapsed
+    );
   }
 }
 

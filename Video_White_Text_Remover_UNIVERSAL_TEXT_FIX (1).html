@@ -157,14 +157,14 @@ input[type=range]{width:100%}
 <div class="section">
 <h3>White Text Removal</h3>
 <button id="removeMode" class="secondary">Select White Text Area</button>
-<button id="removeWhite" disabled>Remove White Text</button><label class="checkLine"><input id="autoWhite" type="checkbox" checked> Auto-detect white text in whole video (no boxes)</label>
+<button id="removeWhite" disabled>Remove White Text</button>
 <button id="undoWhite" class="secondary">Undo Last Box</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
 <div class="small" id="boxCount">Boxes: 0 — turn on "Select White Text Area" and drag as many boxes as you need.</div>
 <label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
 <label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
 <label>White detection sensitivity <b id="whiteVal">200</b></label>
-<input id="whiteThreshold" type="range" min="60" max="245" value="145">
+<input id="whiteThreshold" type="range" min="80" max="245" value="200">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
@@ -828,8 +828,8 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
 
 // Apply every extra box to a canvas. (rw,rh) = source-rect size, (W,H) = canvas size.
 function applyExtraBoxes(ctx2,W,H,r){
-  for(const q of extraRects){
-    removeWhiteDetailedFromCanvasV3(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
+  for(const q of extraRects.slice()){
+    removeTextRect(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
   }
 }
 
@@ -1058,7 +1058,7 @@ video.addEventListener('loadedmetadata',()=>{
  $('durationBadge').textContent=fmt(duration)+' s';
  $('trimStart').value='0';$('trimEnd').value=fmt(duration);
  $('trimRange').max=duration; $('trimRange').value=0;
- resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false); $('removeWhite').disabled=false;
+ resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
  $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text areas.');
  buildTimeline();
 });
@@ -1079,22 +1079,22 @@ $('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode
 $('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;extraRects=[];invalidateWR();$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop applied. White-text boxes were cleared — select them again on the cropped video.')}
 $('resetCrop').onclick=()=>{crop=null;whiteRect=null;extraRects=[];invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop reset.')}
 $('removeWhite').onclick=async()=>{
+ if(!whiteRect&&!extraRects.length)return;
  video.pause();
- setStatus($('autoWhite').checked?'Strong automatic white-text removal enabled: every frame, two detection passes.':'Analysing the selected text areas across the video…');
+ setStatus('Analysing the text area across the video…');
  try{
-   if(!$('autoWhite').checked) await buildStaticMask();
-   setStatus($('autoWhite').checked?'Auto remover will scan the whole frame on every frame and run two passes.':'White-text removal is ready for '+((whiteRect?1:0)+extraRects.length)+' box(es).');
+   await buildStaticMask();
+   setStatus('White-text removal is ready for '+((whiteRect?1:0)+extraRects.length)+' box(es). It is applied to every frame when you export / download.');
  }catch(e){setStatus('Text analysis failed: '+(e.message||e))}
  drawPreview();drawGeoPreview();
 }
-$('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.display='none';invalidateWR();$('removeWhite').disabled=!$('autoWhite').checked;updateSelectionBox();drawPreview();drawGeoPreview();setStatus($('autoWhite').checked?'Boxes cleared. Auto whole-video remover remains enabled.':'All white-text boxes cleared.')}
+$('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.display='none';invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();drawGeoPreview();setStatus('All white-text boxes cleared.')}
 $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
 $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
 $('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 $('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
-$('autoWhite').onchange=()=>{$('removeWhite').disabled=!video.videoWidth;wrCache.clear();drawPreview();drawGeoPreview();setStatus($('autoWhite').checked?'Automatic whole-video white-text removal ON — no boxes required.':'Automatic whole-video removal OFF — use selection boxes.')}
 
 function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
 function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
@@ -1441,63 +1441,13 @@ function prepareOutput(){
 }
 
 function exportNeedsFrameProcessing(){
-  return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null) || $('autoWhite')?.checked;
+  return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null);
 }
 
-/* ===== STRONG AUTO WHITE-TEXT REMOVER =====
-   No selection boxes required. It runs on EVERY frame and uses TWO passes:
-   pass 1 catches solid white/grey lettering; pass 2 catches faint anti-aliased remnants.
-   Only thin bright structures detected by a white top-hat are changed. */
-function removeAutoWhiteText(ctx2,W,H){
-  if(!$('autoWhite')?.checked)return;
-  const img=ctx2.getImageData(0,0,W,H), d=img.data, N=W*H;
-  const lum=new Float32Array(N);
-  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  const base=Math.max(3,Math.round((+$('textThick').value||9)*W/1080));
-  const runs=[
-    {threshold:Math.max(105,(+$('whiteThreshold').value||155)-30), radius:Math.max(2,Math.round(base*.65)), grow:Math.max(3,Math.round(base*.70))},
-    {threshold:Math.max(72,(+$('whiteThreshold').value||155)-65), radius:Math.max(2,Math.round(base*.95)), grow:Math.max(4,Math.round(base*1.05))}
-  ];
-  for(const cfg of runs){
-    const opened=sepFilter(sepFilter(lum,W,H,cfg.radius,false),W,H,cfg.radius,true);
-    let mask=new Uint8Array(N),any=false;
-    const T=cfg.radius<=3?12:9;
-    for(let p=0;p<N;p++){
-      const i=p*4,L=lum[p];
-      if(L<cfg.threshold-45)continue;
-      const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-      const ch=mx-mn;
-      if(ch>88)continue;
-      const top=L-opened[p];
-      if(L>=cfg.threshold && top>=T){mask[p]=1;any=true;}
-      else if(L>=cfg.threshold-25 && top>=6){mask[p]=1;any=true;}
-    }
-    if(!any)continue;
-    mask=dilateMask(mask,W,H,cfg.grow);
-    // Remove isolated single pixels/noise but keep text strokes.
-    const cleaned=mask.slice();
-    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
-      const p=y*W+x;if(!mask[p])continue;
-      let n=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(dx!==0||dy!==0)n+=mask[(y+dy)*W+x+dx];
-      if(n<1)cleaned[p]=0;
-    }
-    mask=cleaned;
-    if($('showMask').checked&&!exporting){
-      for(let p=0;p<N;p++)if(mask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;}
-      continue;
-    }
-    inpaintHole(d,W,H,mask,(+$('removeOpacity').value||100)/100);
-    // Refresh luminance after each pass so pass 2 sees the newly reconstructed pixels.
-    for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  }
-  ctx2.putImageData(img,0,0);
-}
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();
   wctx.clearRect(0,0,outputW,outputH);
   wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
-
-  removeAutoWhiteText(wctx,outputW,outputH);
 
   if(whiteRect){
     const rectOnOutput={
@@ -2028,37 +1978,71 @@ async function buildStaticMask(){return null}
 function removeWhiteFromCanvas(c,W,H,r){removeTextRect(c,W,H,r)}
 function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRect(c,W,H,r)}
 function removeTextRect(ctx2,W,H,rect){
+  if(!rect)return;
   const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
   const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
   if(rx1-rx0<3||ry1-ry0<3)return;
-  const t=+$('whiteThreshold').value||200, strength=(+$('removeOpacity').value||100)/100, k=W/1080;
-  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*k*0.8));
-  const thk=Math.max(3,Math.round((+$('textThick').value||9)*k));
-  const r=Math.max(2,Math.ceil(thk/2)+1), pad=Math.max(12,grow*3+r);
+  const userT=+$('whiteThreshold').value||115;
+  const strength=(+$('removeOpacity').value||100)/100;
+  const k=Math.max(.5,W/1080);
+  const baseThk=Math.max(3,Math.round((+$('textThick').value||9)*k));
+  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*k*.9));
+  const pad=Math.max(18,grow*4+baseThk*2);
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
+  const original=new Uint8ClampedArray(d);
+  const finalMask=new Uint8Array(N);
+
+  // Multiple increasingly sensitive passes. Every pass is allowed to contribute;
+  // there is deliberately NO percentage-of-box rejection, so tight boxes work.
+  const passes=[
+    {t:userT,thk:baseThk},
+    {t:Math.max(72,userT-22),thk:Math.max(3,Math.round(baseThk*.78))},
+    {t:Math.max(60,userT-40),thk:Math.max(2,Math.round(baseThk*.55))},
+    {t:Math.max(50,userT-55),thk:Math.max(2,Math.round(baseThk*.38))}
+  ];
+  for(const cfg of passes){
+    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(3,Math.round(W/90)),cfg.thk);
+    if(m)for(let p=0;p<N;p++)if(m[p])finalMask[p]=1;
+  }
+
+  // Second detector for low-contrast anti-aliased white text that top-hat can miss.
   const lum=new Float32Array(N);
   for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  const opened=sepFilter(sepFilter(lum,w,h,r,false),w,h,r,true);
-  const T=Math.max(12,Math.min(36,t*0.14));
-  let hole=new Uint8Array(N),any=false;
+  const rad=Math.max(2,Math.ceil(baseThk/2));
+  const opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
   for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
     const p=y*w+x,i=p*4,L=lum[p];
-    const ch=Math.max(d[i],d[i+1],d[i+2])-Math.min(d[i],d[i+1],d[i+2]);
-    if(ch<=80&&L>=Math.max(60,t-90)&&(L-opened[p])>=T){hole[p]=1;any=true;}
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    const ch=mx-mn;
+    if(ch<=95 && L>=Math.max(48,userT-65) && (L-opened[p])>=7) finalMask[p]=1;
   }
+
+  let count=0;for(let p=0;p<N;p++)count+=finalMask[p];
   if($('showMask').checked&&!exporting){
-    for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
+    for(let p=0;p<N;p++)if(finalMask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
     ctx2.putImageData(img,x0,y0);return;
   }
-  if(!any)return;
-  hole=dilateMask(hole,w,h,grow);
+  if(!count)return;
+
+  // Large halo catches the anti-aliased fringe and partially transparent text edges.
+  let hole=dilateMask(finalMask,w,h,Math.max(grow,2));
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const gx=x+x0,gy=y+y0;
     if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
   }
+
+  // Inpaint twice using real pixels from this same frame. Second pass removes faint residue.
   inpaintHole(d,w,h,hole,strength);
+  const remaining=new Uint8Array(N);
+  for(let p=0;p<N;p++)if(finalMask[p])remaining[p]=1;
+  const second=dilateMask(remaining,w,h,Math.max(1,Math.floor(grow*.55)));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)second[y*w+x]=0;
+  }
+  inpaintHole(d,w,h,second,Math.min(1,strength));
   ctx2.putImageData(img,x0,y0);
 }
 

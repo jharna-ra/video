@@ -29,7 +29,6 @@ input[type=range]{width:100%}
 #selection2{position:absolute;border:2px dashed #00e5ff;background:transparent;display:none;pointer-events:none}
 .selExtra{position:absolute;border:2px solid #ff9500;display:none;pointer-events:none}
 .selExtra::after{content:attr(data-n);position:absolute;top:-1px;left:-1px;background:#ff9500;color:#000;font:bold 10px Arial;padding:1px 4px}
-#trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
 .timelineHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}.timelineHead b{font-size:13px}.timelineHead span{font-size:11px;color:#8fa0ad}
@@ -171,7 +170,7 @@ input[type=range]{width:100%}
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
 <label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
 <input id="textThick" type="range" min="2" max="30" value="9">
-<div class="small">Draw a box around each piece of text (as many as you like). The first box is red; extra boxes are numbered orange and are checked on every frame, so text that appears later is still removed. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see which pixels will be removed: if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
+<div class="small">Draw a box around each piece of text (as many as you like). The first box is red; extra boxes are numbered orange. Every box is checked on every frame, so text that appears later is still removed. Only thin, white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see which pixels will be removed: if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
 <div class="section">
@@ -236,7 +235,7 @@ input[type=range]{width:100%}
         <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
         <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
         <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="5" max="90" value="30">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">25%</b></div><input id="gMapW" type="range" min="5" max="90" value="25">
         <div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
         <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
         <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
@@ -306,18 +305,19 @@ const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true})
 const geo=$('geoCanvas'), gctx=geo.getContext('2d',{willReadFrequently:true});
 if(!wctx) throw new Error('Export canvas context unavailable');
 const stage=$('stage'), selBox=$('selection'), selection2=$('selection2');
+const _blur=document.createElement('canvas');
 
 let file=null, videoURL=null, duration=0, playing=false;
-// whiteRect = first box (static-mask pipeline). extraRects = any number of additional boxes (per-frame detailed remover).
+// whiteRect = first box (red). extraRects = additional boxes (orange). All are processed identically, per frame.
 let crop=null, cropMode=false, whiteRect=null, extraRects=[], removeMode=false, selecting=false, sx=0, sy=0, dragEl=null;
-let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
+let lat=null, lon=null, mapImg=null, exportBlob=null;
 let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
 let outputW=0, outputH=0, exporting=false;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:30,mapH:35,
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:25,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:25,mapH:35,mapMoved:false,
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -347,43 +347,11 @@ function sourceRect(){
  if(!crop)return {x:0,y:0,w:W,h:H};
  return crop;
 }
-function drawBase(ctx2,W,H){
- const r=sourceRect();
- ctx2.clearRect(0,0,W,H);
- ctx2.drawImage(video,r.x,r.y,r.w,r.h,0,0,W,H);
-}
+function invalidateWR(){}
 
 // =====================================================================
-//  CLEAN WHITE-TEXT REMOVAL
+//  TEXT REMOVAL  (top-hat detection of thin bright strokes + inpainting)
 // =====================================================================
-const wrCache=new Map();
-let staticMask=null, staticBuilding=null, staticTimer=null;
-
-function wrKey(){
-  const w=whiteRect; if(!w)return '';
-  return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('textThick').value,$('trimStart').value,$('trimEnd').value,duration].join('|');
-}
-function invalidateWR(){
-  staticMask=null; wrCache.clear();
-  scheduleStaticMask(true);
-}
-function scheduleStaticMask(force){
-  if(force){clearTimeout(staticTimer);staticTimer=null;}
-  if(staticTimer||!whiteRect||!duration||exporting)return;
-  staticTimer=setTimeout(async()=>{
-    staticTimer=null;
-    if(exporting||!whiteRect||!duration)return;
-    if(staticMask&&staticMask.key===wrKey())return;
-    try{
-      video.pause();
-      setStatus('Analysing the text area across the video…');
-      await buildStaticMask();
-      setStatus('Text area analysed — the preview now shows the clean result.');
-    }catch(e){console.warn('text analysis failed',e)}
-    drawPreview();drawGeoPreview();
-  },force?250:450);
-}
-
 function dilateMask(m,w,h,g){
   const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
   const pre=new Int32Array(Math.max(w,h)+1);
@@ -419,95 +387,6 @@ function sepFilter(src,w,h,r,useMax){
   slidePass(src,tmp,w,1,h,w,r,useMax,dq);
   slidePass(tmp,out,h,w,w,1,r,useMax,dq);
   return out;
-}
-
-function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
-  const N=w*h, lum=new Float32Array(N);
-  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);
-  const radius=Math.max(2,Math.min(8,Math.round((thk||8)/2)));
-  const mask=new Uint8Array(N); let any=false;
-  // Text is detected from BOTH absolute brightness and local contrast. This is deliberately
-  // per-frame: text that appears later or moves is not dependent on the initial sample frames.
-  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-    const p=y*w+x,i=p*4,L=lum[p];
-    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    const chroma=mx-mn;
-    if(chroma>105)continue;
-    let sum=0,n=0;
-    const yy0=Math.max(y0,y-radius),yy1=Math.min(y1,y+radius);
-    const xx0=Math.max(x0,x-radius),xx1=Math.min(x1,x+radius);
-    for(let yy=yy0;yy<yy1;yy+=2)for(let xx=xx0;xx<xx1;xx+=2){sum+=lum[yy*w+xx];n++;}
-    const local=n?sum/n:L;
-    const contrast=L-local;
-    const bright=L>=t;
-    // Catch normal white text, compressed grey/white text, and anti-aliased edges.
-    if((bright && chroma<=90) || (L>=Math.max(70,t-55) && chroma<=75 && contrast>=10) ||
-       (L>=Math.max(85,t-40) && chroma<=60 && contrast>=6)){
-      mask[p]=1; any=true;
-    }
-  }
-  if(!any)return null;
-  // Include neighboring anti-aliased letter pixels, but only inside the selected box.
-  const near=dilateMask(mask,w,h,1);
-  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-    const p=y*w+x;
-    if(near[p] && !mask[p] && lum[p]>=Math.max(65,t-65))mask[p]=1;
-  }
-  return mask;
-}
-
-async function buildStaticMask(){
-  while(staticBuilding){try{await staticBuilding}catch(e){}}
-  if(!whiteRect||!duration)return null;
-  const key=wrKey();
-  if(staticMask&&staticMask.key===key)return staticMask;
-  const job=(async()=>{
-    const wr={...whiteRect},r={...sourceRect()};
-    const t=+$('whiteThreshold').value||115;
-    const s0=clamp(+$('trimStart').value||0,0,duration);
-    const e0=clamp(+$('trimEnd').value||duration,s0+.05,duration);
-    const rw=Math.max(2,Math.round(wr.w)),rh=Math.max(2,Math.round(wr.h));
-    const sc=Math.min(1,1200/Math.max(rw,rh));
-    const aw=Math.max(2,Math.round(rw*sc)),ah=Math.max(2,Math.round(rh*sc));
-    const cv=document.createElement('canvas');cv.width=aw;cv.height=ah;
-    const cx=cv.getContext('2d',{willReadFrequently:true});
-    const n=Math.min(14,Math.max(8,Math.ceil((e0-s0)/1.5)));
-    const count=new Uint16Array(aw*ah);
-    const mr=Math.max(7,Math.round(r.w*sc/60));
-    const saved=video.currentTime;
-    video.pause();
-    for(let i=0;i<n;i++){
-      await seekVideo(s0+(e0-s0)*(i+.5)/n);
-      cx.drawImage(video,r.x+wr.x,r.y+wr.y,wr.w,wr.h,0,0,aw,ah);
-      const id=cx.getImageData(0,0,aw,ah);
-      const thk=Math.max(3,Math.round((+$('textThick').value||9)*(r.w*sc)/1080));
-      const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,mr,thk);
-      if(m)for(let p=0;p<m.length;p++)if(m[p])count[p]++;
-    }
-    await seekVideo(saved);
-    const need=Math.max(2,Math.ceil(n*.5));
-    const out=document.createElement('canvas');out.width=aw;out.height=ah;
-    const ox=out.getContext('2d'),oi=ox.createImageData(aw,ah);let any=false;
-    for(let p=0;p<count.length;p++)if(count[p]>=need){
-      const i=p*4;oi.data[i]=oi.data[i+1]=oi.data[i+2]=255;oi.data[i+3]=255;any=true;
-    }
-    ox.putImageData(oi,0,0);
-    staticMask={key,canvas:out,any,sc:{}};
-  })();
-  staticBuilding=job;
-  try{await job}finally{staticBuilding=null}
-  return staticMask;
-}
-
-function scaledStatic(sm,w,h){
-  const k=w+'x'+h;if(sm.sc[k])return sm.sc[k];
-  const c=document.createElement('canvas');c.width=w;c.height=h;
-  const cx=c.getContext('2d',{willReadFrequently:true});
-  cx.imageSmoothingEnabled=true;cx.drawImage(sm.canvas,0,0,w,h);
-  const a=cx.getImageData(0,0,w,h).data,m=new Uint8Array(w*h);
-  for(let p=0;p<m.length;p++)m[p]=a[p*4+3]>70?1:0;
-  sm.sc[k]=m;return m;
 }
 
 function inpaintHole(d,w,h,hole,strength){
@@ -585,20 +464,6 @@ function inpaintHole(d,w,h,hole,strength){
       if(c){fill[p*3]=a/c;fill[p*3+1]=b/c;fill[p*3+2]=e/c;}
     }
   }
-
-  const lum=new Float32Array(N);
-  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  const hist=new Uint32Array(64);let hc=0;
-  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
-    const p=y*w+x;
-    if(hole[p]||hole[p-1]||hole[p+1]||hole[p-w]||hole[p+w])continue;
-    const hp=Math.abs(lum[p]-(lum[p-1]+lum[p+1]+lum[p-w]+lum[p+w])/4);
-    hist[Math.min(63,Math.round(hp))]++;hc++;
-  }
-  let sigma=0.6;
-  if(hc>50){let acc=0,mi=0;for(;mi<64;mi++){acc+=hist[mi];if(acc>=hc/2)break;}sigma=Math.min(6,(mi+.3)/.754);}
-  const amp=sigma*0.85;
-
   for(let j=0;j<hn;j++){
     const p=idx[j],i=p*4;
     for(let q=0;q<3;q++){
@@ -608,235 +473,49 @@ function inpaintHole(d,w,h,hole,strength){
   }
 }
 
-function removeWhiteFromCanvas(ctx2,W,H,rect){
-  if(!rect)return;
+// Remove thin white lettering inside one rectangle (canvas pixel coordinates).
+// Opening (min then max filter) deletes strokes thinner than the window, so (luma - opened)
+// isolates letters while large white areas (shirts, walls) are left alone.
+function removeTextRect(ctx2,W,H,rect){
   const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
   const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
-  if(rx1-rx0<2||ry1-ry0<2)return;
-
-  const t=+$('whiteThreshold').value||115;
-  const strength=(+$('removeOpacity').value||100)/100;
-  const grow=Math.max(1,Math.round((+$('inpaintPasses').value||5)*W/1080*0.6));
-  const thk=Math.max(3,Math.round((+$('textThick').value||9)*W/1080));
-  const dynamic=$('textChanges').checked;
-  const key=wrKey();
-  const sm=(staticMask&&staticMask.key===key)?staticMask:null;
-  if(!sm&&!exporting&&!staticBuilding)scheduleStaticMask(false);
-  const useStatic=!!(sm&&sm.any);
-
-  const showMask=$('showMask').checked&&!exporting;
-  const cacheable=!exporting&&video.paused&&!showMask;
-  let ckey=null;
-  if(cacheable){
-    ckey=[W,H,rx0,ry0,rx1,ry1,t,thk,strength,grow,dynamic,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
-    const hit=wrCache.get(ckey);
-    if(hit){ctx2.putImageData(hit.img,hit.x0,hit.y0);return;}
-  }
-
-  const pad=Math.round(Math.max(16,Math.min(48,W/36)))+grow;
+  if(rx1-rx0<3||ry1-ry0<3)return;
+  const t=+$('whiteThreshold').value||200, strength=(+$('removeOpacity').value||100)/100, k=W/1080;
+  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*k*0.8));
+  const thk=Math.max(3,Math.round((+$('textThick').value||9)*k));
+  const r=Math.max(2,Math.ceil(thk/2)+1), pad=Math.max(12,grow*3+r);
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
-
+  const lum=new Float32Array(N);
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const opened=sepFilter(sepFilter(lum,w,h,r,false),w,h,r,true);
+  const T=Math.max(12,Math.min(36,t*0.14));
   let hole=new Uint8Array(N),any=false;
-  const rectArea=(rx1-rx0)*(ry1-ry0);
-  let staticTooBig=false;
-  if(useStatic){
-    const rw=rx1-rx0,rh=ry1-ry0,sc=scaledStatic(sm,rw,rh);
-    let c=0;
-    for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;c++;}}
-    if(c)any=true;
+  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
+    const p=y*w+x,i=p*4,L=lum[p];
+    const ch=Math.max(d[i],d[i+1],d[i+2])-Math.min(d[i],d[i+1],d[i+2]);
+    if(ch<=80&&L>=Math.max(60,t-90)&&(L-opened[p])>=T){hole[p]=1;any=true;}
   }
-  // Always run the per-frame detector. The text can appear, disappear or move after the
-  // static mask was built, so relying on the static mask causes the text to reappear later.
-  {
-    const det=detectWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
-    if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
-  }
-  if(showMask){
-    let c=0;
-    if(any)for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;c++;}
-    ctx2.putImageData(img,x0,y0);
-    setStatus('Detected text pixels: '+(c/rectArea*100).toFixed(2)+'% of the selected box (red = will be removed).');
-    return;
+  if($('showMask').checked&&!exporting){
+    for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;}
+    ctx2.putImageData(img,x0,y0);return;
   }
   if(!any)return;
-
   hole=dilateMask(hole,w,h,grow);
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const gx=x+x0,gy=y+y0;
     if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
   }
-
   inpaintHole(d,w,h,hole,strength);
   ctx2.putImageData(img,x0,y0);
-  if(cacheable){
-    wrCache.set(ckey,{img,x0,y0});
-    if(wrCache.size>6)wrCache.delete(wrCache.keys().next().value);
-  }
-}
-function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
-
-/* EXTRA BOXES: micro-pixel exemplar inpainting.
-   The box is only a search area. Only pixels identified as white/grey lettering are changed,
-   and each replacement RGB value is copied from a real untouched pixel in the same frame. */
-function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
-  if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)), ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
-  if(rx1-rx0<4||ry1-ry0<4)return;
-
-  const pad=10;
-  const x0=Math.max(0,rx0-pad), y0=Math.max(0,ry0-pad);
-  const x1=Math.min(W,rx1+pad), y1=Math.min(H,ry1+pad);
-  const w=x1-x0, h=y1-y0, N=w*h;
-  const img=ctx2.getImageData(x0,y0,w,h), d=img.data;
-  const original=new Uint8ClampedArray(d);
-  const mask=new Uint8Array(N);
-  const userT=+$('whiteThreshold').value||115;
-  const baseThk=+$('textThick').value||9;
-  const area=Math.max(1,(rx1-rx0)*(ry1-ry0));
-
-  const passes=[
-    {t:Math.max(72,userT-34), thk:2, mr:Math.max(3,Math.round(W/110))},
-    {t:Math.max(82,userT-24), thk:Math.max(2,Math.round(baseThk*.42)), mr:Math.max(4,Math.round(W/96))},
-    {t:Math.max(92,userT-14), thk:Math.max(2,Math.round(baseThk*.58)), mr:Math.max(4,Math.round(W/84))},
-    {t:Math.max(102,userT-4), thk:Math.max(2,Math.round(baseThk*.72)), mr:Math.max(4,Math.round(W/72))}
-  ];
-  for(const cfg of passes){
-    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,cfg.mr,cfg.thk);
-    if(!m)continue;
-    const before=mask.slice();
-    for(let p=0;p<N;p++)if(m[p])mask[p]=1;
-    let c=0;
-    for(let yy=ry0-y0;yy<ry1-y0;yy++)for(let xx=rx0-x0;xx<rx1-x0;xx++)if(mask[yy*w+xx])c++;
-    if(c/area>0.055)mask.set(before);
-  }
-
-  const edge=mask.slice();
-  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
-    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
-      const p=y*w+x;if(mask[p])continue;
-      let near=false;
-      for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
-        if(dx||dy){if(mask[(y+dy)*w+x+dx]){near=true;break;}}
-      }
-      if(!near)continue;
-      const i=p*4,mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-      const L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-      if(mx-mn<62 && L>=Math.max(74,userT-34))edge[p]=1;
-    }
-  }
-  mask.set(edge);
-
-  const clean=mask.slice();
-  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
-    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
-      const p=y*w+x;if(!mask[p])continue;
-      let n=0;
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy&&mask[(y+dy)*w+x+dx])n++;
-      if(n===0)clean[p]=0;
-    }
-  }
-  mask.set(clean);
-
-  let total=0;
-  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++)if(mask[y*w+x])total++;
-  if(!total || total/area>0.065)return;
-
-  const work=new Uint8ClampedArray(original);
-  const filled=new Uint8Array(mask);
-  const R=Math.min(22,Math.max(10,Math.round(Math.max(12,W/90))));
-  const ctxR=2;
-  const inside=(x,y)=>x>=ctxR&&y>=ctxR&&x<w-ctxR&&y<h-ctxR;
-
-  function lumaAt(buf,p){const i=p*4;return buf[i]*.299+buf[i+1]*.587+buf[i+2]*.114;}
-
-  function sourceClean(sx,sy){
-    for(let yy=-ctxR;yy<=ctxR;yy++)for(let xx=-ctxR;xx<=ctxR;xx++){
-      if(filled[(sy+yy)*w+(sx+xx)])return false;
-    }
-    return true;
-  }
-
-  function contextScore(tx,ty,sx,sy){
-    let score=0,n=0;
-    for(let yy=-ctxR;yy<=ctxR;yy++){
-      for(let xx=-ctxR;xx<=ctxR;xx++){
-        const tp=(ty+yy)*w+(tx+xx);
-        if(!inside(tx+xx,ty+yy)||filled[tp])continue;
-        const sp=(sy+yy)*w+(sx+xx);
-        const ti=tp*4,si=sp*4;
-        const dr=original[ti]-original[si],dg=original[ti+1]-original[si+1],db=original[ti+2]-original[si+2];
-        score+=(dr*dr+dg*dg+db*db)*0.72;
-        n++;
-      }
-    }
-    if(n<4)return Infinity;
-    const tp=ty*w+tx,sp=sy*w+sx;
-    const tgx=lumaAt(original,tp+1)-lumaAt(original,tp-1);
-    const tgy=lumaAt(original,tp+w)-lumaAt(original,tp-w);
-    const sgx=lumaAt(original,sp+1)-lumaAt(original,sp-1);
-    const sgy=lumaAt(original,sp+w)-lumaAt(original,sp-w);
-    score+=(tgx-sgx)*(tgx-sgx)+(tgy-sgy)*(tgy-sgy);
-    return score/n + 0.025*((sx-tx)*(sx-tx)+(sy-ty)*(sy-ty));
-  }
-
-  for(let pass=0;pass<32;pass++){
-    const boundary=[];
-    for(let y=Math.max(ctxR,ry0-y0);y<Math.min(h-ctxR,ry1-y0);y++){
-      for(let x=Math.max(ctxR,rx0-x0);x<Math.min(w-ctxR,rx1-x0);x++){
-        const p=y*w+x;if(!filled[p])continue;
-        let isBoundary=false;
-        for(let dy=-1;dy<=1&&!isBoundary;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy){
-          if(!filled[(y+dy)*w+x+dx]){isBoundary=true;break;}
-        }
-        if(isBoundary)boundary.push(p);
-      }
-    }
-    if(!boundary.length)break;
-
-    for(const p of boundary){
-      const tx=p%w,ty=(p/w)|0;
-      let bestS=null,best=Infinity;
-      for(let dy=-R;dy<=R;dy+=2){
-        for(let dx=-R;dx<=R;dx+=2){
-          if(dx===0&&dy===0)continue;
-          const sx=tx+dx,sy=ty+dy;
-          if(!inside(sx,sy)||!sourceClean(sx,sy))continue;
-          const sc=contextScore(tx,ty,sx,sy);
-          if(sc<best){best=sc;bestS={sx,sy};}
-        }
-      }
-      if(!bestS)continue;
-      const si=(bestS.sy*w+bestS.sx)*4,di=p*4;
-      work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=original[di+3];
-      filled[p]=0;
-    }
-  }
-
-  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
-    const p=y*w+x;if(!filled[p])continue;
-    let bestS=null,best=Infinity;
-    for(let dy=-R;dy<=R;dy+=2)for(let dx=-R;dx<=R;dx+=2){
-      const sx=x+dx,sy=y+dy;
-      if(!inside(sx,sy)||!sourceClean(sx,sy))continue;
-      const sc=contextScore(x,y,sx,sy);
-      if(sc<best){best=sc;bestS={sx,sy};}
-    }
-    if(bestS){const si=(bestS.sy*w+bestS.sx)*4,di=p*4;work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=original[si+3];filled[p]=0;}
-  }
-
-  for(let p=0;p<N;p++)if(mask[p]){
-    const i=p*4;d[i]=work[i];d[i+1]=work[i+1];d[i+2]=work[i+2];d[i+3]=original[i+3];
-  }
-  ctx2.putImageData(img,x0,y0);
 }
 
-// Apply every extra box to a canvas. (rw,rh) = source-rect size, (W,H) = canvas size.
-function applyExtraBoxes(ctx2,W,H,r){
-  for(const q of extraRects){
-    removeWhiteDetailedFromCanvasV3(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
+// Apply every box (first + extras). r = source rect, (W,H) = canvas size.
+function applyAllBoxes(ctx2,W,H,r){
+  const all=whiteRect?[whiteRect,...extraRects]:extraRects;
+  for(const q of all){
+    removeTextRect(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
   }
 }
 
@@ -848,16 +527,7 @@ function drawPreview(){
  if(view.width!==nw)view.width=nw; if(view.height!==nh)view.height=nh;
  vctx.clearRect(0,0,view.width,view.height);
  vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
- if(whiteRect){
-   const wr=whiteRect;
-   removeWhiteFromCanvas(vctx,view.width,view.height,{
-     x:wr.x/r.w*view.width,
-     y:wr.y/r.h*view.height,
-     w:wr.w/r.w*view.width,
-     h:wr.h/r.h*view.height
-   });
- }
- applyExtraBoxes(vctx,view.width,view.height,r);
+ applyAllBoxes(vctx,view.width,view.height,r);
 }
 function updateSelectionBox(){
  const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
@@ -907,7 +577,7 @@ view.addEventListener('pointerup',e=>{
  if(removeMode){
    if(!whiteRect)whiteRect={...q};else extraRects.push({...q});
    setStatus('White-text box '+(1+extraRects.length)+' added. Drag again to add more, or press Remove White Text.');
-   invalidateWR();$('removeWhite').disabled=false;
+   $('removeWhite').disabled=false;
  }
  updateSelectionBox();
  drawPreview();drawGeoPreview();
@@ -915,7 +585,7 @@ view.addEventListener('pointerup',e=>{
 $('undoWhite').onclick=()=>{
  if(extraRects.length)extraRects.pop();else whiteRect=null;
  if(!whiteRect&&!extraRects.length)$('removeWhite').disabled=true;
- invalidateWR();updateSelectionBox();drawPreview();drawGeoPreview();
+ updateSelectionBox();drawPreview();drawGeoPreview();
  setStatus('Last box removed.');
 };
 
@@ -1058,7 +728,6 @@ $('videoFile').addEventListener('change',()=>{
  file=$('videoFile').files[0]; if(!file)return;
  if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
  $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
- staticMask=null; wrCache.clear();
 });
 video.addEventListener('loadedmetadata',()=>{
  duration=video.duration||0;
@@ -1083,25 +752,21 @@ $('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.cur
 $('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
 $('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
 $('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text… (click to stop)':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around each piece of white text. You can add as many boxes as you need.':'White-text selection mode off.')}
-$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;extraRects=[];invalidateWR();$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop applied. White-text boxes were cleared — select them again on the cropped video.')}
-$('resetCrop').onclick=()=>{crop=null;whiteRect=null;extraRects=[];invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop reset.')}
-$('removeWhite').onclick=async()=>{
+$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;extraRects=[];$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop applied. White-text boxes were cleared — select them again on the cropped video.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;extraRects=[];$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop reset.')}
+$('removeWhite').onclick=()=>{
  if(!whiteRect&&!extraRects.length)return;
  video.pause();
- setStatus('Analysing the text area across the video…');
- try{
-   await buildStaticMask();
-   setStatus('White-text removal is ready for '+((whiteRect?1:0)+extraRects.length)+' box(es). It is applied to every frame when you export / download.');
- }catch(e){setStatus('Text analysis failed: '+(e.message||e))}
+ setStatus('White-text removal is active for '+((whiteRect?1:0)+extraRects.length)+' box(es). It is applied to every frame in the preview and when you export / download.');
  drawPreview();drawGeoPreview();
 }
-$('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.display='none';invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();drawGeoPreview();setStatus('All white-text boxes cleared.')}
-$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
-$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
-$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
-$('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
-$('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
-$('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
+$('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.display='none';$('removeWhite').disabled=true;updateSelectionBox();drawPreview();drawGeoPreview();setStatus('All white-text boxes cleared.')}
+$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;drawPreview();drawGeoPreview()}
+$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';drawPreview();drawGeoPreview()}
+$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;drawPreview();drawGeoPreview()}
+$('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;drawPreview();drawGeoPreview()}
+$('showMask').onchange=()=>{drawPreview();drawGeoPreview()}
+$('textChanges').onchange=()=>{drawPreview();drawGeoPreview()}
 
 function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
 function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
@@ -1168,28 +833,28 @@ async function makeMap(lat,lon){
  const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
  const c=document.createElement('canvas');c.width=size;c.height=size;
  const cctx=c.getContext('2d');
- cctx.clearRect(0,0,size,size);
- const jobs=[];
+ cctx.fillStyle='#e8e4dc';cctx.fillRect(0,0,size,size);
+ const jobs=[];let loaded=0;
  for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
    jobs.push(new Promise(res=>{
      const im=new Image();
      im.crossOrigin='anonymous';
-     const draw=()=>{
-       try{
-         cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);
-       }catch(e){}
+     im.onload=()=>{
+       try{cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);loaded++;}catch(e){}
        res();
      };
-     im.onload=draw;
      im.onerror=()=>res();
      im.src=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
    }));
  }
  await Promise.all(jobs);
+ if(!loaded){
+   $('gCoords').textContent='Location found, but map tiles could not be loaded (network blocked?). The map area will show a plain background.';
+ }
 
  cctx.fillStyle='#e53935';
- cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();
- cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
+ cctx.beginPath();cctx.arc(size/2,size/2,14,0,Math.PI*2);cctx.fill();
+ cctx.strokeStyle='#fff';cctx.lineWidth=5;cctx.stroke();
  cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);
  cctx.fillStyle='#333';cctx.font='12px Arial';
  cctx.fillText('© OpenStreetMap contributors',12,size-14);
@@ -1337,10 +1002,27 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const stampPad=Math.max(5,Math.round(stampH*.022));
   const stampGap=Math.max(12,Math.round(stampH*.045));
 
+  // Map sits at the left of the stamp until the user drags it somewhere else.
+  if(!state.mapMoved){state.mapX=0;state.mapY=100-state.gHeight;}
   const mapX=clamp(W*state.mapX/100,0,Math.max(0,W-20));
   const mapY=clamp(H*state.mapY/100,0,Math.max(0,H-20));
   const mapW=clamp(W*state.mapW/100,20,W-mapX);
   const mapH=clamp(H*state.mapH/100,20,H-mapY);
+
+  // Frosted backdrop: hides any original text under the stamp (cannot show through).
+  if(stampOpacity>0.02){
+    const bw=Math.max(8,Math.round(W/28)),bh=Math.max(4,Math.round(stampH/28));
+    _blur.width=bw;_blur.height=bh;
+    const bc=_blur.getContext('2d');bc.imageSmoothingQuality='high';
+    bc.drawImage(baseCtx.canvas,0,stampY,W,stampH,0,0,bw,bh);
+    baseCtx.save();
+    baseCtx.globalAlpha=Math.min(1,stampOpacity*1.6);
+    baseCtx.imageSmoothingEnabled=true;baseCtx.imageSmoothingQuality='high';
+    roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
+    baseCtx.clip();
+    baseCtx.drawImage(_blur,0,0,bw,bh,stampX,stampY,stampW,stampH);
+    baseCtx.restore();
+  }
 
   baseCtx.save();
   baseCtx.globalAlpha=stampOpacity;
@@ -1351,11 +1033,13 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 
   if(mapImg){
     baseCtx.save();
-    baseCtx.globalAlpha=stampOpacity*mapOpacity;
+    baseCtx.globalAlpha=mapOpacity;
     baseCtx.beginPath();
     baseCtx.rect(mapX,mapY,mapW,mapH);
     baseCtx.clip();
-    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
+    // cover-fit: no stretching of the square map image
+    const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height),sw=mapW/ms,sh=mapH/ms;
+    baseCtx.drawImage(mapImg,(mapImg.width-sw)/2,(mapImg.height-sh)/2,sw,sh,mapX,mapY,mapW,mapH);
     baseCtx.restore();
   }
 
@@ -1439,18 +1123,7 @@ function drawExportFrame(elapsedOverride){
   const r=sourceRect();
   wctx.clearRect(0,0,outputW,outputH);
   wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
-
-  if(whiteRect){
-    const rectOnOutput={
-      x:whiteRect.x/r.w*outputW,
-      y:whiteRect.y/r.h*outputH,
-      w:whiteRect.w/r.w*outputW,
-      h:whiteRect.h/r.h*outputH
-    };
-    removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
-  }
-  applyExtraBoxes(wctx,outputW,outputH,r);
-
+  applyAllBoxes(wctx,outputW,outputH,r);
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
     drawGeoFrame(wctx,outputW,outputH,elapsed);
@@ -1528,11 +1201,6 @@ async function exportVideoFrameAccurate(){
   const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
   const length=Math.max(0.05,end-start);
 
-  if(whiteRect){
-    $('exportStatus').textContent='Analysing the text area…';
-    await buildStaticMask();
-  }
-
   $('exportStatus').textContent='Detecting video frame rate…';
   const fps=await estimateFps();
 
@@ -1606,8 +1274,8 @@ async function exportVideoFrameAccurate(){
     video.pause();restoreMute=video.muted;video.muted=true;
     await seekVideo(start);
     const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
-    // extra boxes are heavier per frame, so start slower when there are several
-    let rate=needsFrameProcessing?(extraRects.length>1?2:3):6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
+    const nBoxes=(whiteRect?1:0)+extraRects.length;
+    let rate=needsFrameProcessing?(nBoxes>1?2:3):6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
     const tBegin=performance.now();
     video.playbackRate=rate;
     await new Promise((resolve,reject)=>{
@@ -1877,6 +1545,7 @@ geo.addEventListener('pointerdown',e=>{
 geo.addEventListener('pointermove',e=>{
  if(!mapDrag)return;
  const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
+ state.mapMoved=true;
  if(mapDrag.mode==='move'){
    state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
    state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
@@ -1897,8 +1566,7 @@ function drawGeoPreview(){
  const nw=Math.round(r.w*s),nh=Math.round(r.h*s);
  if(geo.width!==nw)geo.width=nw; if(geo.height!==nh)geo.height=nh;
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
- if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
- applyExtraBoxes(gctx,geo.width,geo.height,r);
+ applyAllBoxes(gctx,geo.width,geo.height,r);
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{

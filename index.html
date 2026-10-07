@@ -244,7 +244,7 @@ input[type=range]{width:100%}
             <option value="satellite">Satellite</option>
             <option value="hybrid">Satellite + Labels</option>
             <option value="terrain">Terrain</option>
-            <option value="roads" selected>Roads / Lane detail</option>
+            <option value="roads">Roads / Lane detail</option>
           </select>
         </div>
         <div class="small">Use Detailed Streets for a clear road map, Satellite + Labels for an aerial map with place names, or Roads / Lane detail for stronger road visibility.</div>
@@ -327,7 +327,7 @@ let outputW=0, outputH=0, exporting=false;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:42,gMapW:42,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:38,mapH:40,mapStyle:'roads',
+ gOpacity:85,gMapO:100,gHeight:40,gMapW:38,gTitle:100,gDetails:100,mapX:0,mapY:0,mapW:38,mapH:40,mapStyle:'detailed',
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -1168,49 +1168,52 @@ function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
 async function makeMap(lat,lon){
- const style=state.mapStyle||'standard';
- const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
+ const style=state.mapStyle||'detailed';
+ // Higher zoom and a larger source canvas keep the map crisp when it is scaled down into the video.
+ const z=16,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1792;
  const c=document.createElement('canvas');c.width=size;c.height=size;
- const cctx=c.getContext('2d');
- cctx.clearRect(0,0,size,size);
+ const cctx=c.getContext('2d',{alpha:true});
+ cctx.imageSmoothingEnabled=false;
  const jobs=[];
- let tileUrl, attribution;
+ const baseTiles=[];
+ const overlayTiles=[];
+ let baseUrl,overlayUrl=null, attribution='';
  if(style==='satellite'){
-   tileUrl=(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+   baseUrl=(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
    attribution='Imagery © Esri';
+ }else if(style==='hybrid'){
+   baseUrl=(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+   overlayUrl=(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${y}/${x}`;
+   attribution='Imagery © Esri; map labels © Esri';
  }else if(style==='terrain'){
-   tileUrl=(x,y)=>`https://tile.opentopomap.org/${z}/${x}/${y}.png`;
+   baseUrl=(x,y)=>`https://tile.opentopomap.org/${z}/${x}/${y}.png`;
    attribution='© OpenStreetMap contributors, SRTM | OpenTopoMap';
  }else if(style==='roads'){
-   tileUrl=(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+   baseUrl=(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
    attribution='© OpenStreetMap contributors';
  }else{
-   tileUrl=(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+   baseUrl=(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
    attribution='© OpenStreetMap contributors';
  }
- for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-   jobs.push(new Promise(res=>{
-     const im=new Image();
-     im.crossOrigin='anonymous';
-     const draw=()=>{
-       try{
-         cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);
-       }catch(e){}
-       res();
-     };
-     im.onload=draw;
-     im.onerror=()=>res();
-     im.src=tileUrl(cx+dx,cy+dy);
-   }));
+ const drawTile=(url,x,y,alpha=1)=>new Promise(res=>{
+   const im=new Image(); im.crossOrigin='anonymous';
+   im.onload=()=>{try{cctx.globalAlpha=alpha;cctx.drawImage(im,size/2+(x-(t.x-cx))*256,size/2+(y-(t.y-cy))*256,256,256);}catch(e){} cctx.globalAlpha=1;res()};
+   im.onerror=()=>res(); im.src=url;
+ });
+ // 7x7 coverage avoids blank edges and gives a much cleaner crop in the final video.
+ for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++) baseTiles.push(drawTile(baseUrl,cx+dx,cy+dy));
+ await Promise.all(baseTiles);
+ if(overlayUrl){
+   for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++) overlayTiles.push(drawTile(overlayUrl,cx+dx,cy+dy,.92));
+   await Promise.all(overlayTiles);
  }
- await Promise.all(jobs);
-
- cctx.fillStyle='#e53935';
- cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();
- cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
- cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,Math.min(260,size-16),20);
- cctx.fillStyle='#333';cctx.font='12px Arial';
- cctx.fillText(attribution,12,size-14);
+ // Crisp location marker.
+ cctx.globalAlpha=1; cctx.fillStyle='#e53935';
+ cctx.beginPath();cctx.arc(size/2,size/2,12,0,Math.PI*2);cctx.fill();
+ cctx.strokeStyle='#fff';cctx.lineWidth=5;cctx.stroke();
+ cctx.fillStyle='rgba(255,255,255,.92)';cctx.fillRect(10,size-34,Math.min(520,size-20),25);
+ cctx.fillStyle='#222';cctx.font='14px Arial';
+ cctx.fillText(attribution,16,size-16);
  return c;
 }
 

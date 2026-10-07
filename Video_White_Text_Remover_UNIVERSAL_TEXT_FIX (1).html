@@ -2049,6 +2049,71 @@ function removeTextRect(ctx2,W,H,rect){
 const _blur=document.createElement('canvas');
 
 updateBoxCount();
+
+/* ===== ULTRA STRONG ALL-BOX TEXT REMOVER ===== */
+function removeWhiteFromCanvas(c,W,H,r){removeTextRectUltra(c,W,H,r)}
+function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRectUltra(c,W,H,r)}
+function removeWhiteFromCanvasExport(c,W,H,r){removeTextRectUltra(c,W,H,r)}
+function removeTextRectUltra(ctx,W,H,rect){
+  if(!rect)return;
+  const rx0=Math.max(0,Math.floor(rect.x)), ry0=Math.max(0,Math.floor(rect.y));
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  if(rx1-rx0<2||ry1-ry0<2)return;
+  const userT=+$('whiteThreshold').value||105;
+  const strength=Math.max(.98,(+$('removeOpacity').value||100)/100);
+  const thick=Math.max(3,Math.round((+$('textThick').value||9)*Math.max(.7,W/1080)));
+  const grow=Math.max(3,Math.round((+$('inpaintPasses').value||5)*Math.max(.7,W/1080)));
+  const pad=Math.max(20,grow*4+thick*2);
+  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
+  const w=x1-x0,h=y1-y0,N=w*h;
+  const img=ctx.getImageData(x0,y0,w,h),d=img.data;
+  const lum=new Float32Array(N);
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const rad=Math.max(2,Math.ceil(thick/2));
+  const opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
+  const mask=new Uint8Array(N);
+  const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
+  /* Four increasingly aggressive detectors. No percentage rejection. */
+  for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
+    const p=y*w+x,i=p*4,L=lum[p];
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),ch=mx-mn;
+    const local=L-opened[p];
+    const left=lum[p-1]||L,right=lum[p+1]||L,up=lum[p-w]||L,down=lum[p+w]||L;
+    const contrast=L-(left+right+up+down)/4;
+    const white = ch<=110 && L>=Math.max(42,userT-65);
+    const brightText = ch<=85 && L>=Math.max(55,userT-35) && local>=5;
+    const edgeText = ch<=100 && L>=Math.max(48,userT-50) && contrast>=4;
+    const strongText = ch<=70 && L>=Math.max(70,userT-15) && local>=10;
+    if(white||brightText||edgeText||strongText)mask[p]=1;
+  }
+  let hole=dilateMask(mask,w,h,Math.max(3,grow));
+  /* Keep the operation strictly inside this box. */
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
+  }
+  let count=0;for(let p=0;p<N;p++)count+=hole[p];
+  if($('showMask').checked&&!exporting){
+    for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
+    ctx.putImageData(img,x0,y0);return;
+  }
+  if(!count)return;
+  /* Three full inpaint passes. Each pass uses pixels from the current frame. */
+  inpaintHole(d,w,h,hole,1);
+  const pass2=dilateMask(mask,w,h,Math.max(2,Math.floor(grow*.75)));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass2[y*w+x]=0;
+  }
+  inpaintHole(d,w,h,pass2,1);
+  const pass3=dilateMask(mask,w,h,Math.max(2,Math.floor(grow*.5)));
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass3[y*w+x]=0;
+  }
+  inpaintHole(d,w,h,pass3,1);
+  ctx.putImageData(img,x0,y0);
+}
 </script>
 </body>
 </html>

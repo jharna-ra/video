@@ -461,6 +461,30 @@ function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
   return mask;
 }
 
+// Per-frame fallback for text that appears later or moves/changes.
+// Unlike the static mask, this is evaluated on EVERY exported frame.
+function detectDynamicWhite(d,w,h,t,x0,y0,x1,y1,thk){
+  const N=w*h, m=new Uint8Array(N); let any=false;
+  x0=Math.max(1,x0); y0=Math.max(1,y0); x1=Math.min(w-1,x1); y1=Math.min(h-1,y1);
+  const threshold=Math.max(95,t-28);
+  for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++){
+    const p=y*w+x, i=p*4, L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
+    if(L<threshold) continue;
+    const mx=Math.max(d[i],d[i+1],d[i+2]), mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(mx-mn>95) continue;
+    const l=d[((y)*w+(x-1))*4]*.299+d[((y)*w+(x-1))*4+1]*.587+d[((y)*w+(x-1))*4+2]*.114;
+    const r=d[((y)*w+(x+1))*4]*.299+d[((y)*w+(x+1))*4+1]*.587+d[((y)*w+(x+1))*4+2]*.114;
+    const u=d[(((y-1)*w+x))*4]*.299+d[(((y-1)*w+x))*4+1]*.587+d[(((y-1)*w+x))*4+2]*.114;
+    const dn=d[(((y+1)*w+x))*4]*.299+d[(((y+1)*w+x))*4+1]*.587+d[(((y+1)*w+x))*4+2]*.114;
+    const local=(l+r+u+dn)*0.25;
+    // Bright, nearly-neutral pixels that stand out from their immediate background.
+    if(L-local>=10 || L>=t+8){m[p]=1;any=true;}
+  }
+  if(!any) return null;
+  const grow=Math.max(1,Math.min(3,Math.round((thk||9)/7)));
+  return dilateMask(m,w,h,grow);
+}
+
 async function buildStaticMask(){
   while(staticBuilding){try{await staticBuilding}catch(e){}}
   if(!whiteRect||!duration)return null;
@@ -654,15 +678,22 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   }
   if(dynamic||!useStatic||staticTooBig){
     let tt=t,det=null;
-    for(let k=0;k<5;k++){
+    for(let k=0;k<4;k++){
       det=detectWhite(d,w,h,tt,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
       if(!det)break;
       let c=0;for(let p=0;p<N;p++)c+=det[p];
-      if(c/rectArea<=0.35)break;
-      if(k===4)det=null;
-      tt+=20;
+      // Do not discard a valid mask just because the selected box is large.
+      // A second, per-frame detector below handles text that appears later.
+      if(c/rectArea<=0.55)break;
+      if(k===3)det=null;
+      tt+=12;
     }
     if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
+
+    // Critical: detect newly appearing/moving text on THIS frame, not only in
+    // the sampled static mask. This prevents text from reappearing later.
+    const dyn=detectDynamicWhite(d,w,h,t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,thk);
+    if(dyn)for(let p=0;p<N;p++)if(dyn[p]){hole[p]=1;any=true;}
   }
   if(showMask){
     let c=0;

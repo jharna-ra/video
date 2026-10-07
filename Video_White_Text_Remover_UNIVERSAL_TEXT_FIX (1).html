@@ -1149,8 +1149,9 @@ async function findLocation(){
   if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
   gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
   mapImg=await makeMap(lat,lon);
+  state.mapMoved=false; state.mapX=0; state.mapY=100-state.gHeight;
   loadRealGPSRoute();drawGeoPreview();
- }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
+ }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location found, but map tiles could not be loaded. Check internet access.';drawGeoPreview()}
 }
 $('findLocation').onclick=findLocation;
 
@@ -1158,37 +1159,56 @@ function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
 async function makeMap(lat,lon){
- const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
- const c=document.createElement('canvas');c.width=size;c.height=size;
- const cctx=c.getContext('2d');
- cctx.clearRect(0,0,size,size);
- const jobs=[];
- for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-   jobs.push(new Promise(res=>{
-     const im=new Image();
-     im.crossOrigin='anonymous';
-     const draw=()=>{
-       try{
-         cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);
-       }catch(e){}
-       res();
-     };
-     im.onload=draw;
-     im.onerror=()=>res();
-     im.src=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
-   }));
- }
- await Promise.all(jobs);
-
- cctx.fillStyle='#e53935';
- cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();
- cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
- cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);
- cctx.fillStyle='#333';cctx.font='12px Arial';
- cctx.fillText('© OpenStreetMap contributors',12,size-14);
- return c;
+  const z=16;
+  const t=tileXY(lat,lon,z), cx=Math.floor(t.x), cy=Math.floor(t.y);
+  const size=1536, tile=256;
+  const sources=[
+    {name:'© OpenStreetMap contributors', url:(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
+    {name:'© Esri', url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
+    {name:'© CARTO', url:(x,y)=>`https://a.basemaps.cartocdn.com/light_all/${z}/${y}/${x}.png`}
+  ];
+  for(const source of sources){
+    const c=document.createElement('canvas'); c.width=size; c.height=size;
+    const cc=c.getContext('2d');
+    cc.fillStyle='#e8e8e8'; cc.fillRect(0,0,size,size);
+    let loaded=0;
+    const jobs=[];
+    for(let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++){
+      let tx=cx+dx, ty=cy+dy;
+      const n=2**z; tx=((tx%n)+n)%n;
+      if(ty<0||ty>=n) continue;
+      jobs.push(new Promise(resolve=>{
+        const im=new Image(); im.crossOrigin='anonymous';
+        let finished=false;
+        const done=()=>{if(!finished){finished=true;resolve();}};
+        im.onload=()=>{
+          try{
+            const px=size/2+(dx-(t.x-cx))*tile;
+            const py=size/2+(dy-(t.y-cy))*tile;
+            cc.drawImage(im,px,py,tile,tile); loaded++;
+          }catch(e){}
+          done();
+        };
+        im.onerror=done;
+        im.src=source.url(tx,ty);
+        setTimeout(done,3500);
+      }));
+    }
+    await Promise.all(jobs);
+    if(loaded>=12){
+      // location marker
+      cc.save();
+      const mx=size/2,my=size/2;
+      cc.fillStyle='#e53935';cc.beginPath();cc.arc(mx,my,14,0,Math.PI*2);cc.fill();
+      cc.strokeStyle='#fff';cc.lineWidth=5;cc.stroke();
+      cc.fillStyle='rgba(255,255,255,.94)';cc.fillRect(12,size-34,210,24);
+      cc.fillStyle='#222';cc.font='14px Arial';cc.fillText(source.name,18,size-17);
+      cc.restore();
+      return c;
+    }
+  }
+  return null;
 }
-
 function readRunningCoords(){
   startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
   endLat=parseFloat($('endLat').value); endLon=parseFloat($('endLon').value);
@@ -1889,6 +1909,7 @@ geo.addEventListener('pointermove',e=>{
  if(mapDrag.mode==='move'){
    state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
    state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
+   state.mapMoved=true;
  }else{
    state.mapW=clamp((mapDrag.w+dx)/mapDrag.W*100,5,100-state.mapX);
    state.mapH=clamp((mapDrag.h+dy)/mapDrag.H*100,5,100-state.mapY);
@@ -2056,14 +2077,13 @@ function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 function removeWhiteFromCanvasExport(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 function removeTextRectUltra(ctx,W,H,rect){
   if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)), ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
   if(rx1-rx0<2||ry1-ry0<2)return;
   const userT=+$('whiteThreshold').value||105;
-  const strength=Math.max(.98,(+$('removeOpacity').value||100)/100);
   const thick=Math.max(3,Math.round((+$('textThick').value||9)*Math.max(.7,W/1080)));
-  const grow=Math.max(3,Math.round((+$('inpaintPasses').value||5)*Math.max(.7,W/1080)));
-  const pad=Math.max(20,grow*4+thick*2);
+  const grow=Math.max(4,Math.round((+$('inpaintPasses').value||5)*Math.max(.8,W/1080)));
+  const pad=Math.max(24,grow*5+thick*2);
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx.getImageData(x0,y0,w,h),d=img.data;
@@ -2073,47 +2093,49 @@ function removeTextRectUltra(ctx,W,H,rect){
   const opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
   const mask=new Uint8Array(N);
   const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
-  /* Four increasingly aggressive detectors. No percentage rejection. */
+  // Color-independent detector: yellow/cyan/green/blue text is allowed. We look for
+  // bright OR locally contrasting stroke pixels, not only low-chroma white pixels.
   for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
     const p=y*w+x,i=p*4,L=lum[p];
-    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),ch=mx-mn;
+    const left=lum[p-1]??L,right=lum[p+1]??L,up=lum[p-w]??L,down=lum[p+w]??L;
+    const neigh=(left+right+up+down)/4;
     const local=L-opened[p];
-    const left=lum[p-1]||L,right=lum[p+1]||L,up=lum[p-w]||L,down=lum[p+w]||L;
-    const contrast=L-(left+right+up+down)/4;
-    const white = ch<=110 && L>=Math.max(42,userT-65);
-    const brightText = ch<=85 && L>=Math.max(55,userT-35) && local>=5;
-    const edgeText = ch<=100 && L>=Math.max(48,userT-50) && contrast>=4;
-    const strongText = ch<=70 && L>=Math.max(70,userT-15) && local>=10;
-    if(white||brightText||edgeText||strongText)mask[p]=1;
+    const contrast=L-neigh;
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    const ch=mx-mn;
+    const bright=L>=Math.max(42,userT-75);
+    const whiteish=ch<=125 && L>=Math.max(48,userT-65);
+    const coloredBright=ch>35 && L>=Math.max(72,userT-25) && (local>=5 || contrast>=7);
+    const coloredEdge=ch>35 && L>=45 && (local>=10 || contrast>=11);
+    const stroke=local>=16 || contrast>=14;
+    if((whiteish&&local>=3)||(bright&&local>=10)||coloredBright||coloredEdge||stroke) mask[p]=1;
   }
-  let hole=dilateMask(mask,w,h,Math.max(3,grow));
-  /* Keep the operation strictly inside this box. */
+  if($('showMask').checked&&!exporting){
+    for(let p=0;p<N;p++)if(mask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
+    ctx.putImageData(img,x0,y0);return;
+  }
+  let hole=dilateMask(mask,w,h,Math.max(4,grow));
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const gx=x+x0,gy=y+y0;
     if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
   }
   let count=0;for(let p=0;p<N;p++)count+=hole[p];
-  if($('showMask').checked&&!exporting){
-    for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
-    ctx.putImageData(img,x0,y0);return;
-  }
   if(!count)return;
-  /* Three full inpaint passes. Each pass uses pixels from the current frame. */
+  // Two strong passes plus a final small fringe pass. All use the current frame's pixels.
   inpaintHole(d,w,h,hole,1);
-  const pass2=dilateMask(mask,w,h,Math.max(2,Math.floor(grow*.75)));
+  const pass2=dilateMask(mask,w,h,Math.max(3,Math.floor(grow*.75)));
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass2[y*w+x]=0;
+    const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass2[y*w+x]=0;
   }
   inpaintHole(d,w,h,pass2,1);
-  const pass3=dilateMask(mask,w,h,Math.max(2,Math.floor(grow*.5)));
+  const pass3=dilateMask(mask,w,h,Math.max(2,Math.floor(grow*.45)));
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass3[y*w+x]=0;
+    const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass3[y*w+x]=0;
   }
   inpaintHole(d,w,h,pass3,1);
   ctx.putImageData(img,x0,y0);
 }
+
 </script>
 </body>
 </html>

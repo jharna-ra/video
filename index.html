@@ -27,6 +27,8 @@ input[type=range]{width:100%}
 #viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #selection{position:absolute;border:2px solid #ff3b30;background:transparent;display:none;pointer-events:none}
 #selection2{position:absolute;border:2px dashed #00e5ff;background:transparent;display:none;pointer-events:none}
+.selExtra{position:absolute;border:2px solid #ff9500;display:none;pointer-events:none}
+.selExtra::after{content:attr(data-n);position:absolute;top:-1px;left:-1px;background:#ff9500;color:#000;font:bold 10px Arial;padding:1px 4px}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
@@ -111,7 +113,7 @@ input[type=range]{width:100%}
 <body>
 <header>
 <h1>Video White Text Remover + GeoTag</h1>
-<p>Trim + gallery-style crop + remove selected white text from every frame + editable GeoTag overlay.</p>
+<p>Trim + gallery-style crop + remove selected white text (multiple boxes) from every frame + editable GeoTag overlay.</p>
 </header>
 
 <div class="wrap">
@@ -156,7 +158,9 @@ input[type=range]{width:100%}
 <h3>White Text Removal</h3>
 <button id="removeMode" class="secondary">Select White Text Area</button>
 <button id="removeWhite" disabled>Remove White Text</button>
+<button id="undoWhite" class="secondary">Undo Last Box</button>
 <button id="clearWhite" class="secondary">Clear Selection</button>
+<div class="small" id="boxCount">Boxes: 0 — turn on "Select White Text Area" and drag as many boxes as you need.</div>
 <label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
 <label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
 <label>White detection sensitivity <b id="whiteVal">200</b></label>
@@ -167,7 +171,7 @@ input[type=range]{width:100%}
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
 <label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
 <input id="textThick" type="range" min="2" max="30" value="9">
-<div class="small">Draw the box around the text. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see exactly which pixels will be removed: if red covers the text, you are set; if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
+<div class="small">Draw a box around each piece of text (as many as you like). The first box is red; extra boxes are numbered orange and are checked on every frame, so text that appears later is still removed. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see which pixels will be removed: if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
 <div class="section">
@@ -304,7 +308,8 @@ if(!wctx) throw new Error('Export canvas context unavailable');
 const stage=$('stage'), selBox=$('selection'), selection2=$('selection2');
 
 let file=null, videoURL=null, duration=0, playing=false;
-let crop=null, cropMode=false, whiteRect=null, whiteRect2=null, removeMode=false, selecting=false, sx=0, sy=0;
+// whiteRect = first box (static-mask pipeline). extraRects = any number of additional boxes (per-frame detailed remover).
+let crop=null, cropMode=false, whiteRect=null, extraRects=[], removeMode=false, selecting=false, sx=0, sy=0, dragEl=null;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
 let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
@@ -326,6 +331,10 @@ function setToday(){
 setToday();
 
 function setStatus(t){$('editStatus').textContent=t}
+function updateBoxCount(){
+ const n=(whiteRect?1:0)+extraRects.length;
+ $('boxCount').textContent='Boxes: '+n+(n?' (1 red + '+extraRects.length+' orange)':' — turn on "Select White Text Area" and drag as many boxes as you need.');
+}
 function resizePreview(){
  if(!video.videoWidth)return;
  const max=1100, s=Math.min(1,max/video.videoWidth);
@@ -346,10 +355,6 @@ function drawBase(ctx2,W,H){
 
 // =====================================================================
 //  CLEAN WHITE-TEXT REMOVAL
-//  1) scan the trimmed video once to find text that stays on screen
-//  2) every frame: detect bright text (+ optional changing text), widen it
-//  3) fill with a smooth push-pull inpaint of the REAL surrounding pixels
-//  4) add grain matched to the surrounding video so it is not a flat patch
 // =====================================================================
 const wrCache=new Map();
 let staticMask=null, staticBuilding=null, staticTimer=null;
@@ -393,7 +398,6 @@ function dilateMask(m,w,h,g){
   return out;
 }
 
-// Min / max filter with a square window (separable, O(1) per pixel via monotone queue).
 function slidePass(src,dst,n,stride,lines,lineStep,r,useMax,dq){
   for(let l=0;l<lines;l++){
     const base=l*lineStep;let head=0,tail=0,nxt=0;
@@ -417,9 +421,6 @@ function sepFilter(src,w,h,r,useMax){
   return out;
 }
 
-// Finds white / light-grey TEXT pixels using a white top-hat: only bright structures that are
-// THINNER than a letter stroke survive. Big bright areas (tiles, white clothes, sky) and their
-// edges are part of the grey-scale opening and are therefore never touched.
 function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
   const N=w*h,lum=new Float32Array(N);
   for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
@@ -437,13 +438,11 @@ function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
     else if(th>=8)weak[p]=1;
   }
   if(!any)return null;
-  // anti-aliased edge pixels right next to a letter stroke
   const near=dilateMask(mask,w,h,2);
   for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
   return mask;
 }
 
-// Scans frames across the trim range; pixels that are bright in most frames = static text.
 async function buildStaticMask(){
   while(staticBuilding){try{await staticBuilding}catch(e){}}
   if(!whiteRect||!duration)return null;
@@ -497,15 +496,11 @@ function scaledStatic(sm,w,h){
   sm.sc[k]=m;return m;
 }
 
-// Push-pull inpaint: smooth fill from the real surrounding pixels, then a few
-// relaxation passes so the edge of the fill matches its neighbours exactly,
-// then grain matched to the surrounding video so it does not look like a flat patch.
 function inpaintHole(d,w,h,hole,strength){
   const N=w*h;
   let hn=0;for(let p=0;p<N;p++)if(hole[p])hn++;
   if(!hn||hn===N)return;
 
-  // ---- push: level 1 is built straight from the known pixels
   const levels=[null];
   let cw=(w+1)>>1,ch=(h+1)>>1,val=new Float32Array(cw*ch*3),wt=new Float32Array(cw*ch);
   for(let y=0;y<h;y++){
@@ -528,7 +523,6 @@ function inpaintHole(d,w,h,hole,strength){
     val=nv;wt=nwt;cw=nw;ch=nh;levels.push({w:cw,h:ch,val,wt});
   }
 
-  // ---- pull: coarse -> fine with bilinear upsampling
   const top=levels[levels.length-1];
   let col=new Float32Array([top.val[0]/top.wt[0],top.val[1]/top.wt[0],top.val[2]/top.wt[0]]);
   for(let k=levels.length-2;k>=1;k--){
@@ -548,7 +542,6 @@ function inpaintHole(d,w,h,hole,strength){
     }
     col=nc;
   }
-  // level 0: known pixels keep their value, hole pixels get the interpolated colour
   const fill=new Float32Array(N*3);
   {
     const pw=levels[1].w,ph=levels[1].h;
@@ -566,7 +559,6 @@ function inpaintHole(d,w,h,hole,strength){
     }
   }
 
-  // ---- relax so the fill edge matches the real pixels around it
   const idx=new Int32Array(hn);let j0=0;
   for(let p=0;p<N;p++)if(hole[p])idx[j0++]=p;
   for(let it=0;it<10;it++){
@@ -580,7 +572,6 @@ function inpaintHole(d,w,h,hole,strength){
     }
   }
 
-  // ---- measure real grain around the hole (robust median of high-pass luma)
   const lum=new Float32Array(N);
   for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
   const hist=new Uint32Array(64);let hc=0;
@@ -594,7 +585,6 @@ function inpaintHole(d,w,h,hole,strength){
   if(hc>50){let acc=0,mi=0;for(;mi<64;mi++){acc+=hist[mi];if(acc>=hc/2)break;}sigma=Math.min(6,(mi+.3)/.754);}
   const amp=sigma*0.85;
 
-  // ---- write fill + matching grain
   for(let j=0;j<hn;j++){
     const p=idx[j],i=p*4;
     const g=(Math.random()+Math.random()+Math.random()+Math.random()-2)*1.732*amp;
@@ -635,7 +625,6 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
 
-  // build the text mask
   let hole=new Uint8Array(N),any=false;
   const rectArea=(rx1-rx0)*(ry1-ry0);
   let staticTooBig=false;
@@ -646,7 +635,6 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
     if(c/rectArea>0.08){hole.fill(0);staticTooBig=true;}else if(c)any=true;
   }
   if(dynamic||!useStatic||staticTooBig){
-    // safety cap: if "text" covers a big part of the box it is not text -> raise the bar, never smear the scene
     let tt=t,det=null;
     for(let k=0;k<5;k++){
       det=detectWhite(d,w,h,tt,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
@@ -667,7 +655,6 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   }
   if(!any)return;
 
-  // widen to swallow glow / anti-aliasing / compression halo, keep inside the selection
   hole=dilateMask(hole,w,h,grow);
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     const gx=x+x0,gy=y+y0;
@@ -682,248 +669,16 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
   }
 }
 function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
-function textureInpaintHole(d,w,h,hole,strength){
-  // SECOND BOX ONLY: strong local texture synthesis with Poisson-style
-  // gradient blending.  The source pixels come from the same nearby frame,
-  // while the boundary is forced to agree with the untouched neighbouring
-  // pixels. This removes the "stamped patch" look of simple copy/paste.
-  const N=w*h;
-  const seen=new Uint8Array(N), q=new Int32Array(N), comps=[];
 
-  // Find connected masked components so each letter/stroke gets its own
-  // nearby texture source instead of one large rectangle being copied.
-  for(let seed=0;seed<N;seed++){
-    if(!hole[seed]||seen[seed])continue;
-    let qh=0,qt=0;q[qt++]=seed;seen[seed]=1;
-    const pix=[];let minX=w,maxX=-1,minY=h,maxY=-1;
-    while(qh<qt){
-      const p=q[qh++],x=p%w,y=(p/w)|0;
-      pix.push(p);minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
-      if(x>0){const n=p-1;if(hole[n]&&!seen[n]){seen[n]=1;q[qt++]=n;}}
-      if(x<w-1){const n=p+1;if(hole[n]&&!seen[n]){seen[n]=1;q[qt++]=n;}}
-      if(y>0){const n=p-w;if(hole[n]&&!seen[n]){seen[n]=1;q[qt++]=n;}}
-      if(y<h-1){const n=p+w;if(hole[n]&&!seen[n]){seen[n]=1;q[qt++]=n;}}
-    }
-    comps.push({pix,minX,maxX,minY,maxY});
-  }
-
-  comps.sort((a,b)=>b.pix.length-a.pix.length);
-
-  const luma=(p)=>{const i=p*4;return d[i]*.299+d[i+1]*.587+d[i+2]*.114;};
-  const validPatch=(sx,sy,bw,bh,mark)=>{
-    if(sx<2||sy<2||sx+bw>=w-2||sy+bh>=h-2)return false;
-    for(let yy=-2;yy<=bh+1;yy++)for(let xx=-2;xx<=bw+1;xx++){
-      const p=(sy+yy)*w+(sx+xx);
-      if(mark[p])return false;
-    }
-    return true;
-  };
-
-  for(const c of comps){
-    const pad=4;
-    const minX=Math.max(2,c.minX-pad),maxX=Math.min(w-3,c.maxX+pad);
-    const minY=Math.max(2,c.minY-pad),maxY=Math.min(h-3,c.maxY+pad);
-    const bw=maxX-minX+1,bh=maxY-minY+1;
-    if(bw<1||bh<1)continue;
-
-    // Build a thin fingerprint from the untouched pixels surrounding the hole.
-    const border=[];
-    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
-      const p=y*w+x;if(hole[p])continue;
-      let near=false;
-      for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
-        if(!dx&&!dy)continue;
-        const xx=x+dx,yy=y+dy;
-        if(xx>=0&&xx<w&&yy>=0&&yy<h&&hole[yy*w+xx]){near=true;break;}
-      }
-      if(near)border.push({x,y,p});
-    }
-    if(!border.length)continue;
-
-    // Search several nearby source patches.  We score colour, luma gradient
-    // and distance, so a patch on the same floor texture is preferred over a
-    // visually similar but unrelated object.
-    const candidates=[];
-    const search=Math.min(70,Math.max(20,Math.round(Math.max(bw,bh)*2.2)));
-    const step=bw*bh>1200?3:2;
-    for(let dy=-search;dy<=search;dy+=step){
-      for(let dx=-search;dx<=search;dx+=step){
-        if(Math.abs(dx)<bw*.35&&Math.abs(dy)<bh*.35)continue;
-        const sx=minX+dx,sy=minY+dy;
-        if(!validPatch(sx,sy,bw,bh,hole))continue;
-        let score=0,n=0;
-        const stride=Math.max(1,Math.floor(border.length/40));
-        for(let k=0;k<border.length;k+=stride){
-          const b=border[k],rx=b.x-minX,ry=b.y-minY;
-          const sp=(sy+ry)*w+(sx+rx),ti=b.p*4,si=sp*4;
-          const dr=d[ti]-d[si],dg=d[ti+1]-d[si+1],db=d[ti+2]-d[si+2];
-          score+=dr*dr+dg*dg+db*db;
-          const gx=b.x>0&&b.x<w-1 ? luma(b.p+1)-luma(b.p-1) : 0;
-          const gy=b.y>0&&b.y<h-1 ? luma(b.p+w)-luma(b.p-w) : 0;
-          const sgx=(sx+rx)>0&&(sx+rx)<w-1 ? luma(sp+1)-luma(sp-1) : 0;
-          const sgy=(sy+ry)>0&&(sy+ry)<h-1 ? luma(sp+w)-luma(sp-w) : 0;
-          score+=0.7*((gx-sgx)*(gx-sgx)+(gy-sgy)*(gy-sgy));
-          n++;
-        }
-        if(n)score/=n;
-        score+=(dx*dx+dy*dy)*0.45;
-        candidates.push({sx,sy,score});
-      }
-    }
-    candidates.sort((a,b)=>a.score-b.score);
-    const best=candidates.slice(0,Math.min(3,candidates.length));
-    if(!best.length)continue;
-
-    // Choose the best patch.  A second/third patch is used as a fallback only
-    // when the best patch is not valid at a particular source coordinate.
-    const src=best[0];
-
-    // Initialise the hole from the real source texture.
-    const work=new Float32Array(c.pix.length*3);
-    const pos=new Map();
-    for(let i=0;i<c.pix.length;i++)pos.set(c.pix[i],i);
-    for(let i=0;i<c.pix.length;i++){
-      const p=c.pix[i],x=p%w,y=(p/w)|0;
-      const sp=(src.sy+(y-minY))*w+(src.sx+(x-minX));
-      const si=sp*4;
-      work[i*3]=d[si];work[i*3+1]=d[si+1];work[i*3+2]=d[si+2];
-    }
-
-    // Poisson-style relaxation: preserve the source patch's local texture
-    // gradients while matching the actual pixels around the removed text.
-    // This is deliberately per-component, so it cannot create a box-shaped
-    // fill across the selection.
-    const next=new Float32Array(work.length);
-    const iterations=c.pix.length>3500?14:c.pix.length>1200?18:24;
-    for(let it=0;it<iterations;it++){
-      for(let i=0;i<c.pix.length;i++){
-        const p=c.pix[i],x=p%w,y=(p/w)|0;
-        let sr=0,sg=0,sb=0,n=0;
-        const neigh=[p-1,p+1,p-w,p+w];
-        for(let z=0;z<4;z++){
-          const np=neigh[z],nx=np%w,ny=(np/w)|0;
-          if(nx<0||nx>=w||ny<0||ny>=h)continue;
-          const ox=nx-minX,oy=ny-minY;
-          const sp=(src.sy+oy)*w+(src.sx+ox),si=sp*4;
-          const si0=(src.sy+(y-minY))*w+(src.sx+(x-minX))*4;
-          // Source gradient from current source pixel toward source neighbour.
-          const gr=d[si]-d[si0],gg=d[si+1]-d[si0+1],gb=d[si+2]-d[si0+2];
-          const j=pos.get(np);
-          if(j!==undefined){sr+=work[j*3]+gr;sg+=work[j*3+1]+gg;sb+=work[j*3+2]+gb;}
-          else{
-            const ti=np*4;sr+=d[ti]+gr;sg+=d[ti+1]+gg;sb+=d[ti+2]+gb;
-          }
-          n++;
-        }
-        if(n){next[i*3]=sr/n;next[i*3+1]=sg/n;next[i*3+2]=sb/n;}
-      }
-      work.set(next);
-    }
-
-    // Blend only the masked pixels.  The final value is gently anchored to
-    // the source texture so the fill remains detailed rather than becoming a
-    // blurred wash.
-    for(let i=0;i<c.pix.length;i++){
-      const p=c.pix[i],di=p*4;
-      const r=work[i*3],g=work[i*3+1],b=work[i*3+2];
-      d[di]=d[di]*(1-strength)+r*strength;
-      d[di+1]=d[di+1]*(1-strength)+g*strength;
-      d[di+2]=d[di+2]*(1-strength)+b*strength;
-    }
-  }
-}
-
-function removeWhiteDetailedFromCanvas(ctx2,W,H,rect){
-  if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
-  if(rx1-rx0<2||ry1-ry0<2)return;
-
-  // The second box is intentionally more sensitive than the first box.
-  // Multiple passes catch bright letter cores, anti-aliased edges and the
-  // faint grey outline that often remains after compression.
-  const baseT=+$('whiteThreshold').value||115;
-  const baseThk=+$('textThick').value||9;
-  const pad=Math.round(Math.max(14,Math.min(34,W/42)));
-  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
-  const w=x1-x0,h=y1-y0,N=w*h;
-  const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
-  const hole=new Uint8Array(N);
-
-  // Union several tight detectors. This is much less likely to leave the
-  // recognizable little letter-shaped remnant seen in the previous version.
-  const passes=[
-    {t:Math.max(68,baseT-38),thk:2,mr:Math.max(3,Math.round(W/105))},
-    {t:Math.max(76,baseT-30),thk:Math.max(2,Math.round(baseThk*.40)),mr:Math.max(4,Math.round(W/96))},
-    {t:Math.max(84,baseT-20),thk:Math.max(2,Math.round(baseThk*.52)),mr:Math.max(5,Math.round(W/86))},
-    {t:Math.max(90,baseT-10),thk:Math.max(2,Math.round(baseThk*.68)),mr:Math.max(6,Math.round(W/74))},
-    {t:Math.max(96,baseT-2), thk:Math.max(2,Math.round(baseThk*.82)),mr:Math.max(6,Math.round(W/64))}
-  ];
-  for(const cfg of passes){
-    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,cfg.mr,cfg.thk);
-    if(m)for(let p=0;p<N;p++)if(m[p])hole[p]=1;
-  }
-
-  // Final residue pass: catch compressed/anti-aliased white lettering that is
-  // no longer bright enough to pass the top-hat detector. It requires both
-  // low colour saturation and a local brightness peak, so broad floor texture
-  // is not converted into a giant mask.
-  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
-    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
-      const p=y*w+x,i=p*4;
-      const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-      const L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-      if(mx-mn>72||L<Math.max(62,baseT-48))continue;
-      const nb=(d[i-4]*.299+d[i-3]*.587+d[i-2]*.114 +
-                d[i+4]*.299+d[i+5]*.587+d[i+6]*.114 +
-                d[i-w*4]*.299+d[i-w*4+1]*.587+d[i-w*4+2]*.114 +
-                d[i+w*4]*.299+d[i+w*4+1]*.587+d[i+w*4+2]*.114)/4;
-      if(L-nb>=5)hole[p]=1;
-    }
-  }
-
-  let count=0;
-  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++)if(hole[y*w+x])count++;
-  if(!count)return;
-
-  // Catch the faint anti-aliased border around the detected strokes. Keep the
-  // expansion deliberately small so neighbouring texture remains untouched.
-  const grow=Math.max(1,Math.min(3,Math.round(baseThk*W/1080*.42)));
-  let dil=dilateMask(hole,w,h,grow);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const p=y*w+x,gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)dil[p]=0;
-  }
-
-  // A second tiny dilation catches isolated bright edge pixels without
-  // turning the entire selection into a filled rectangle.
-  dil=dilateMask(dil,w,h,1);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const p=y*w+x,gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)dil[p]=0;
-  }
-
-  textureInpaintHole(d,w,h,dil,1);
-  ctx2.putImageData(img,x0,y0);
-}
-
-
-
-/* SECOND BOX V2: patch-based texture clone.
-   Unlike the previous diffusion/inpaint pass, this never invents RGB values.
-   Every replacement pixel comes from real neighbouring video pixels, which
-   prevents the magenta/black/blur artifacts seen in the earlier version. */
+/* EXTRA BOXES: micro-pixel exemplar inpainting.
+   The box is only a search area. Only pixels identified as white/grey lettering are changed,
+   and each replacement RGB value is copied from a real untouched pixel in the same frame. */
 function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
   if(!rect)return;
   const rx0=Math.max(0,Math.floor(rect.x)), ry0=Math.max(0,Math.floor(rect.y));
   const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
   if(rx1-rx0<4||ry1-ry0<4)return;
 
-  /* SECOND BOX V4 — MICRO-PIXEL EXEMPLAR INPAINTING
-     The selection is ONLY a search area.  We never blur, average, haze, grain,
-     brighten, or process the rectangle.  The only pixels changed are pixels
-     confidently identified as the white/grey lettering. Every replacement RGB
-     value is copied from a real, untouched pixel in THIS SAME VIDEO FRAME. */
   const pad=10;
   const x0=Math.max(0,rx0-pad), y0=Math.max(0,ry0-pad);
   const x1=Math.min(W,rx1+pad), y1=Math.min(H,ry1+pad);
@@ -935,8 +690,6 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
   const baseThk=+$('textThick').value||9;
   const area=Math.max(1,(rx1-rx0)*(ry1-ry0));
 
-  // High-sensitivity text detection, but keep a strict coverage ceiling so
-  // ordinary bright clothing/floor/background cannot become a giant mask.
   const passes=[
     {t:Math.max(72,userT-34), thk:2, mr:Math.max(3,Math.round(W/110))},
     {t:Math.max(82,userT-24), thk:Math.max(2,Math.round(baseThk*.42)), mr:Math.max(4,Math.round(W/96))},
@@ -950,13 +703,9 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
     for(let p=0;p<N;p++)if(m[p])mask[p]=1;
     let c=0;
     for(let yy=ry0-y0;yy<ry1-y0;yy++)for(let xx=rx0-x0;xx<rx1-x0;xx++)if(mask[yy*w+xx])c++;
-    // Never let a detector consume the scene.  If it would, discard only that
-    // pass and retain stricter detections from previous passes.
     if(c/area>0.055)mask.set(before);
   }
 
-  // Faint anti-aliased residue: only accept a neutral, locally bright pixel
-  // immediately adjacent to an already detected stroke.
   const edge=mask.slice();
   for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
     for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
@@ -973,8 +722,6 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
   }
   mask.set(edge);
 
-  // Tiny connectivity cleanup: preserve real strokes, remove isolated bright
-  // scene pixels that happen to be inside the search rectangle.
   const clean=mask.slice();
   for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
     for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
@@ -990,17 +737,14 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
   for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++)if(mask[y*w+x])total++;
   if(!total || total/area>0.065)return;
 
-  // Keep all original pixels outside the text mask byte-for-byte unchanged.
   const work=new Uint8ClampedArray(original);
   const filled=new Uint8Array(mask);
   const R=Math.min(22,Math.max(10,Math.round(Math.max(12,W/90))));
-  const ctxR=2; // compare a tiny 5x5 neighbourhood — minute-pixel matching
+  const ctxR=2;
   const inside=(x,y)=>x>=ctxR&&y>=ctxR&&x<w-ctxR&&y<h-ctxR;
 
   function lumaAt(buf,p){const i=p*4;return buf[i]*.299+buf[i+1]*.587+buf[i+2]*.114;}
 
-  // A candidate must be entirely untouched. We never sample from another
-  // repaired pixel, preventing texture smearing from propagating inward.
   function sourceClean(sx,sy){
     for(let yy=-ctxR;yy<=ctxR;yy++)for(let xx=-ctxR;xx<=ctxR;xx++){
       if(filled[(sy+yy)*w+(sx+xx)])return false;
@@ -1010,8 +754,6 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
 
   function contextScore(tx,ty,sx,sy){
     let score=0,n=0;
-    // Compare only target pixels that are still real/unmodified. This lets the
-    // algorithm infer what texture should continue behind the removed stroke.
     for(let yy=-ctxR;yy<=ctxR;yy++){
       for(let xx=-ctxR;xx<=ctxR;xx++){
         const tp=(ty+yy)*w+(tx+xx);
@@ -1024,8 +766,6 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
       }
     }
     if(n<4)return Infinity;
-    // Add local gradient agreement. This strongly prefers the same direction
-    // of real texture instead of a flat/blurred-looking patch.
     const tp=ty*w+tx,sp=sy*w+sx;
     const tgx=lumaAt(original,tp+1)-lumaAt(original,tp-1);
     const tgy=lumaAt(original,tp+w)-lumaAt(original,tp-w);
@@ -1035,8 +775,6 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
     return score/n + 0.025*((sx-tx)*(sx-tx)+(sy-ty)*(sy-ty));
   }
 
-  // Process the mask from its outer boundary inward. Each destination pixel
-  // gets one exact RGB value from an untouched local source pixel. No blending.
   for(let pass=0;pass<32;pass++){
     const boundary=[];
     for(let y=Math.max(ctxR,ry0-y0);y<Math.min(h-ctxR,ry1-y0);y++){
@@ -1070,7 +808,6 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
     }
   }
 
-  // Any tiny interior residue gets one nearest texture-consistent source pixel.
   for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
     const p=y*w+x;if(!filled[p])continue;
     let bestS=null,best=Infinity;
@@ -1083,68 +820,17 @@ function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
     if(bestS){const si=(bestS.sy*w+bestS.sx)*4,di=p*4;work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=original[si+3];filled[p]=0;}
   }
 
-  // Commit only the detected text pixels. Everything else is untouched.
   for(let p=0;p<N;p++)if(mask[p]){
     const i=p*4;d[i]=work[i];d[i+1]=work[i+1];d[i+2]=work[i+2];d[i+3]=original[i+3];
   }
   ctx2.putImageData(img,x0,y0);
 }
 
-// No global grain/noise is applied. The video remains at its original pixel texture.
-let grainFrameSeed=0;
-
-// Very subtle full-frame haze/softening. The same effect is applied everywhere
-// so the repaired area does not look like a separate processed strip.
-// It blends the frame with a lightly softened copy without creating a hard band.
-function applySoftHaze(ctx,W,H,opacity=0.16,blurPx=0.55){
-  if(!W||!H||opacity<=0||blurPx<=0)return;
-  const c=document.createElement('canvas');
-  c.width=W;c.height=H;
-  const cx=c.getContext('2d');
-  if(!cx)return;
-  cx.imageSmoothingEnabled=true;
-  cx.filter='blur('+blurPx+'px)';
-  cx.drawImage(ctx.canvas,0,0,W,H);
-  ctx.save();
-  ctx.globalAlpha=opacity;
-  ctx.globalCompositeOperation='source-over';
-  ctx.filter='none';
-  ctx.drawImage(c,0,0,W,H);
-  ctx.restore();
-}
-
-function applyNaturalGrain(ctx,W,H,amount=7.0){
-  if(!W||!H||amount<=0)return;
-  const img=ctx.getImageData(0,0,W,H);
-  const d=img.data;
-  const seed=(++grainFrameSeed*0x9e3779b1)>>>0;
-  let state=seed||1;
-  const next=()=>{
-    state ^= state<<13; state >>>=0;
-    state ^= state>>>17; state >>>=0;
-    state ^= state<<5; state >>>=0;
-    return state;
-  };
-
-  // Match the fine, slightly rough texture visible in the repaired area across
-  // the WHOLE frame.  It is monochrome-dominant so it reads like camera/compression
-  // texture instead of colored digital noise.  A tiny correlated component keeps
-  // neighboring pixels from looking like a flat synthetic overlay.
-  let prev=0;
-  for(let i=0;i<d.length;i+=4){
-    const raw=((next()/4294967295)-0.5)*2;
-    const n=raw*0.72 + prev*0.28;
-    prev=raw;
-    const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-    // Slightly stronger texture in mid/dark tones, where the repaired texture
-    // is most visible, while protecting bright highlights.
-    const tone=l<75?1.12:l<160?1.0:0.82;
-    const dn=n*amount*tone;
-    d[i]=clamp(Math.round(d[i]+dn),0,255);
-    d[i+1]=clamp(Math.round(d[i+1]+dn*0.96),0,255);
-    d[i+2]=clamp(Math.round(d[i+2]+dn*0.92),0,255);
+// Apply every extra box to a canvas. (rw,rh) = source-rect size, (W,H) = canvas size.
+function applyExtraBoxes(ctx2,W,H,r){
+  for(const q of extraRects){
+    removeWhiteDetailedFromCanvasV3(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
   }
-  ctx.putImageData(img,0,0);
 }
 
 function drawPreview(){
@@ -1164,16 +850,11 @@ function drawPreview(){
      h:wr.h/r.h*view.height
    });
  }
- if(whiteRect2){
-   const wr=whiteRect2;
-   removeWhiteDetailedFromCanvasV3(vctx,view.width,view.height,{x:wr.x/r.w*view.width,y:wr.y/r.h*view.height,w:wr.w/r.w*view.width,h:wr.h/r.h*view.height});
- }
+ applyExtraBoxes(vctx,view.width,view.height,r);
 }
 function updateSelectionBox(){
- if(!selecting && !whiteRect && !whiteRect2 && !crop){selBox.style.display='none';selection2.style.display='none';return;}
- const r=sourceRect();
- const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- const drawBox=(el,q)=>{
+ const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
+ const place=(el,q)=>{
    if(!q){el.style.display='none';return;}
    el.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
    el.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
@@ -1181,8 +862,14 @@ function updateSelectionBox(){
    el.style.height=(q.h/r.h*C.height)+'px';
    el.style.display='block';
  };
- drawBox(selBox,crop||whiteRect);
- drawBox(selection2,whiteRect2);
+ place(selBox,crop||whiteRect);
+ if(!selecting)selection2.style.display='none';
+ document.querySelectorAll('.selExtra').forEach(e=>e.remove());
+ extraRects.forEach((q,i)=>{
+   const el=document.createElement('div');el.className='selExtra';el.dataset.n=i+2;
+   stage.appendChild(el);place(el,q);
+ });
+ updateBoxCount();
 }
 function pointerPos(e){
  const R=view.getBoundingClientRect(),r=sourceRect();
@@ -1191,25 +878,39 @@ function pointerPos(e){
 view.addEventListener('pointerdown',e=>{
  if(!cropMode&&!removeMode)return;
  selecting=true;view.setPointerCapture(e.pointerId);
- const p=pointerPos(e);sx=p.x;sy=p.y;const active=removeMode&&whiteRect&&!cropMode?selection2:selBox;active.style.display='block';
+ const p=pointerPos(e);sx=p.x;sy=p.y;
+ dragEl=(removeMode&&!cropMode&&whiteRect)?selection2:selBox;
+ dragEl.style.display='block';
 });
 view.addEventListener('pointermove',e=>{
- if(!selecting)return;
+ if(!selecting||!dragEl)return;
  const p=pointerPos(e);
  const q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
  const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- selBox.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
- selBox.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
- selBox.style.width=(q.w/r.w*C.width)+'px';selBox.style.height=(q.h/r.h*C.height)+'px';
+ dragEl.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
+ dragEl.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
+ dragEl.style.width=(q.w/r.w*C.width)+'px';
+ dragEl.style.height=(q.h/r.h*C.height)+'px';
 });
 view.addEventListener('pointerup',e=>{
  if(!selecting)return;selecting=false;
  const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
- if(q.w<5||q.h<5){return}
+ if(q.w<5||q.h<5){updateSelectionBox();return}
  if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
- if(removeMode){if(!whiteRect){whiteRect={...q};setStatus('First white-text area selected. Drag again for the detailed second area.')}else{whiteRect2={...q};setStatus('Second white-text area selected. It will use the detailed remover.')}invalidateWR();$('removeWhite').disabled=false;}
+ if(removeMode){
+   if(!whiteRect)whiteRect={...q};else extraRects.push({...q});
+   setStatus('White-text box '+(1+extraRects.length)+' added. Drag again to add more, or press Remove White Text.');
+   invalidateWR();$('removeWhite').disabled=false;
+ }
  updateSelectionBox();
+ drawPreview();drawGeoPreview();
 });
+$('undoWhite').onclick=()=>{
+ if(extraRects.length)extraRects.pop();else whiteRect=null;
+ if(!whiteRect&&!extraRects.length)$('removeWhite').disabled=true;
+ invalidateWR();updateSelectionBox();drawPreview();drawGeoPreview();
+ setStatus('Last box removed.');
+};
 
 function timelineFmt(sec){
   sec=Math.max(0,Number(sec)||0); const m=Math.floor(sec/60), s=Math.floor(sec%60);
@@ -1358,7 +1059,7 @@ video.addEventListener('loadedmetadata',()=>{
  $('trimStart').value='0';$('trimEnd').value=fmt(duration);
  $('trimRange').max=duration; $('trimRange').value=0;
  resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
- $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
+ $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text areas.');
  buildTimeline();
 });
 video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
@@ -1374,20 +1075,20 @@ $('pauseBtn').onclick=()=>video.pause();
 $('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.currentTime-1/30)}
 $('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
 $('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
-$('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
-$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;whiteRect2=null;invalidateWR();$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
-$('resetCrop').onclick=()=>{crop=null;whiteRect=null;whiteRect2=null;invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
+$('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text… (click to stop)':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around each piece of white text. You can add as many boxes as you need.':'White-text selection mode off.')}
+$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;extraRects=[];invalidateWR();$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop applied. White-text boxes were cleared — select them again on the cropped video.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;extraRects=[];invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop reset.')}
 $('removeWhite').onclick=async()=>{
- if(!whiteRect&&!whiteRect2)return;
+ if(!whiteRect&&!extraRects.length)return;
  video.pause();
  setStatus('Analysing the text area across the video…');
  try{
    await buildStaticMask();
-   setStatus('White-text removal is ready. It is applied to every frame when you export / download.');
+   setStatus('White-text removal is ready for '+((whiteRect?1:0)+extraRects.length)+' box(es). It is applied to every frame when you export / download.');
  }catch(e){setStatus('Text analysis failed: '+(e.message||e))}
  drawPreview();drawGeoPreview();
 }
-$('clearWhite').onclick=()=>{whiteRect=null;whiteRect2=null;selection2.style.display='none';invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
+$('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.display='none';invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();drawGeoPreview();setStatus('All white-text boxes cleared.')}
 $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
@@ -1724,7 +1425,7 @@ function prepareOutput(){
 }
 
 function exportNeedsFrameProcessing(){
-  return !!whiteRect || !!whiteRect2 || (lat!=null && lon!=null);
+  return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null);
 }
 
 function drawExportFrame(elapsedOverride){
@@ -1741,15 +1442,7 @@ function drawExportFrame(elapsedOverride){
     };
     removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
   }
-  if(whiteRect2){
-    const rectOnOutput={
-      x:whiteRect2.x/r.w*outputW,
-      y:whiteRect2.y/r.h*outputH,
-      w:whiteRect2.w/r.w*outputW,
-      h:whiteRect2.h/r.h*outputH
-    };
-    removeWhiteDetailedFromCanvasV3(wctx,outputW,outputH,rectOnOutput);
-  }
+  applyExtraBoxes(wctx,outputW,outputH,r);
 
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
@@ -1828,7 +1521,6 @@ async function exportVideoFrameAccurate(){
   const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
   const length=Math.max(0.05,end-start);
 
-  // scan the video once for static text (needed for a clean, flicker-free result)
   if(whiteRect){
     $('exportStatus').textContent='Analysing the text area…';
     await buildStaticMask();
@@ -1904,15 +1596,11 @@ async function exportVideoFrameAccurate(){
       ? 'Rendering selected changes… 0% (keep this tab open)'
       : 'Rendering crop/trim only… 0% (keep this tab open)';
 
-    // FAST EXPORT: play the video faster than real time and catch every presented
-    // frame (no per-frame seeking). Timestamps use the real video time so the
-    // output plays at normal speed. Playback speed adapts automatically to how
-    // fast frames can be processed, and any frame the browser skips is repeated
-    // so the final video keeps a steady frame rate.
     video.pause();restoreMute=video.muted;video.muted=true;
     await seekVideo(start);
     const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
-    let rate=needsFrameProcessing?3:6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
+    // extra boxes are heavier per frame, so start slower when there are several
+    let rate=needsFrameProcessing?(extraRects.length>1?2:3):6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
     const tBegin=performance.now();
     video.playbackRate=rate;
     await new Promise((resolve,reject)=>{
@@ -1940,7 +1628,6 @@ async function exportVideoFrameAccurate(){
             const t0=performance.now();
             const rel=n===0?0:Math.max(0,mt-start);
             if(n===0||rel>prevRel+0.0005){
-              // frame(s) skipped by the browser -> slow down and repeat the last frame
               if(lastMT>=0){
                 const gap=Math.round((mt-lastMT)*fps)-1;
                 if(gap>=1){
@@ -2143,8 +1830,8 @@ $('downloadVideo').onclick=async()=>{
  $('downloadVideo').disabled=false;
 }
 $('goGeo').onclick=()=>{$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
-$('backEdit').onclick=()=>{video.pause();$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview()}
-$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
+$('backEdit').onclick=()=>{video.pause();$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview();updateSelectionBox()}
+$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');updateSelectionBox()}
 $('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
 for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
@@ -2204,7 +1891,7 @@ function drawGeoPreview(){
  if(geo.width!==nw)geo.width=nw; if(geo.height!==nh)geo.height=nh;
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
  if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
- if(whiteRect2)removeWhiteDetailedFromCanvasV3(gctx,geo.width,geo.height,{x:whiteRect2.x/r.w*geo.width,y:whiteRect2.y/r.h*geo.height,w:whiteRect2.w/r.w*geo.width,h:whiteRect2.h/r.h*geo.height});
+ applyExtraBoxes(gctx,geo.width,geo.height,r);
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 $('exportGeo').onclick=async()=>{
@@ -2262,13 +1949,13 @@ video.addEventListener('timeupdate',()=>{
   const s=+$('trimStart').value||0,e=+$('trimEnd').value||duration;
   if(e>s)$('geoSeek').value=Math.round((video.currentTime-s)/(e-s)*1000);
 });
-// redraw on every presented frame while playing (smooth live preview)
 (function loop(){
   if(!video.paused&&!exporting&&video.videoWidth){
     if($('geoSection').style.display!=='none')drawGeoPreview();else drawPreview();
   }
   video.requestVideoFrameCallback?video.requestVideoFrameCallback(loop):requestAnimationFrame(loop);
 })();
+updateBoxCount();
 </script>
 </body>
 </html>

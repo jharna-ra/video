@@ -1236,24 +1236,69 @@ async function findLocation(){
   lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
   if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
   gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
-  mapImg=await makeMap(lat,lon);
+  try{
+    mapImg=await makeMap(lat,lon);
+  }catch(mapErr){
+    console.warn('makeMap failed, using fallback', mapErr);
+    mapImg=makeFallbackMap(lat,lon);
+  }
+  if(!mapImg || !mapImg.width){
+    mapImg=makeFallbackMap(lat,lon);
+  }
   state.mapMoved=false; state.mapX=0; state.mapY=100-state.gHeight;
+  state.mapW = +$('gMapW').value || 45;
+  state.mapH = +$('mapH').value || 35;
   loadRealGPSRoute();drawGeoPreview();
- }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location found, but map tiles could not be loaded. Check internet access.';drawGeoPreview()}
+ }catch(e){
+  console.error(e);
+  $('gCoords').textContent='Location not found. Try a different place name.';
+  // keep previous lat/lon/map if any; do not wipe them on geocode failure
+ }
 }
 $('findLocation').onclick=findLocation;
 
 function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
+function makeFallbackMap(lat,lon){
+  const size=1536;
+  const fallback=document.createElement('canvas');
+  fallback.width=size;
+  fallback.height=size;
+  const fc=fallback.getContext('2d');
+  // soft map-like background
+  fc.fillStyle='#dce8d4';
+  fc.fillRect(0,0,size,size);
+  // grid
+  fc.strokeStyle='#b0c0a8';
+  fc.lineWidth=2;
+  for(let i=0;i<=size;i+=96){
+    fc.beginPath();fc.moveTo(i,0);fc.lineTo(i,size);fc.stroke();
+    fc.beginPath();fc.moveTo(0,i);fc.lineTo(size,i);fc.stroke();
+  }
+  // center marker
+  const mx=size/2, my=size/2;
+  fc.fillStyle='#e53935';
+  fc.beginPath();fc.arc(mx,my,22,0,Math.PI*2);fc.fill();
+  fc.strokeStyle='#fff';fc.lineWidth=6;fc.stroke();
+  // label
+  fc.fillStyle='rgba(255,255,255,0.92)';
+  fc.fillRect(20,size-70,420,50);
+  fc.fillStyle='#111';
+  fc.font='bold 26px Arial';
+  fc.fillText(`${lat.toFixed(5)}, ${lon.toFixed(5)}`, 30, size-36);
+  return fallback;
+}
+
 async function makeMap(lat,lon){
   const z=16;
   const t=tileXY(lat,lon,z), cx=Math.floor(t.x), cy=Math.floor(t.y);
   const size=1536, tile=256;
+  // Prefer sources that usually allow CORS for canvas use
   const sources=[
-    {name:'© OpenStreetMap contributors', url:(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
     {name:'© Esri', url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
-    {name:'© CARTO', url:(x,y)=>`https://a.basemaps.cartocdn.com/light_all/${z}/${y}/${x}.png`}
+    {name:'© CARTO', url:(x,y)=>`https://a.basemaps.cartocdn.com/light_all/${z}/${y}/${x}.png`},
+    {name:'© OpenStreetMap', url:(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`}
   ];
   for(const source of sources){
     const c=document.createElement('canvas'); c.width=size; c.height=size;
@@ -1266,44 +1311,39 @@ async function makeMap(lat,lon){
       const n=2**z; tx=((tx%n)+n)%n;
       if(ty<0||ty>=n) continue;
       jobs.push(new Promise(resolve=>{
-        const im=new Image(); im.crossOrigin='anonymous';
+        const im=new Image();
+        im.crossOrigin='anonymous';
         let finished=false;
         const done=()=>{if(!finished){finished=true;resolve();}};
         im.onload=()=>{
           try{
             const px=size/2+(dx-(t.x-cx))*tile;
             const py=size/2+(dy-(t.y-cy))*tile;
-            cc.drawImage(im,px,py,tile,tile); loaded++;
+            cc.drawImage(im,px,py,tile,tile);
+            loaded++;
           }catch(e){}
           done();
         };
         im.onerror=done;
         im.src=source.url(tx,ty);
-        setTimeout(done,3500);
+        setTimeout(done,4000);
       }));
     }
     await Promise.all(jobs);
-    if(loaded>=1){
+    if(loaded>=3){
       // location marker
       cc.save();
       const mx=size/2,my=size/2;
       cc.fillStyle='#e53935';cc.beginPath();cc.arc(mx,my,14,0,Math.PI*2);cc.fill();
       cc.strokeStyle='#fff';cc.lineWidth=5;cc.stroke();
-      cc.fillStyle='rgba(255,255,255,.94)';cc.fillRect(12,size-34,210,24);
+      cc.fillStyle='rgba(255,255,255,.94)';cc.fillRect(12,size-34,220,24);
       cc.fillStyle='#222';cc.font='14px Arial';cc.fillText(source.name,18,size-17);
       cc.restore();
       return c;
     }
   }
-  // Last-resort visible fallback: draw a coordinate grid and location marker so the map block never disappears.
-  const fallback=document.createElement('canvas'); fallback.width=1536; fallback.height=1536;
-  const fc=fallback.getContext('2d');
-  fc.fillStyle='#dfe7d9'; fc.fillRect(0,0,1536,1536);
-  fc.strokeStyle='#aab7a0'; fc.lineWidth=3;
-  for(let i=0;i<=1536;i+=128){fc.beginPath();fc.moveTo(i,0);fc.lineTo(i,1536);fc.stroke();fc.beginPath();fc.moveTo(0,i);fc.lineTo(1536,i);fc.stroke();}
-  fc.fillStyle='#d33'; fc.beginPath();fc.arc(768,768,22,0,Math.PI*2);fc.fill();
-  fc.fillStyle='#222'; fc.font='bold 28px Arial'; fc.fillText(`${lat.toFixed(5)}, ${lon.toFixed(5)}`,35,55);
-  return fallback;
+  // Always return something visible
+  return makeFallbackMap(lat,lon);
 }
 function readRunningCoords(){
   startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
@@ -1473,49 +1513,25 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.fill();
   baseCtx.restore();
 
-  if (
-    mapImg &&
-    mapImg.width > 0 &&
-    mapImg.height > 0
-  ) {
-
+  // Draw the map (cover-style crop, centered)
+  if (mapImg && mapImg.width > 0 && mapImg.height > 0 && mapW > 2 && mapH > 2) {
     baseCtx.save();
-
     baseCtx.globalAlpha = mapOpacity;
-
     baseCtx.beginPath();
-
-    baseCtx.rect(
-      mapX,
-      mapY,
-      mapW,
-      mapH
-    );
-
+    baseCtx.rect(mapX, mapY, mapW, mapH);
     baseCtx.clip();
-
-    const ms = Math.max(
-      mapW / mapImg.width,
-      mapH / mapImg.height
-    );
-
-    const sw = mapW / ms;
-    const sh = mapH / ms;
 
     baseCtx.imageSmoothingEnabled = true;
     baseCtx.imageSmoothingQuality = 'high';
 
-    baseCtx.drawImage(
-      mapImg,
-      Math.max(0, (mapImg.width - sw) / 2),
-      Math.max(0, (mapImg.height - sh) / 2),
-      Math.min(mapImg.width, sw),
-      Math.min(mapImg.height, sh),
-      mapX,
-      mapY,
-      mapW,
-      mapH
-    );
+    // object-fit: cover
+    const ms = Math.max(mapW / mapImg.width, mapH / mapImg.height);
+    const dw = mapImg.width * ms;
+    const dh = mapImg.height * ms;
+    const dx = mapX + (mapW - dw) / 2;
+    const dy = mapY + (mapH - dh) / 2;
+
+    baseCtx.drawImage(mapImg, dx, dy, dw, dh);
 
     baseCtx.restore();
   }
@@ -1742,12 +1758,14 @@ async function exportVideoFrameAccurate(){
   prepareOutput();
   video.pause();
 
-  if(lat!=null && lon!=null && !mapImg){
+  if(lat!=null && lon!=null && (!mapImg || !mapImg.width)){
     $('exportStatus').textContent='Preparing map…';
-    mapImg=await makeMap(lat,lon);
-  }
-  if(lat!=null && lon!=null && !mapImg){
-    throw new Error('Map could not be loaded. Check your internet connection and try again.');
+    try{
+      mapImg=await makeMap(lat,lon);
+    }catch(e){
+      mapImg=makeFallbackMap(lat,lon);
+    }
+    if(!mapImg || !mapImg.width) mapImg=makeFallbackMap(lat,lon);
   }
 
   const audioPromise=(async()=>{
@@ -2049,7 +2067,11 @@ for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails'
    state[id]=+$(id).value;
    if(id==='gMapW') state.mapW=+$(id).value;
    if(id==='mapH') state.mapH=+$(id).value;
-   $(id+'Val').textContent=$(id).value+'%';
+   if(id==='gHeight' && !state.mapMoved){
+     state.mapY = 100 - state.gHeight;
+   }
+   const valEl = $(id+'Val');
+   if(valEl) valEl.textContent = $(id).value + '%';
    drawGeoPreview();
  }
 }
@@ -2097,13 +2119,19 @@ geo.addEventListener('pointerup',endMapDrag); geo.addEventListener('pointercance
 
 function drawGeoPreview(){
  if(exporting||!video.videoWidth)return;
- const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);
- const nw=Math.round(r.w*s),nh=Math.round(r.h*s);
- if(geo.width!==nw)geo.width=nw; if(geo.height!==nh)geo.height=nh;
- gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
- if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
- applyExtraBoxes(gctx,geo.width,geo.height,r);
- if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
+ const r=sourceRect();
+ const max=1100,s=Math.min(1,max/r.w);
+ const nw=Math.max(1,Math.round(r.w*s));
+ const nh=Math.max(1,Math.round(r.h*s));
+ if(geo.width!==nw)geo.width=nw;
+ if(geo.height!==nh)geo.height=nh;
+ gctx.clearRect(0,0,geo.width,geo.height);
+ gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
+ // Sequential text removal (same pipeline as preview / export)
+ applyAllTextRemoval(gctx, geo.width, geo.height, r, false);
+ if(lat!=null && lon!=null){
+   drawGeoFrame(gctx, geo.width, geo.height, Math.max(0, video.currentTime - (+$('trimStart').value || 0)));
+ }
 }
 $('exportGeo').onclick=async()=>{
  if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}

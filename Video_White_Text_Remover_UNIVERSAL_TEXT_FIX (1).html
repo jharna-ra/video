@@ -1229,6 +1229,18 @@ function drawLogo(ctx,x,y,size){
   ctx.stroke();
   ctx.restore();
 }
+function drawMapPreview(msg){
+ const c=$('mapPreview');if(!c)return;
+ const W=c.width=640,H=c.height=240,x=c.getContext('2d');
+ x.fillStyle='#d7dde1';x.fillRect(0,0,W,H);
+ if(mapImg&&mapImg.width){
+  const sc=Math.max(W/mapImg.width,H/mapImg.height),dw=mapImg.width*sc,dh=mapImg.height*sc;
+  x.drawImage(mapImg,(W-dw)/2,(H-dh)/2,dw,dh);
+ }else{
+  x.fillStyle='#5b6670';x.font='bold 18px Arial';x.textAlign='center';
+  x.fillText(msg||'Map preview — press Find Location',W/2,H/2);
+ }
+}
 async function geocodeAny(q,place){
  const tryFetch=async(url)=>{
   const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
@@ -1255,6 +1267,7 @@ async function findLocation(){
   if(isFinite(sl)&&isFinite(so))p={lat:sl,lon:so};
  }
  if(!p){
+  drawMapPreview('Location not found');
   $('gCoords').textContent='Location not found (geocoder blocked or place name not recognised). Type Start Latitude / Longitude below and press Find Location again.';
   return;
  }
@@ -1268,6 +1281,7 @@ async function findLocation(){
  state.mapW=+$('gMapW').value||28;state.mapH=+$('mapH').value||35;
  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+(mapImg.srcName||'placeholder')+(mapImg.isFallback?' (real map tiles were blocked — check internet / ad-blocker, then press Find Location again)':'');
  try{loadRealGPSRoute();}catch(e){}
+ drawMapPreview();
  drawGeoPreview();
 }
 $('findLocation').onclick=findLocation;
@@ -1297,7 +1311,7 @@ function makeFallbackMap(lat,lon){
 async function makeMap(lat,lon){
   const z=16;
   const t=tileXY(lat,lon,z), cx=Math.floor(t.x), cy=Math.floor(t.y);
-  const size=768, tile=256, n=2**z;
+  const size=512, tile=256, n=2**z;
   // All sources send CORS headers, so the canvas stays exportable.
   const sources=[
     {name:'© Esri', url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
@@ -2206,6 +2220,7 @@ function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRect(c,W,H,r)}
 function removeTextRect(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 
 const _blur=document.createElement('canvas');
+drawMapPreview();
 
 updateBoxCount();
 

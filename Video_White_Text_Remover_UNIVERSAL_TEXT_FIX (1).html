@@ -52,7 +52,7 @@ input[type=range]{width:100%}
 #geoSection .geoPreviewHead h2{margin:0 0 5px;}
 #geoSection .geoPreviewHint{font-size:11px;color:#8fa0ad;text-align:right;max-width:480px;}
 #geoSection .geoPreviewCard .stage{height:calc(100vh - 390px);min-height:330px;max-height:620px;}
-#geoSection #geoCanvas{max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+#geoSection #geoCanvas{touch-action:none;max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
 #geoSection .geoOptionGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
 #geoSection .geoOptionCard{min-width:0;padding:12px;}
 #geoSection .geoOptionCard h3{margin-bottom:10px;}
@@ -1661,7 +1661,307 @@ function drawGeoFrame(baseCtx,W,H,seconds){
     baseCtx.restore();
   }
 }
+function prepareOutput(){
+ const r=sourceRect();
+ outputW=Math.max(2,Math.round(r.w/2)*2);
+ outputH=Math.max(2,Math.round(r.h/2)*2);
+ work.width=outputW;work.height=outputH;
+}
+function exportNeedsFrameProcessing(){
+  return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null);
+}
+function drawExportFrame(elapsedOverride){
+  const r=sourceRect();
+  wctx.clearRect(0,0,outputW,outputH);
+  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+  applyAllTextRemoval(wctx,outputW,outputH,r,true);
+  if(lat!=null&&lon!=null){
+    const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
+    drawGeoFrame(wctx,outputW,outputH,elapsed);
+  }
+}
+function seekVideo(target){
+  return new Promise(resolve=>{
+    const t=clamp(target,0,duration||target);
+    if(Math.abs(video.currentTime-t)<1e-4&&!video.seeking){requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));return;}
+    let done=false;
+    const finish=()=>{if(done)return;done=true;video.removeEventListener('seeked',onSeeked);resolve();};
+    const onSeeked=()=>{requestAnimationFrame(()=>requestAnimationFrame(finish));};
+    video.addEventListener('seeked',onSeeked,{once:true});
+    video.currentTime=t;
+    setTimeout(finish,2000);
+  });
+}
+async function pickVideoCodec(width,height,fps){
+  const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
+  for(const hw of ['prefer-hardware','no-preference']){
+    for(const codec of candidates){
+      try{
+        const s=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:8_000_000,framerate:fps,hardwareAcceleration:hw});
+        if(s&&s.supported)return {codec,hardwareAcceleration:hw};
+      }catch(e){}
+    }
+  }
+  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
+}
+async function estimateFps(){
+  const std=[23.976,24,25,29.97,30,48,50,59.94,60];
+  if(typeof video.requestVideoFrameCallback!=='function')return 30;
+  const saved=video.currentTime,muted=video.muted;
+  const times=[];
+  await new Promise(resolve=>{
+    let done=false;
+    const fin=()=>{if(done)return;done=true;try{video.pause()}catch(e){}resolve()};
+    const cb=(now,m)=>{times.push(m.mediaTime);if(times.length>=14){fin();return}video.requestVideoFrameCallback(cb)};
+    video.muted=true;
+    video.requestVideoFrameCallback(cb);
+    video.play().catch(fin);
+    setTimeout(fin,2000);
+  });
+  video.muted=muted;
+  await seekVideo(saved);
+  const diffs=[];for(let i=1;i<times.length;i++){const d=times[i]-times[i-1];if(d>0.004&&d<0.2)diffs.push(d)}
+  if(diffs.length<4)return 30;
+  diffs.sort((a,b)=>a-b);
+  const fps=1/diffs[Math.floor(diffs.length/2)];
+  let best=std[0];for(const v of std)if(Math.abs(v-fps)<Math.abs(best-fps))best=v;
+  return Math.abs(best-fps)<2?best:Math.round(fps);
+}
+async function exportVideoFrameAccurate(){
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=Math.max(0.05,end-start);
+  $('exportStatus').textContent='Detecting video frame rate…';
+  const fps=await estimateFps();
+  prepareOutput();
+  video.pause();
+  if(lat!=null&&lon!=null&&(!mapImg||!mapImg.width)){
+    $('exportStatus').textContent='Preparing map…';
+    try{mapImg=await makeMap(lat,lon);}catch(e){mapImg=makeFallbackMap(lat,lon);}
+    if(!mapImg||!mapImg.width)mapImg=makeFallbackMap(lat,lon);
+  }
+  const audioPromise=(async()=>{
+    try{
+      const arr=await file.arrayBuffer();
+      const actx=new (window.AudioContext||window.webkitAudioContext)();
+      const buf=await actx.decodeAudioData(arr);
+      try{actx.close()}catch(e){}
+      return buf;
+    }catch(e){console.warn('No usable audio track for export',e);return null;}
+  })();
+  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
+  const audioBuffer=await audioPromise;
+  const hasAudio=!!audioBuffer;
+  const muxer=new Mp4Muxer.Muxer({
+    target:new Mp4Muxer.ArrayBufferTarget(),
+    fastStart:'in-memory',
+    firstTimestampBehavior:'offset',
+    video:{codec:'avc',width:outputW,height:outputH},
+    audio:hasAudio?{codec:'aac',numberOfChannels:audioBuffer.numberOfChannels,sampleRate:audioBuffer.sampleRate}:undefined,
+  });
+  let encoderFailed=null,rejectEncoding=null,videoEncoder=null,restoreMute=video.muted;
+  const bitrate=clamp(Math.round(outputW*outputH*fps*0.12),4_000_000,20_000_000);
+  try{
+    videoEncoder=new VideoEncoder({
+      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
+      error:e=>{console.error('video encoder error',e);encoderFailed=e;if(rejectEncoding)rejectEncoding(e);}
+    });
+    videoEncoder.configure({codec,width:outputW,height:outputH,bitrate,framerate:fps,hardwareAcceleration});
+    const needsFrameProcessing=exportNeedsFrameProcessing();
+    $('exportStatus').textContent=needsFrameProcessing?'Rendering selected changes… 0% (keep this tab open)':'Rendering crop/trim only… 0% (keep this tab open)';
+    video.pause();restoreMute=video.muted;video.muted=true;
+    await seekVideo(start);
+    const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
+    let rate=needsFrameProcessing?(extraRects.length>1?2:3):6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
+    const tBegin=performance.now();
+    video.playbackRate=rate;
+    await new Promise((resolve,reject)=>{
+      rejectEncoding=reject;
+      let finished=false,lastCb=performance.now(),dog=null;
+      const finish=()=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(e){}resolve()};
+      const fail=e=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(x){}reject(e)};
+      dog=setInterval(()=>{
+        if(!finished&&performance.now()-lastCb>12000&&videoEncoder.encodeQueueSize<3)
+          fail(new Error('The browser stopped delivering video frames (keep this tab visible while rendering).'));
+      },1000);
+      video.addEventListener('ended',finish,{once:true});
+      const encodeCanvas=ts=>{
+        const vf=new VideoFrame(work,{timestamp:Math.round(ts*1e6),duration:frameDur});
+        videoEncoder.encode(vf,{keyFrame:n%keyEvery===0});vf.close();n++;
+      };
+      const onFrame=(now,m)=>{
+        if(finished)return;
+        lastCb=performance.now();
+        try{
+          if(encoderFailed)throw encoderFailed;
+          const mt=m.mediaTime;
+          if(mt>=end-0.0005){finish();return}
+          if(mt>=start-0.001&&mt>lastMT+1e-4){
+            const t0=performance.now();
+            const rel=n===0?0:Math.max(0,mt-start);
+            if(n===0||rel>prevRel+0.0005){
+              if(lastMT>=0){
+                const gap=Math.round((mt-lastMT)*fps)-1;
+                if(gap>=1){
+                  maxRate=Math.max(1,Math.min(maxRate,rate*.8));
+                  rate=Math.min(rate,maxRate);video.playbackRate=rate;
+                  if(gap<=8)for(let k=1;k<=gap;k++){const ts=prevRel+k/fps;if(ts<rel-0.0005)encodeCanvas(ts);}
+                }
+              }
+              drawExportFrame(rel);
+              encodeCanvas(rel);
+              prevRel=rel;
+            }
+            lastMT=mt;
+            const proc=performance.now()-t0;
+            procEMA=procEMA?procEMA*.8+proc*.2:proc;
+            if(++sinceAdj>=8){
+              sinceAdj=0;
+              const target=clamp((1000/fps)/(procEMA*1.5+3),1,maxRate);
+              rate=clamp(rate*.5+target*.5,1,maxRate);
+              video.playbackRate=rate;
+            }
+            if(n%5===0){
+              const pct=Math.min(99,Math.round(rel/length*99));
+              $('exportStatus').textContent='Rendering… '+pct+'% ('+n+' frames, '+Math.round((performance.now()-tBegin)/1000)+'s) — keep this tab open';
+            }
+            if(videoEncoder.encodeQueueSize>12){
+              video.pause();
+              const iv=setInterval(()=>{
+                if(finished){clearInterval(iv);return}
+                if(videoEncoder.encodeQueueSize<3){clearInterval(iv);video.play().catch(fail)}
+              },8);
+            }
+          }
+          video.requestVideoFrameCallback(onFrame);
+        }catch(e){fail(e)}
+      };
+      video.requestVideoFrameCallback(onFrame);
+      video.play().catch(fail);
+    });
+    video.playbackRate=1;
+    video.muted=restoreMute;
+    if(encoderFailed)throw encoderFailed;
+    $('exportStatus').textContent='Finishing video encoding… 91%';
+    await Promise.race([videoEncoder.flush(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Video encoder flush timed out.')),60000))]);
+    videoEncoder.close();videoEncoder=null;rejectEncoding=null;
+    if(hasAudio){
+      $('exportStatus').textContent='Encoding audio… 94%';
+      const sr=audioBuffer.sampleRate,ch=audioBuffer.numberOfChannels;
+      const s0=Math.floor(start*sr),s1=Math.min(audioBuffer.length,Math.floor(end*sr));
+      const audioEncoder=new AudioEncoder({output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),error:e=>console.error('audio encoder error',e)});
+      audioEncoder.configure({codec:'mp4a.40.2',sampleRate:sr,numberOfChannels:ch,bitrate:128000});
+      const chunkSize=8192,totalSamples=Math.max(1,s1-s0);
+      for(let s=s0;s<s1;s+=chunkSize){
+        const n2=Math.min(chunkSize,s1-s);
+        const interleaved=new Float32Array(n2*ch);
+        for(let c=0;c<ch;c++){const data=audioBuffer.getChannelData(c);for(let k=0;k<n2;k++)interleaved[k*ch+c]=data[s+k];}
+        const audioData=new AudioData({format:'f32',sampleRate:sr,numberOfFrames:n2,numberOfChannels:ch,timestamp:Math.round((s-s0)/sr*1e6),data:interleaved});
+        audioEncoder.encode(audioData);audioData.close();
+        $('exportStatus').textContent='Encoding audio… '+Math.min(98,94+Math.round(((s-s0)/totalSamples)*5))+'%';
+      }
+      $('exportStatus').textContent='Finishing audio… 99%';
+      await Promise.race([audioEncoder.flush(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Audio encoder flush timed out.')),15000))]);
+      audioEncoder.close();
+    }
+    $('exportStatus').textContent='Finalizing MP4…';
+    muxer.finalize();
+    exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
+    $('exportStatus').textContent='Video rendered in '+Math.round((performance.now()-tBegin)/1000)+'s — 100% complete. Download button is ready.';
+    $('downloadVideo').disabled=false;
+  }finally{
+    rejectEncoding=null;
+    video.muted=restoreMute;
+    video.playbackRate=1;
+    if(videoEncoder){try{videoEncoder.close()}catch(e){}}
+  }
+}
+async function exportVideo(){
+  if(!file)return;
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=end-start;
+  prepareOutput();
+  video.pause();
+  await seekVideo(start);
+  const fps=30;
+  const canvasStream=work.captureStream(fps);
+  const sourceStream=video.captureStream?video.captureStream():null;
+  if(sourceStream)sourceStream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
+  let mime='';
+  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
+  if(!mime)throw new Error('This Chrome cannot record video.');
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
+  const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
+  let stopped=false,frameId=null,raf=0;
+  const stop=()=>{if(stopped)return;stopped=true;if(frameId!==null&&video.cancelVideoFrameCallback)try{video.cancelVideoFrameCallback(frameId)}catch(e){}if(raf)cancelAnimationFrame(raf);try{video.pause()}catch(e){}try{rec.stop()}catch(e){}};
+  const render=(now,meta)=>{
+    if(stopped)return;
+    const t=meta&&meta.mediaTime!=null?meta.mediaTime:video.currentTime;
+    const elapsed=t-start;
+    if(elapsed>=length-0.02){drawExportFrame(length);stop();return}
+    drawExportFrame(elapsed);
+    $('exportStatus').textContent='Rendering (recorder mode)… '+Math.min(99,Math.round(elapsed/length*100))+'%';
+    if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  };
+  $('exportStatus').textContent='Rendering (recorder mode)… 0%';
+  rec.start(500);
+  video.muted=true;video.playbackRate=1;
+  if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  await video.play();
+  while(!stopped){if(video.currentTime>=end-0.02){stop();break}await new Promise(r=>setTimeout(r,30));}
+  exportBlob=await done;
+  video.muted=false;
+  $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
+  $('downloadVideo').disabled=false;
+}
+async function doExport(){
+  exporting=true;
+  try{await doExportInner();}finally{exporting=false;drawPreview();drawGeoPreview();drawTimeline();}
+}
+async function doExportInner(){
+  const hasWebCodecs=typeof window.VideoEncoder!=='undefined'&&typeof window.AudioEncoder!=='undefined'&&typeof window.Mp4Muxer!=='undefined';
+  if(hasWebCodecs){
+    try{await exportVideoFrameAccurate();return;}
+    catch(err){console.warn('Fast MP4 export failed, falling back to recorder export.',err);video.pause();video.playbackRate=1;}
+  }
+  await exportVideo();
+  if(exportBlob&&exportBlob.type.includes('webm')){
+    const statusEl=($('geoSection').style.display!=='none')?$('geoStatus'):$('exportStatus');
+    statusEl.textContent+=' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
+  }
+}
+$('downloadVideo').onclick=async()=>{
+ if(!file)return;
+ $('downloadVideo').disabled=true;
+ const prevStatus=$('exportStatus').textContent;
+ try{await doExport();}
+ catch(err){console.error(err);$('exportStatus').textContent='Export failed: '+(err.message||err);$('downloadVideo').disabled=false;return;}
+ if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
+ const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
+ const base=file.name.replace(/\.[^.]+$/,'');
+ const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
+ const ext=exportBlob.type.includes('mp4')?'mp4':'webm';a.download=base+tag+'.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+ $('downloadVideo').disabled=false;
+}
+let autoFound=false;function autoFind(){if(!autoFound&&lat==null){autoFound=true;setTimeout(()=>{try{findLocation()}catch(e){console.warn(e)}},300);}}
+$('goGeo').onclick=()=>{autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
+$('backEdit').onclick=()=>{video.pause();$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview();updateSelectionBox()}
+$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');updateSelectionBox()}
+$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
+ $(id).oninput=()=>{
+   state[id]=+$(id).value;
+   if(id==='gMapW')state.mapW=+$(id).value;
+   if(id==='mapH')state.mapH=+$(id).value;
+   const valEl=$(id+'Val');
+   if(valEl)valEl.textContent=$(id).value+'%';
+   drawGeoPreview();
+ }
+}
 let mapDrag=null;
+function endMapDrag(){mapDrag=null;}
 function mapPointerPos(e){
  const r=geo.getBoundingClientRect();
  return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};

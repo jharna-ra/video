@@ -69,7 +69,7 @@ input[type=range]{width:100%}
 #geoSection button{padding:7px 9px;margin-top:3px;}
 #geoSection .runningBox{border-top:1px solid #263440;margin-top:10px;padding-top:10px;}
 #geoSection .runningBox h3{margin-bottom:6px;}
-#geoSection #mapPreview{height:90px;margin-top:8px;}
+#geoSection #mapPreview{width:100%;max-width:640px;height:auto;aspect-ratio:8/3;margin-top:8px;display:block;border-radius:10px;}
 #geoSection .geoActions{border-top:1px solid #263440;margin-top:14px;padding-top:10px;}
 #geoSection .geoActions button{margin-right:4px;}
 #geoSection #geoSeek{margin-top:8px}
@@ -238,8 +238,8 @@ input[type=range]{width:100%}
         <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
         <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
         <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">28%</b></div><input id="gMapW" type="range" min="5" max="90" value="28">
-        <div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">26%</b></div><input id="gMapW" type="range" min="5" max="90" value="26">
+        <div class="sliderTop"><span>Map height</span><b id="mapHVal">29%</b></div><input id="mapH" type="range" min="5" max="90" value="29">
         <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
         <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
       </div>
@@ -322,7 +322,7 @@ let outputW=0, outputH=0, exporting=false;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:28,gTitle:100,gDetails:100,mapX:0,mapY:65,mapW:28,mapH:35,mapMoved:false,
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:26,gTitle:100,gDetails:100,mapX:1.5,mapY:68,mapW:26,mapH:29,mapMoved:false,
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -1253,6 +1253,23 @@ $('mapUpload').onchange=e=>{
  im.src=url;
 };
 $('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';findLocation();};
+function drawMapPreviewNoCors(){
+ const c=$('mapPreview');if(!c||lat==null)return;
+ const W=640,H=240,x=c.getContext('2d'),z=16,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),n=2**z;
+ const urls=[(a,b)=>`https://tile.openstreetmap.org/${z}/${a}/${b}.png`,(a,b)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${b}/${a}`];
+ let k=0;const tryNext=()=>{
+  if(k>=urls.length){x.fillStyle='rgba(255,255,255,.92)';x.fillRect(0,92,W,56);x.fillStyle='#b3261e';x.font='bold 17px Arial';x.textAlign='center';x.fillText('Map tiles blocked on this network/browser',W/2,116);x.fillStyle='#333';x.font='15px Arial';x.fillText('Upload a map screenshot below to use your own map',W/2,138);return;}
+  const mk=urls[k++];let ok=0;const jobs=[];
+  x.fillStyle='#e8e8e8';x.fillRect(0,0,W,H);
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+   jobs.push(new Promise(res=>{const im=new Image();im.onload=()=>{const sz=256*1.0;const px=W/2+(dx-(t.x-cx))*sz,py=H/2+(dy-(t.y-cy))*sz;x.drawImage(im,px,py,sz,sz);ok++;res()};im.onerror=res;setTimeout(res,6000);im.src=mk((((cx+dx)%n)+n)%n,cy+dy);}));
+  }
+  Promise.all(jobs).then(()=>{if(ok<1){tryNext();return}
+   x.fillStyle='#e53935';x.beginPath();x.arc(W/2,H/2,9,0,Math.PI*2);x.fill();x.strokeStyle='#fff';x.lineWidth=3;x.stroke();
+   x.fillStyle='rgba(255,255,255,.92)';x.fillRect(0,H-26,W,26);x.fillStyle='#8a1c14';x.font='bold 13px Arial';x.textAlign='center';
+   x.fillText('Preview only — to put this map on the video, upload a map screenshot below',W/2,H-8);});
+ };tryNext();
+}
 function drawMapPreview(msg){
  const c=$('mapPreview');if(!c)return;
  const W=c.width=640,H=c.height=240,x=c.getContext('2d');
@@ -1302,11 +1319,11 @@ async function findLocation(){
  if(userMapImg){mapImg=userMapImg;}else{try{mapImg=await makeMap(lat,lon);}catch(mapErr){console.warn('makeMap failed',mapErr);mapImg=makeFallbackMap(lat,lon);}}
  if(!mapImg||!mapImg.width)mapImg=makeFallbackMap(lat,lon);
  state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
- state.mapW=+$('gMapW').value||28;state.mapH=+$('mapH').value||35;
+ state.mapW=+$('gMapW').value||26;state.mapH=+$('mapH').value||29;
  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+(mapImg.srcName||'placeholder')+(mapImg.isFallback?' (real map tiles were blocked — check internet / ad-blocker, then press Find Location again)':'');
  try{loadRealGPSRoute();}catch(e){}
  drawMapPreview();
- if(mapImg.isFallback){const c=$('mapPreview'),x=c.getContext('2d');x.fillStyle='rgba(255,255,255,.9)';x.fillRect(0,92,c.width,56);x.fillStyle='#b3261e';x.font='bold 17px Arial';x.textAlign='center';x.fillText('Map tiles blocked on this network/browser',c.width/2,116);x.fillStyle='#333';x.font='15px Arial';x.fillText('Upload a map screenshot below to use your own map',c.width/2,138);}
+ if(mapImg.isFallback){drawMapPreviewNoCors();}
  drawGeoPreview();
 }
 $('findLocation').onclick=findLocation;
@@ -1525,7 +1542,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const stampPad=Math.max(5,Math.round(stampH*.022));
   const stampGap=Math.max(12,Math.round(stampH*.045));
 
-  if(!state.mapMoved){state.mapX=0;state.mapY=100-state.gHeight;}
+  if(!state.mapMoved){state.mapX=1.5;state.mapY=clamp(100-state.gHeight+(state.gHeight-state.mapH)/2,100-state.gHeight+1,Math.max(0,100-state.mapH));}
   const mapX=clamp(W*state.mapX/100,0,Math.max(0,W-20));
   const mapY=clamp(H*state.mapY/100,0,Math.max(0,H-20));
   const mapW=clamp(W*state.mapW/100,20,W-mapX);
@@ -1552,12 +1569,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.fill();
   baseCtx.restore();
 
+  const mr=Math.max(6,Math.min(mapW,mapH)*.06);
   // Draw the map (cover-style crop, centered)
   if (mapImg && mapImg.width > 0 && mapImg.height > 0 && mapW > 2 && mapH > 2) {
     baseCtx.save();
     baseCtx.globalAlpha = mapOpacity;
-    baseCtx.beginPath();
-    baseCtx.rect(mapX, mapY, mapW, mapH);
+    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
     baseCtx.clip();
 
     baseCtx.imageSmoothingEnabled = true;
@@ -1572,6 +1589,13 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 
     baseCtx.drawImage(mapImg, dx, dy, dw, dh);
 
+    baseCtx.restore();
+    baseCtx.save();
+    baseCtx.globalAlpha = mapOpacity;
+    baseCtx.strokeStyle = '#ffffff';
+    baseCtx.lineWidth = Math.max(2, Math.min(mapW,mapH)*.018);
+    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
+    baseCtx.stroke();
     baseCtx.restore();
   }
 
@@ -2099,10 +2123,11 @@ $('downloadVideo').onclick=async()=>{
  const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+tag+'.'+ext; a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
  $('downloadVideo').disabled=false;
 }
-$('goGeo').onclick=()=>{$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
+let autoFound=false;function autoFind(){if(!autoFound&&lat==null){autoFound=true;setTimeout(()=>{try{findLocation()}catch(e){console.warn(e)}},300);}}
+$('goGeo').onclick=()=>{autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
 $('backEdit').onclick=()=>{video.pause();$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview();updateSelectionBox()}
 $('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');updateSelectionBox()}
-$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
+$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
 for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
  $(id).oninput=()=>{

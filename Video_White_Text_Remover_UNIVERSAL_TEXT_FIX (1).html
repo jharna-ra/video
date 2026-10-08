@@ -276,6 +276,9 @@ input[type=range]{width:100%}
           <div id="runningCoords" class="status">Running Lat —° Long —°</div>
         </div>
         <canvas id="mapPreview"></canvas>
+        <label>Map not loading? Upload a map screenshot (Google Maps / OSM / any image)</label>
+        <input id="mapUpload" type="file" accept="image/*">
+        <button id="retryMap" class="secondary">🔄 Reload map from internet</button>
       </div>
 
       <div class="card geoDateCard">
@@ -1229,6 +1232,27 @@ function drawLogo(ctx,x,y,size){
   ctx.stroke();
   ctx.restore();
 }
+let userMapImg=null;
+$('mapUpload').onchange=e=>{
+ const f=e.target.files&&e.target.files[0];if(!f)return;
+ const url=URL.createObjectURL(f),im=new Image();
+ im.onload=()=>{
+  const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;
+  c.getContext('2d').drawImage(im,0,0);URL.revokeObjectURL(url);
+  c.srcName='uploaded image';userMapImg=c;mapImg=c;
+  if(lat==null||lon==null){
+   const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
+   if(isFinite(sl)&&isFinite(so)){lat=sl;lon=so;}
+  }
+  state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
+  drawMapPreview();
+  $('gCoords').textContent=(lat==null?'Map image loaded. Now press Find Location (or type Start Latitude / Longitude) so the stamp can be drawn.':`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: uploaded image`);
+  drawGeoPreview();
+ };
+ im.onerror=()=>{$('gCoords').textContent='Could not read that image file.'};
+ im.src=url;
+};
+$('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';findLocation();};
 function drawMapPreview(msg){
  const c=$('mapPreview');if(!c)return;
  const W=c.width=640,H=c.height=240,x=c.getContext('2d');
@@ -1275,13 +1299,14 @@ async function findLocation(){
  if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
- try{mapImg=await makeMap(lat,lon);}catch(mapErr){console.warn('makeMap failed',mapErr);mapImg=makeFallbackMap(lat,lon);}
+ if(userMapImg){mapImg=userMapImg;}else{try{mapImg=await makeMap(lat,lon);}catch(mapErr){console.warn('makeMap failed',mapErr);mapImg=makeFallbackMap(lat,lon);}}
  if(!mapImg||!mapImg.width)mapImg=makeFallbackMap(lat,lon);
  state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
  state.mapW=+$('gMapW').value||28;state.mapH=+$('mapH').value||35;
  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+(mapImg.srcName||'placeholder')+(mapImg.isFallback?' (real map tiles were blocked — check internet / ad-blocker, then press Find Location again)':'');
  try{loadRealGPSRoute();}catch(e){}
  drawMapPreview();
+ if(mapImg.isFallback){const c=$('mapPreview'),x=c.getContext('2d');x.fillStyle='rgba(255,255,255,.9)';x.fillRect(0,92,c.width,56);x.fillStyle='#b3261e';x.font='bold 17px Arial';x.textAlign='center';x.fillText('Map tiles blocked on this network/browser',c.width/2,116);x.fillStyle='#333';x.font='15px Arial';x.fillText('Upload a map screenshot below to use your own map',c.width/2,138);}
  drawGeoPreview();
 }
 $('findLocation').onclick=findLocation;

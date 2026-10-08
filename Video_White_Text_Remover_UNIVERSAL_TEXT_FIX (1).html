@@ -1582,7 +1582,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
     baseCtx.clip();
     baseCtx.imageSmoothingEnabled=true;
     baseCtx.imageSmoothingQuality='high';
-    const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height);
+    const ms=Math.min(mapW/mapImg.width,mapH/mapImg.height);
     const dw=mapImg.width*ms,dh=mapImg.height*ms;
     baseCtx.drawImage(mapImg,mapX+(mapW-dw)/2,mapY+(mapH-dh)/2,dw,dh);
     baseCtx.restore();

@@ -171,6 +171,8 @@ input[type=range]{width:100%}
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
 <label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
 <input id="textThick" type="range" min="2" max="30" value="9">
+<label>Removal power (higher = removes more leftover text) <b id="removePowerVal">3</b></label>
+<input id="removePower" type="range" min="0" max="5" value="3">
 <div class="small">Draw a box around each piece of text (as many as you like). The first box is red; extra boxes are numbered orange and are checked on every frame, so text that appears later is still removed. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see which pixels will be removed: if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
@@ -236,7 +238,7 @@ input[type=range]{width:100%}
         <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
         <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
         <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">45%</b></div><input id="gMapW" type="range" min="5" max="90" value="45">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">28%</b></div><input id="gMapW" type="range" min="5" max="90" value="28">
         <div class="sliderTop"><span>Map height</span><b id="mapHVal">35%</b></div><input id="mapH" type="range" min="5" max="90" value="35">
         <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
         <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
@@ -317,7 +319,7 @@ let outputW=0, outputH=0, exporting=false;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:45,gTitle:100,gDetails:100,mapX:0,mapY:65,mapW:45,mapH:35,mapMoved:false,
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:28,gTitle:100,gDetails:100,mapX:0,mapY:65,mapW:28,mapH:35,mapMoved:false,
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -1180,6 +1182,7 @@ $('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.displ
 $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
+$('removePower').oninput=()=>{$('removePowerVal').textContent=$('removePower').value;wrCache.clear();drawPreview();drawGeoPreview()};
 $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
 $('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 $('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
@@ -1226,34 +1229,46 @@ function drawLogo(ctx,x,y,size){
   ctx.stroke();
   ctx.restore();
 }
+async function geocodeAny(q,place){
+ const tryFetch=async(url)=>{
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
+  try{const r=await fetch(url,{signal:ctl.signal,headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);return await r.json();}
+  finally{clearTimeout(t)}
+ };
+ const tries=[
+  async()=>{const j=await tryFetch('https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'}));return j.length?{lat:+j[0].lat,lon:+j[0].lon}:null},
+  async()=>{const j=await tryFetch('https://photon.komoot.io/api/?'+new URLSearchParams({q,limit:'1'}));const f=j.features&&j.features[0];return f?{lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}:null},
+  async()=>{const j=await tryFetch('https://geocoding-api.open-meteo.com/v1/search?'+new URLSearchParams({name:place,count:'1',country_code:'IN'}));const f=j.results&&j.results[0];return f?{lat:f.latitude,lon:f.longitude}:null}
+ ];
+ for(const t of tries){try{const r=await t();if(r&&isFinite(r.lat)&&isFinite(r.lon))return r;}catch(e){console.warn('geocoder failed',e)}}
+ return null;
+}
 async function findLocation(){
- const q=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+ const place=$('gPlace').value.trim();
+ const q=[place,$('gState').value.trim(),'India'].filter(Boolean).join(', ');
  if(!q){$('gCoords').textContent='Enter a district/town.';return}
  $('gCoords').textContent='Finding location…';
- try{
-  const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
-  const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
-  lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
-  if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
-  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
-  try{
-    mapImg=await makeMap(lat,lon);
-  }catch(mapErr){
-    console.warn('makeMap failed, using fallback', mapErr);
-    mapImg=makeFallbackMap(lat,lon);
-  }
-  if(!mapImg || !mapImg.width){
-    mapImg=makeFallbackMap(lat,lon);
-  }
-  state.mapMoved=false; state.mapX=0; state.mapY=100-state.gHeight;
-  state.mapW = +$('gMapW').value || 45;
-  state.mapH = +$('mapH').value || 35;
-  loadRealGPSRoute();drawGeoPreview();
- }catch(e){
-  console.error(e);
-  $('gCoords').textContent='Location not found. Try a different place name.';
-  // keep previous lat/lon/map if any; do not wipe them on geocode failure
+ let p=await geocodeAny(q,place);
+ if(!p){
+  // Fallback: use coordinates typed in Start Latitude / Longitude
+  const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
+  if(isFinite(sl)&&isFinite(so))p={lat:sl,lon:so};
  }
+ if(!p){
+  $('gCoords').textContent='Location not found (geocoder blocked or place name not recognised). Type Start Latitude / Longitude below and press Find Location again.';
+  return;
+ }
+ lat=p.lat;lon=p.lon;
+ if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
+ gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
+ $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
+ try{mapImg=await makeMap(lat,lon);}catch(mapErr){console.warn('makeMap failed',mapErr);mapImg=makeFallbackMap(lat,lon);}
+ if(!mapImg||!mapImg.width)mapImg=makeFallbackMap(lat,lon);
+ state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
+ state.mapW=+$('gMapW').value||28;state.mapH=+$('mapH').value||35;
+ $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+(mapImg.srcName||'placeholder')+(mapImg.isFallback?' (real map tiles were blocked — check internet / ad-blocker, then press Find Location again)':'');
+ try{loadRealGPSRoute();}catch(e){}
+ drawGeoPreview();
 }
 $('findLocation').onclick=findLocation;
 
@@ -1261,88 +1276,73 @@ function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
 function makeFallbackMap(lat,lon){
-  const size=1536;
+  const size=768;
   const fallback=document.createElement('canvas');
-  fallback.width=size;
-  fallback.height=size;
+  fallback.width=size;fallback.height=size;
   const fc=fallback.getContext('2d');
-  // soft map-like background
-  fc.fillStyle='#dce8d4';
-  fc.fillRect(0,0,size,size);
-  // grid
-  fc.strokeStyle='#b0c0a8';
-  fc.lineWidth=2;
-  for(let i=0;i<=size;i+=96){
-    fc.beginPath();fc.moveTo(i,0);fc.lineTo(i,size);fc.stroke();
-    fc.beginPath();fc.moveTo(0,i);fc.lineTo(size,i);fc.stroke();
-  }
-  // center marker
-  const mx=size/2, my=size/2;
-  fc.fillStyle='#e53935';
-  fc.beginPath();fc.arc(mx,my,22,0,Math.PI*2);fc.fill();
-  fc.strokeStyle='#fff';fc.lineWidth=6;fc.stroke();
-  // label
-  fc.fillStyle='rgba(255,255,255,0.92)';
-  fc.fillRect(20,size-70,420,50);
-  fc.fillStyle='#111';
-  fc.font='bold 26px Arial';
-  fc.fillText(`${lat.toFixed(5)}, ${lon.toFixed(5)}`, 30, size-36);
+  fc.fillStyle='#e9eef2';fc.fillRect(0,0,size,size);
+  fc.fillStyle='#cfe3c4';fc.fillRect(0,size*.55,size,size*.45);
+  fc.strokeStyle='#ffffff';fc.lineWidth=18;
+  fc.beginPath();fc.moveTo(0,size*.35);fc.lineTo(size,size*.62);fc.stroke();
+  fc.beginPath();fc.moveTo(size*.3,0);fc.lineTo(size*.55,size);fc.stroke();
+  fc.strokeStyle='#c9d2d9';fc.lineWidth=2;
+  for(let i=0;i<=size;i+=64){fc.beginPath();fc.moveTo(i,0);fc.lineTo(i,size);fc.stroke();fc.beginPath();fc.moveTo(0,i);fc.lineTo(size,i);fc.stroke();}
+  const mx=size/2,my=size/2;
+  fc.fillStyle='#e53935';fc.beginPath();fc.arc(mx,my,18,0,Math.PI*2);fc.fill();
+  fc.strokeStyle='#fff';fc.lineWidth=5;fc.stroke();
+  fallback.srcName='placeholder';fallback.isFallback=true;
   return fallback;
 }
 
 async function makeMap(lat,lon){
   const z=16;
   const t=tileXY(lat,lon,z), cx=Math.floor(t.x), cy=Math.floor(t.y);
-  const size=1536, tile=256;
-  // Prefer sources that usually allow CORS for canvas use
+  const size=768, tile=256, n=2**z;
+  // All sources send CORS headers, so the canvas stays exportable.
   const sources=[
     {name:'© Esri', url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
-    {name:'© CARTO', url:(x,y)=>`https://a.basemaps.cartocdn.com/light_all/${z}/${y}/${x}.png`},
+    {name:'© CARTO', url:(x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
+    {name:'© CARTO', url:(x,y)=>`https://b.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`},
     {name:'© OpenStreetMap', url:(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`}
   ];
   for(const source of sources){
-    const c=document.createElement('canvas'); c.width=size; c.height=size;
+    const c=document.createElement('canvas');c.width=size;c.height=size;
     const cc=c.getContext('2d');
-    cc.fillStyle='#e8e8e8'; cc.fillRect(0,0,size,size);
-    let loaded=0;
+    cc.fillStyle='#e8e8e8';cc.fillRect(0,0,size,size);
+    let loaded=0,centerOK=false;
     const jobs=[];
-    for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
-      let tx=cx+dx, ty=cy+dy;
-      const n=2**z; tx=((tx%n)+n)%n;
-      if(ty<0||ty>=n) continue;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const tx=(((cx+dx)%n)+n)%n,ty=cy+dy;
+      if(ty<0||ty>=n)continue;
       jobs.push(new Promise(resolve=>{
-        const im=new Image();
-        im.crossOrigin='anonymous';
-        let finished=false;
-        const done=()=>{if(!finished){finished=true;resolve();}};
+        const im=new Image();im.crossOrigin='anonymous';
+        let finished=false;const done=()=>{if(!finished){finished=true;resolve();}};
         im.onload=()=>{
           try{
-            const px=size/2+(dx-(t.x-cx))*tile;
-            const py=size/2+(dy-(t.y-cy))*tile;
-            cc.drawImage(im,px,py,tile,tile);
-            loaded++;
+            const px=size/2+(dx-(t.x-cx))*tile,py=size/2+(dy-(t.y-cy))*tile;
+            cc.drawImage(im,px,py,tile,tile);loaded++;if(!dx&&!dy)centerOK=true;
           }catch(e){}
           done();
         };
         im.onerror=done;
         im.src=source.url(tx,ty);
-        setTimeout(done,4000);
+        setTimeout(done,6000);
       }));
     }
     await Promise.all(jobs);
-    if(loaded>=3){
-      // location marker
-      cc.save();
+    if(centerOK&&loaded>=1){
       const mx=size/2,my=size/2;
-      cc.fillStyle='#e53935';cc.beginPath();cc.arc(mx,my,14,0,Math.PI*2);cc.fill();
-      cc.strokeStyle='#fff';cc.lineWidth=5;cc.stroke();
-      cc.fillStyle='rgba(255,255,255,.94)';cc.fillRect(12,size-34,220,24);
-      cc.fillStyle='#222';cc.font='14px Arial';cc.fillText(source.name,18,size-17);
+      cc.save();
+      // pin
+      cc.fillStyle='#e53935';cc.beginPath();cc.arc(mx,my,12,0,Math.PI*2);cc.fill();
+      cc.strokeStyle='#fff';cc.lineWidth=4;cc.stroke();
+      cc.fillStyle='rgba(255,255,255,.9)';cc.fillRect(6,size-24,150,18);
+      cc.fillStyle='#222';cc.font='12px Arial';cc.fillText(source.name,10,size-11);
       cc.restore();
+      c.srcName=source.name;
       return c;
     }
   }
-  // Always return something visible
   return makeFallbackMap(lat,lon);
 }
 function readRunningCoords(){
@@ -1549,9 +1549,12 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   );
   const logoLeft=logoCenterX-logoSize/2;
 
-  const textX=stampX+stampW*.255;
+  let textX=stampX+stampW*.255;
+  if(mapImg && mapY+mapH>stampY && mapX<stampW*.6){
+    textX=Math.max(textX,mapX+mapW+Math.max(10,stampGap));
+  }
   const textRight=logoLeft-stampGap;
-  const maxW=Math.max(150,textRight-textX);
+  const maxW=Math.max(120,textRight-textX);
   const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
   const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
   const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
@@ -2200,74 +2203,7 @@ function scheduleStaticMask(){}
 async function buildStaticMask(){return null}
 function removeWhiteFromCanvas(c,W,H,r){removeTextRect(c,W,H,r)}
 function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRect(c,W,H,r)}
-function removeTextRect(ctx2,W,H,rect){
-  if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
-  if(rx1-rx0<3||ry1-ry0<3)return;
-  const userT=+$('whiteThreshold').value||115;
-  const strength=(+$('removeOpacity').value||100)/100;
-  const k=Math.max(.5,W/1080);
-  const baseThk=Math.max(3,Math.round((+$('textThick').value||9)*k));
-  const grow=Math.max(2,Math.round((+$('inpaintPasses').value||5)*k*.9));
-  const pad=Math.max(18,grow*4+baseThk*2);
-  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
-  const w=x1-x0,h=y1-y0,N=w*h;
-  const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
-  const original=new Uint8ClampedArray(d);
-  const finalMask=new Uint8Array(N);
-
-  // Multiple increasingly sensitive passes. Every pass is allowed to contribute;
-  // there is deliberately NO percentage-of-box rejection, so tight boxes work.
-  const passes=[
-    {t:userT,thk:baseThk},
-    {t:Math.max(72,userT-22),thk:Math.max(3,Math.round(baseThk*.78))},
-    {t:Math.max(60,userT-40),thk:Math.max(2,Math.round(baseThk*.55))},
-    {t:Math.max(50,userT-55),thk:Math.max(2,Math.round(baseThk*.38))}
-  ];
-  for(const cfg of passes){
-    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(3,Math.round(W/90)),cfg.thk);
-    if(m)for(let p=0;p<N;p++)if(m[p])finalMask[p]=1;
-  }
-
-  // Second detector for low-contrast anti-aliased white text that top-hat can miss.
-  const lum=new Float32Array(N);
-  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  const rad=Math.max(2,Math.ceil(baseThk/2));
-  const opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
-  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
-    const p=y*w+x,i=p*4,L=lum[p];
-    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    const ch=mx-mn;
-    if(ch<=95 && L>=Math.max(48,userT-65) && (L-opened[p])>=7) finalMask[p]=1;
-  }
-
-  let count=0;for(let p=0;p<N;p++)count+=finalMask[p];
-  if($('showMask').checked&&!exporting){
-    for(let p=0;p<N;p++)if(finalMask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
-    ctx2.putImageData(img,x0,y0);return;
-  }
-  if(!count)return;
-
-  // Large halo catches the anti-aliased fringe and partially transparent text edges.
-  let hole=dilateMask(finalMask,w,h,Math.max(grow,2));
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
-  }
-
-  // Inpaint twice using real pixels from this same frame. Second pass removes faint residue.
-  inpaintHole(d,w,h,hole,strength);
-  const remaining=new Uint8Array(N);
-  for(let p=0;p<N;p++)if(finalMask[p])remaining[p]=1;
-  const second=dilateMask(remaining,w,h,Math.max(1,Math.floor(grow*.55)));
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)second[y*w+x]=0;
-  }
-  inpaintHole(d,w,h,second,Math.min(1,strength));
-  ctx2.putImageData(img,x0,y0);
-}
+function removeTextRect(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 
 const _blur=document.createElement('canvas');
 
@@ -2279,62 +2215,77 @@ function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 function removeWhiteFromCanvasExport(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 function removeTextRectUltra(ctx,W,H,rect){
   if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  if(rect.w<2||rect.h<2)return;
+  // Small safety margin so letters touching / just outside a tight box edge are still caught.
+  const mg=Math.round((2+Math.max(0,Math.min(5,+($('removePower')?$('removePower').value:3))))*Math.max(.7,W/1080));
+  const rx0=Math.max(0,Math.floor(rect.x)-mg),ry0=Math.max(0,Math.floor(rect.y)-mg);
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+mg),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+mg);
   if(rx1-rx0<2||ry1-ry0<2)return;
-  const userT=+$('whiteThreshold').value||105;
-  const thick=Math.max(3,Math.round((+$('textThick').value||9)*Math.max(.7,W/1080)));
-  const grow=Math.max(4,Math.round((+$('inpaintPasses').value||5)*Math.max(.8,W/1080)));
+  const power=Math.max(0,Math.min(5,+($('removePower')?$('removePower').value:3)));
+  const userT=Math.max(50,(+$('whiteThreshold').value||105)-power*6);   // power lowers the brightness bar
+  const k=Math.max(.7,W/1080);
+  const thick=Math.max(3,Math.round((+$('textThick').value||9)*k));
+  const grow=Math.max(4,Math.round(((+$('inpaintPasses').value||5)+power)*Math.max(.8,W/1080)));
   const pad=Math.max(24,grow*5+thick*2);
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
   const img=ctx.getImageData(x0,y0,w,h),d=img.data;
-  const lum=new Float32Array(N);
-  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
-  const rad=Math.max(2,Math.ceil(thick/2));
-  const opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
-  const mask=new Uint8Array(N);
   const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
-  // Color-independent detector: yellow/cyan/green/blue text is allowed. We look for
-  // bright OR locally contrasting stroke pixels, not only low-chroma white pixels.
+  const lumOf=()=>{const l=new Float32Array(N);for(let p=0;p<N;p++){const i=p*4;l[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}return l;};
+  const clip=(m)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)m[y*w+x]=0;}return m;};
+
+  // ---- Pass 0: broad detector (white, coloured and contrasty lettering) ----
+  let lum=lumOf();
+  const rad=Math.max(2,Math.ceil(thick/2));
+  let opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
+  const mask=new Uint8Array(N);
   for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
     const p=y*w+x,i=p*4,L=lum[p];
-    const left=lum[p-1]??L,right=lum[p+1]??L,up=lum[p-w]??L,down=lum[p+w]??L;
-    const neigh=(left+right+up+down)/4;
-    const local=L-opened[p];
-    const contrast=L-neigh;
-    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-    const ch=mx-mn;
+    const neigh=((lum[p-1]??L)+(lum[p+1]??L)+(lum[p-w]??L)+(lum[p+w]??L))/4;
+    const local=L-opened[p],contrast=L-neigh;
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),ch=mx-mn;
     const bright=L>=Math.max(42,userT-75);
-    const whiteish=ch<=125 && L>=Math.max(48,userT-65);
-    const coloredBright=ch>35 && L>=Math.max(72,userT-25) && (local>=5 || contrast>=7);
-    const coloredEdge=ch>35 && L>=45 && (local>=10 || contrast>=11);
-    const stroke=local>=16 || contrast>=14;
-    if((whiteish&&local>=3)||(bright&&local>=10)||coloredBright||coloredEdge||stroke) mask[p]=1;
+    const whiteish=ch<=125&&L>=Math.max(45,userT-70);
+    const coloredBright=ch>35&&L>=Math.max(70,userT-25)&&(local>=5||contrast>=7);
+    const coloredEdge=ch>35&&L>=45&&(local>=10||contrast>=11);
+    const stroke=local>=16||contrast>=14;
+    if((whiteish&&local>=2)||(bright&&local>=8)||coloredBright||coloredEdge||stroke)mask[p]=1;
+  }
+  // ---- Multi-sensitivity white detector adds anti-aliased edges the broad one can miss ----
+  const cfgs=[
+    {t:userT,thk:thick},
+    {t:Math.max(60,userT-22),thk:Math.max(3,Math.round(thick*.78))},
+    {t:Math.max(50,userT-40),thk:Math.max(2,Math.round(thick*.55))}
+  ];
+  for(const c of cfgs){
+    const m=detectWhite(d,w,h,c.t,ix0,iy0,ix1,iy1,Math.max(3,Math.round(W/90)),c.thk);
+    if(m)for(let p=0;p<N;p++)if(m[p])mask[p]=1;
   }
   if($('showMask').checked&&!exporting){
     for(let p=0;p<N;p++)if(mask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
     ctx.putImageData(img,x0,y0);return;
   }
-  let hole=dilateMask(mask,w,h,Math.max(4,grow));
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
+  let any=false;for(let p=0;p<N&&!any;p++)if(mask[p])any=true;
+  if(!any)return;
+
+  // ---- Main inpaint, then wider fringe passes ----
+  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,grow)),1);
+  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,Math.max(3,Math.floor(grow*.75)))),1);
+
+  // ---- Residual sweeps: look again at the CLEANED pixels and remove any white left behind ----
+  const sweeps=1+Math.min(3,power);
+  for(let it=0;it<sweeps;it++){
+    lum=lumOf();
+    opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
+    const res=new Uint8Array(N);let c=0;
+    for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
+      const p=y*w+x,i=p*4,L=lum[p];
+      const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+      if(mx-mn<=95&&L>=Math.max(60,userT-45)&&(L-opened[p])>=5){res[p]=1;c++;}
+    }
+    if(!c)break;
+    inpaintHole(d,w,h,clip(dilateMask(res,w,h,Math.max(2,Math.round(grow*.6)))),1);
   }
-  let count=0;for(let p=0;p<N;p++)count+=hole[p];
-  if(!count)return;
-  // Two strong passes plus a final small fringe pass. All use the current frame's pixels.
-  inpaintHole(d,w,h,hole,1);
-  const pass2=dilateMask(mask,w,h,Math.max(3,Math.floor(grow*.75)));
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass2[y*w+x]=0;
-  }
-  inpaintHole(d,w,h,pass2,1);
-  const pass3=dilateMask(mask,w,h,Math.max(2,Math.floor(grow*.45)));
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)pass3[y*w+x]=0;
-  }
-  inpaintHole(d,w,h,pass3,1);
   ctx.putImageData(img,x0,y0);
 }
 

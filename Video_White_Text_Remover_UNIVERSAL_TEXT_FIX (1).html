@@ -1533,20 +1533,25 @@ $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').va
 function drawGeoFrame(baseCtx,W,H,seconds){
   const stampOpacity=clamp(state.gOpacity/100,0,1);
   const mapOpacity=clamp(state.gMapO/100,0,1);
+  const _pad=Math.max(6,Math.round(H*.012));
+  const mapW=clamp(W*state.mapW/100,20,W-2*_pad);
+  const mapH=clamp(H*state.mapH/100,20,H-2*_pad);
 
-  const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  const stampX=0;
-  const stampY=Math.round(H-stampH);
-  const stampW=W;
+  let stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
+  if(mapImg&&!state.mapMoved)stampH=Math.min(H*.96,Math.max(stampH,mapH+2*_pad));
+  const stampX=0,stampW=W,stampY=Math.round(H-stampH);
   const stampRadius=Math.max(18,Math.round(stampH*.14));
   const stampPad=Math.max(5,Math.round(stampH*.022));
   const stampGap=Math.max(12,Math.round(stampH*.045));
 
-  if(!state.mapMoved){state.mapX=1.5;state.mapY=clamp(100-state.gHeight+(state.gHeight-state.mapH)/2,100-state.gHeight+1,Math.max(0,100-state.mapH));}
-  const mapX=clamp(W*state.mapX/100,0,Math.max(0,W-20));
-  const mapY=clamp(H*state.mapY/100,0,Math.max(0,H-20));
-  const mapW=clamp(W*state.mapW/100,20,W-mapX);
-  const mapH=clamp(H*state.mapH/100,20,H-mapY);
+  let mapX,mapY;
+  if(!state.mapMoved){
+    mapX=_pad;mapY=stampY+(stampH-mapH)/2;
+    state.mapX=mapX/W*100;state.mapY=mapY/H*100;
+  }else{
+    mapX=clamp(W*state.mapX/100,0,Math.max(0,W-mapW));
+    mapY=clamp(H*state.mapY/100,0,Math.max(0,H-mapH));
+  }
 
   if(stampOpacity>0.02){
     const bw=Math.max(8,Math.round(W/28)),bh=Math.max(4,Math.round(stampH/28));
@@ -1570,50 +1575,33 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.restore();
 
   const mr=Math.max(6,Math.min(mapW,mapH)*.06);
-  // Draw the map (cover-style crop, centered)
-  if (mapImg && mapImg.width > 0 && mapImg.height > 0 && mapW > 2 && mapH > 2) {
+  if(mapImg&&mapImg.width>0&&mapImg.height>0&&mapW>2&&mapH>2){
     baseCtx.save();
-    baseCtx.globalAlpha = mapOpacity;
+    baseCtx.globalAlpha=mapOpacity;
     roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
     baseCtx.clip();
-
-    baseCtx.imageSmoothingEnabled = true;
-    baseCtx.imageSmoothingQuality = 'high';
-
-    // object-fit: cover
-    const ms = Math.max(mapW / mapImg.width, mapH / mapImg.height);
-    const dw = mapImg.width * ms;
-    const dh = mapImg.height * ms;
-    const dx = mapX + (mapW - dw) / 2;
-    const dy = mapY + (mapH - dh) / 2;
-
-    baseCtx.drawImage(mapImg, dx, dy, dw, dh);
-
+    baseCtx.imageSmoothingEnabled=true;
+    baseCtx.imageSmoothingQuality='high';
+    const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height);
+    const dw=mapImg.width*ms,dh=mapImg.height*ms;
+    baseCtx.drawImage(mapImg,mapX+(mapW-dw)/2,mapY+(mapH-dh)/2,dw,dh);
     baseCtx.restore();
     baseCtx.save();
-    baseCtx.globalAlpha = mapOpacity;
-    baseCtx.strokeStyle = '#ffffff';
-    baseCtx.lineWidth = Math.max(2, Math.min(mapW,mapH)*.018);
+    baseCtx.globalAlpha=mapOpacity;
+    baseCtx.strokeStyle='#ffffff';
+    baseCtx.lineWidth=Math.max(2,Math.min(mapW,mapH)*.018);
     roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
     baseCtx.stroke();
     baseCtx.restore();
   }
 
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
-  const logoCenterX=clamp(
-    W*state.logoX/100,
-    stampX+stampW*.72+logoSize/2,
-    stampX+stampW-logoSize/2-stampPad
-  );
-  const logoCenterY=clamp(
-    stampY+stampH*(state.logoY/100),
-    stampY+logoSize/2+stampPad,
-    stampY+stampH-logoSize/2-stampPad
-  );
+  const logoCenterX=clamp(W*state.logoX/100,stampX+stampW*.72+logoSize/2,stampX+stampW-logoSize/2-stampPad);
+  const logoCenterY=clamp(stampY+stampH*(state.logoY/100),stampY+logoSize/2+stampPad,stampY+stampH-logoSize/2-stampPad);
   const logoLeft=logoCenterX-logoSize/2;
 
   let textX=stampX+stampW*.255;
-  if(mapImg && mapY+mapH>stampY && mapX<stampW*.6){
+  if(mapImg&&mapY+mapH>stampY&&mapX<stampW*.6){
     textX=Math.max(textX,mapX+mapW+Math.max(10,stampGap));
   }
   const textRight=logoLeft-stampGap;
@@ -1653,7 +1641,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.restore();
 
   // Preview-only map controls (never rendered into the exported video)
-  if(baseCtx===gctx && mapImg){
+  if(baseCtx===gctx&&mapImg){
     baseCtx.save();
     baseCtx.strokeStyle='rgba(255,255,255,.95)';
     baseCtx.lineWidth=Math.max(1,2*W/geo.width);

@@ -1351,49 +1351,54 @@ function makeFallbackMap(lat,lon){
 }
 
 async function makeMap(lat,lon){
-  const z=16;
+  const z=17, tile=256, n=2**z;
+  const CW=1024, CH=640;
   const t=tileXY(lat,lon,z), cx=Math.floor(t.x), cy=Math.floor(t.y);
-  const size=512, tile=256, n=2**z;
-  // All sources send CORS headers, so the canvas stays exportable.
   const sources=[
-    {name:'© Esri', url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
-    {name:'© CARTO', url:(x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
-    {name:'© CARTO', url:(x,y)=>`https://b.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`},
-    {name:'© OpenStreetMap', url:(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`}
+    {name:'© Esri',url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
+    {name:'© CARTO',url:(x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
+    {name:'© OpenStreetMap',url:(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`}
   ];
   for(const source of sources){
-    const c=document.createElement('canvas');c.width=size;c.height=size;
+    const c=document.createElement('canvas');c.width=CW;c.height=CH;
     const cc=c.getContext('2d');
-    cc.fillStyle='#e8e8e8';cc.fillRect(0,0,size,size);
+    cc.fillStyle='#e8e8e8';cc.fillRect(0,0,CW,CH);
     let loaded=0,centerOK=false;
     const jobs=[];
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      const tx=(((cx+dx)%n)+n)%n,ty=cy+dy;
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+      const tx=(((cx+dx)%n)+n)%n, ty=cy+dy;
       if(ty<0||ty>=n)continue;
       jobs.push(new Promise(resolve=>{
         const im=new Image();im.crossOrigin='anonymous';
-        let finished=false;const done=()=>{if(!finished){finished=true;resolve();}};
+        let fin=false;const done=()=>{if(!fin){fin=true;resolve();}};
         im.onload=()=>{
           try{
-            const px=size/2+(dx-(t.x-cx))*tile,py=size/2+(dy-(t.y-cy))*tile;
-            cc.drawImage(im,px,py,tile,tile);loaded++;if(!dx&&!dy)centerOK=true;
+            const px=CW/2+(dx-(t.x-cx))*tile, py=CH/2+(dy-(t.y-cy))*tile;
+            cc.drawImage(im,px,py,tile,tile);loaded++;
+            if(!dx&&!dy)centerOK=true;
           }catch(e){}
           done();
         };
         im.onerror=done;
         im.src=source.url(tx,ty);
-        setTimeout(done,6000);
+        setTimeout(done,7000);
       }));
     }
     await Promise.all(jobs);
     if(centerOK&&loaded>=1){
-      const mx=size/2,my=size/2;
+      // location pin
+      const mx=CW/2,my=CH/2;
       cc.save();
-      // pin
-      cc.fillStyle='#e53935';cc.beginPath();cc.arc(mx,my,12,0,Math.PI*2);cc.fill();
-      cc.strokeStyle='#fff';cc.lineWidth=4;cc.stroke();
-      cc.fillStyle='rgba(255,255,255,.9)';cc.fillRect(6,size-24,150,18);
-      cc.fillStyle='#222';cc.font='12px Arial';cc.fillText(source.name,10,size-11);
+      cc.shadowColor='rgba(0,0,0,.35)';cc.shadowBlur=8;
+      cc.fillStyle='#e53935';cc.beginPath();cc.arc(mx,my,16,0,Math.PI*2);cc.fill();
+      cc.shadowBlur=0;
+      cc.strokeStyle='#fff';cc.lineWidth=5;cc.stroke();
+      cc.fillStyle='#fff';cc.beginPath();cc.arc(mx,my,5,0,Math.PI*2);cc.fill();
+      // attribution (bottom-right, small)
+      cc.font='13px Arial';cc.textAlign='right';
+      const tw=cc.measureText(source.name).width+14;
+      cc.fillStyle='rgba(255,255,255,.85)';cc.fillRect(CW-tw-4,CH-24,tw,20);
+      cc.fillStyle='#222';cc.fillText(source.name,CW-11,CH-9);
       cc.restore();
       c.srcName=source.name;
       return c;
@@ -1530,29 +1535,35 @@ $('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat'
 $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
 
-function drawGeoFrame(baseCtx,W,H,seconds){
-  const stampOpacity=clamp(state.gOpacity/100,0,1);
-  const mapOpacity=clamp(state.gMapO/100,0,1);
-  const _pad=Math.max(6,Math.round(H*.012));
-  const mapW=clamp(W*state.mapW/100,20,W-2*_pad);
-  const mapH=clamp(H*state.mapH/100,20,H-2*_pad);
-
+function computeGeoLayout(W,H){
+  const pad=Math.max(6,Math.round(H*.012));
+  const mapW=clamp(W*state.mapW/100,24,W-2*pad);
+  const mapH=clamp(H*state.mapH/100,24,H*.96-2*pad);
   let stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  if(mapImg&&!state.mapMoved)stampH=Math.min(H*.96,Math.max(stampH,mapH+2*_pad));
-  const stampX=0,stampW=W,stampY=Math.round(H-stampH);
-  const stampRadius=Math.max(18,Math.round(stampH*.14));
-  const stampPad=Math.max(5,Math.round(stampH*.022));
-  const stampGap=Math.max(12,Math.round(stampH*.045));
-
+  if(!state.mapMoved)stampH=Math.min(H*.96,Math.max(stampH,mapH+2*pad));
+  const stampY=Math.round(H-stampH);
   let mapX,mapY;
   if(!state.mapMoved){
-    mapX=_pad;mapY=stampY+(stampH-mapH)/2;
-    state.mapX=mapX/W*100;state.mapY=mapY/H*100;
+    mapX=pad;
+    mapY=stampY+(stampH-mapH)/2;
   }else{
     mapX=clamp(W*state.mapX/100,0,Math.max(0,W-mapW));
     mapY=clamp(H*state.mapY/100,0,Math.max(0,H-mapH));
   }
+  return {pad,mapW,mapH,mapX,mapY,stampH,stampY};
+}
 
+function drawGeoFrame(baseCtx,W,H,seconds){
+  const stampOpacity=clamp(state.gOpacity/100,0,1);
+  const mapOpacity=clamp(state.gMapO/100,0,1);
+  const L=computeGeoLayout(W,H);
+  const {mapW,mapH,mapX,mapY,stampH,stampY}=L;
+  const stampX=0,stampW=W;
+  const stampRadius=Math.max(18,Math.round(stampH*.14));
+  const stampPad=Math.max(5,Math.round(stampH*.022));
+  const stampGap=Math.max(12,Math.round(stampH*.045));
+
+  // blurred backdrop
   if(stampOpacity>0.02){
     const bw=Math.max(8,Math.round(W/28)),bh=Math.max(4,Math.round(stampH/28));
     _blur.width=bw;_blur.height=bh;
@@ -1566,7 +1577,6 @@ function drawGeoFrame(baseCtx,W,H,seconds){
     baseCtx.drawImage(_blur,0,0,bw,bh,stampX,stampY,stampW,stampH);
     baseCtx.restore();
   }
-
   baseCtx.save();
   baseCtx.globalAlpha=stampOpacity;
   baseCtx.fillStyle='rgba(0,0,0,.76)';
@@ -1574,38 +1584,37 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.fill();
   baseCtx.restore();
 
+  // map
   const mr=Math.max(6,Math.min(mapW,mapH)*.06);
-  if(mapImg&&mapImg.width>0&&mapImg.height>0&&mapW>2&&mapH>2){
+  if(mapImg&&mapImg.width>0&&mapImg.height>0){
     baseCtx.save();
     baseCtx.globalAlpha=mapOpacity;
     roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
     baseCtx.clip();
-    baseCtx.imageSmoothingEnabled=true;
-    baseCtx.imageSmoothingQuality='high';
-    const ms=Math.min(mapW/mapImg.width,mapH/mapImg.height);
+    baseCtx.imageSmoothingEnabled=true;baseCtx.imageSmoothingQuality='high';
+    const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height); // fill box, pin stays centered
     const dw=mapImg.width*ms,dh=mapImg.height*ms;
     baseCtx.drawImage(mapImg,mapX+(mapW-dw)/2,mapY+(mapH-dh)/2,dw,dh);
     baseCtx.restore();
     baseCtx.save();
     baseCtx.globalAlpha=mapOpacity;
-    baseCtx.strokeStyle='#ffffff';
+    baseCtx.strokeStyle='#fff';
     baseCtx.lineWidth=Math.max(2,Math.min(mapW,mapH)*.018);
     roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
     baseCtx.stroke();
     baseCtx.restore();
   }
 
+  // logo
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
   const logoCenterX=clamp(W*state.logoX/100,stampX+stampW*.72+logoSize/2,stampX+stampW-logoSize/2-stampPad);
   const logoCenterY=clamp(stampY+stampH*(state.logoY/100),stampY+logoSize/2+stampPad,stampY+stampH-logoSize/2-stampPad);
   const logoLeft=logoCenterX-logoSize/2;
 
+  // text (starts to the right of the map)
   let textX=stampX+stampW*.255;
-  if(mapImg&&mapY+mapH>stampY&&mapX<stampW*.6){
-    textX=Math.max(textX,mapX+mapW+Math.max(10,stampGap));
-  }
-  const textRight=logoLeft-stampGap;
-  const maxW=Math.max(120,textRight-textX);
+  if(mapImg&&mapY+mapH>stampY&&mapX<stampW*.6)textX=Math.max(textX,mapX+mapW+Math.max(10,stampGap));
+  const maxW=Math.max(120,logoLeft-stampGap-textX);
   const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
   const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
   const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
@@ -1621,12 +1630,10 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   baseCtx.textBaseline='alphabetic';
   baseCtx.shadowColor='rgba(0,0,0,.30)';
   baseCtx.shadowBlur=Math.max(1,stampH*.008);
-
   baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
   const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
   let yy=stampY+stampPad+titleSize;
   titleLines.forEach(line=>{baseCtx.fillText(line,textX,yy);yy+=titleSize*1.02});
-
   baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
   const lineGap=Math.max(3,detailSize*.25);
   const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
@@ -1640,7 +1647,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
   baseCtx.restore();
 
-  // Preview-only map controls (never rendered into the exported video)
+  // preview-only handles (never exported)
   if(baseCtx===gctx&&mapImg){
     baseCtx.save();
     baseCtx.strokeStyle='rgba(255,255,255,.95)';
@@ -1648,529 +1655,48 @@ function drawGeoFrame(baseCtx,W,H,seconds){
     baseCtx.setLineDash([6,4]);
     baseCtx.strokeRect(mapX,mapY,mapW,mapH);
     baseCtx.setLineDash([]);
-    const hs=Math.max(8,12*W/geo.width);
+    const hs=Math.max(10,14*W/geo.width);
     baseCtx.fillStyle='rgba(255,255,255,.95)';
     baseCtx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
     baseCtx.restore();
   }
 }
-
-function prepareOutput(){
- const r=sourceRect();
- outputW=Math.max(2,Math.round(r.w/2)*2);
- outputH=Math.max(2,Math.round(r.h/2)*2);
- work.width=outputW;work.height=outputH;
-}
-
-function exportNeedsFrameProcessing(){
-  return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null);
-}
-
-function drawExportFrame(elapsedOverride) {
-
-  const r = sourceRect();
-
-  // ------------------------------------------------------------
-  // START WITH ORIGINAL VIDEO FRAME
-  // ------------------------------------------------------------
-
-  wctx.clearRect(
-    0,
-    0,
-    outputW,
-    outputH
-  );
-
-  wctx.drawImage(
-    video,
-    r.x,
-    r.y,
-    r.w,
-    r.h,
-    0,
-    0,
-    outputW,
-    outputH
-  );
-
-  // ------------------------------------------------------------
-  // BOX 1 → BOX 2 → BOX 3 → ...
-  // ------------------------------------------------------------
-
-  applyAllTextRemoval(
-    wctx,
-    outputW,
-    outputH,
-    r,
-    true
-  );
-
-  // ------------------------------------------------------------
-  // MAP + GEOTAG + LOGO
-  // MUST BE LAST
-  // ------------------------------------------------------------
-
-  if (lat != null && lon != null) {
-
-    const elapsed =
-      elapsedOverride != null
-        ? elapsedOverride
-        : Math.max(
-            0,
-            video.currentTime -
-            (+$('trimStart').value || 0)
-          );
-
-    drawGeoFrame(
-      wctx,
-      outputW,
-      outputH,
-      elapsed
-    );
-  }
-}
-
-function seekVideo(target){
-  return new Promise(resolve=>{
-    const t=clamp(target,0,duration||target);
-    if(Math.abs(video.currentTime-t)<1e-4&&!video.seeking){requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));return;}
-    let done=false;
-    const finish=()=>{
-      if(done)return; done=true;
-      video.removeEventListener('seeked',onSeeked);
-      resolve();
-    };
-    const onSeeked=()=>{
-      requestAnimationFrame(()=>requestAnimationFrame(finish));
-    };
-    video.addEventListener('seeked',onSeeked,{once:true});
-    video.currentTime=t;
-    setTimeout(finish,2000);
-  });
-}
-
-async function pickVideoCodec(width,height,fps){
-  const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
-  for(const codec of candidates){
-    try{
-      const support=await VideoEncoder.isConfigSupported({
-        codec,width,height,bitrate:8_000_000,framerate:fps,
-        hardwareAcceleration:'prefer-hardware'
-      });
-      if(support&&support.supported)return {codec,hardwareAcceleration:'prefer-hardware'};
-    }catch(e){}
-  }
-  for(const codec of candidates){
-    try{
-      const support=await VideoEncoder.isConfigSupported({
-        codec,width,height,bitrate:8_000_000,framerate:fps,
-        hardwareAcceleration:'no-preference'
-      });
-      if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
-    }catch(e){}
-  }
-  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
-}
-
-async function estimateFps(){
-  const std=[23.976,24,25,29.97,30,48,50,59.94,60];
-  if(typeof video.requestVideoFrameCallback!=='function')return 30;
-  const saved=video.currentTime,muted=video.muted;
-  const times=[];
-  await new Promise(resolve=>{
-    let id=null,done=false;
-    const fin=()=>{if(done)return;done=true;try{video.pause()}catch(e){}resolve()};
-    const cb=(now,m)=>{times.push(m.mediaTime);if(times.length>=14){fin();return}id=video.requestVideoFrameCallback(cb)};
-    video.muted=true;
-    id=video.requestVideoFrameCallback(cb);
-    video.play().catch(fin);
-    setTimeout(fin,2000);
-  });
-  video.muted=muted;
-  await seekVideo(saved);
-  const diffs=[];for(let i=1;i<times.length;i++){const d=times[i]-times[i-1];if(d>0.004&&d<0.2)diffs.push(d)}
-  if(diffs.length<4)return 30;
-  diffs.sort((a,b)=>a-b);
-  const fps=1/diffs[Math.floor(diffs.length/2)];
-  let best=std[0];for(const v of std)if(Math.abs(v-fps)<Math.abs(best-fps))best=v;
-  return Math.abs(best-fps)<2?best:Math.round(fps);
-}
-
-async function exportVideoFrameAccurate(){
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=Math.max(0.05,end-start);
-
-  if(whiteRect){
-    $('exportStatus').textContent='Analysing the text area…';
-    await buildStaticMask();
-  }
-
-  $('exportStatus').textContent='Detecting video frame rate…';
-  const fps=await estimateFps();
-
-  prepareOutput();
-  video.pause();
-
-  if(lat!=null && lon!=null && (!mapImg || !mapImg.width)){
-    $('exportStatus').textContent='Preparing map…';
-    try{
-      mapImg=await makeMap(lat,lon);
-    }catch(e){
-      mapImg=makeFallbackMap(lat,lon);
-    }
-    if(!mapImg || !mapImg.width) mapImg=makeFallbackMap(lat,lon);
-  }
-
-  const audioPromise=(async()=>{
-    try{
-      const arr=await file.arrayBuffer();
-      const actx=new (window.AudioContext||window.webkitAudioContext)();
-      return await actx.decodeAudioData(arr);
-    }catch(e){
-      console.warn('No usable audio track for export',e);
-      return null;
-    }
-  })();
-
-  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
-  const audioBuffer=await audioPromise;
-  const hasAudio=!!audioBuffer;
-  const muxer=new Mp4Muxer.Muxer({
-    target:new Mp4Muxer.ArrayBufferTarget(),
-    fastStart:'in-memory',
-    firstTimestampBehavior:'offset',
-    video:{codec:'avc',width:outputW,height:outputH},
-    audio:hasAudio?{
-      codec:'aac',
-      numberOfChannels:audioBuffer.numberOfChannels,
-      sampleRate:audioBuffer.sampleRate
-    }:undefined,
-  });
-
-  let encoderFailed=null;
-  let rejectEncoding=null;
-  let videoEncoder=null;
-  let restoreMute=video.muted;
-  const bitrate=clamp(Math.round(outputW*outputH*fps*0.12),4_000_000,20_000_000);
-
-  try{
-    videoEncoder=new VideoEncoder({
-      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
-      error:e=>{
-        console.error('video encoder error',e);
-        encoderFailed=e;
-        if(rejectEncoding) rejectEncoding(e);
-      }
-    });
-
-    videoEncoder.configure({
-      codec,
-      width:outputW,
-      height:outputH,
-      bitrate,
-      framerate:fps,
-      hardwareAcceleration
-    });
-
-    const needsFrameProcessing=exportNeedsFrameProcessing();
-    $('exportStatus').textContent=needsFrameProcessing
-      ? 'Rendering selected changes… 0% (keep this tab open)'
-      : 'Rendering crop/trim only… 0% (keep this tab open)';
-
-    video.pause();restoreMute=video.muted;video.muted=true;
-    await seekVideo(start);
-    const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
-    // extra boxes are heavier per frame, so start slower when there are several
-    let rate=needsFrameProcessing?(extraRects.length>1?2:3):6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
-    const tBegin=performance.now();
-    video.playbackRate=rate;
-    await new Promise((resolve,reject)=>{
-      rejectEncoding=reject;
-      let finished=false,lastCb=performance.now(),dog=null;
-      const finish=()=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(e){}resolve()};
-      const fail=e=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(x){}reject(e)};
-      dog=setInterval(()=>{
-        if(!finished&&performance.now()-lastCb>12000&&videoEncoder.encodeQueueSize<3)
-          fail(new Error('The browser stopped delivering video frames (keep this tab visible while rendering).'));
-      },1000);
-      video.addEventListener('ended',finish,{once:true});
-      const encodeCanvas=ts=>{
-        const vf=new VideoFrame(work,{timestamp:Math.round(ts*1e6),duration:frameDur});
-        videoEncoder.encode(vf,{keyFrame:n%keyEvery===0});vf.close();n++;
-      };
-      const onFrame=(now,m)=>{
-        if(finished)return;
-        lastCb=performance.now();
-        try{
-          if(encoderFailed)throw encoderFailed;
-          const mt=m.mediaTime;
-          if(mt>=end-0.0005){finish();return}
-          if(mt>=start-0.001&&mt>lastMT+1e-4){
-            const t0=performance.now();
-            const rel=n===0?0:Math.max(0,mt-start);
-            if(n===0||rel>prevRel+0.0005){
-              if(lastMT>=0){
-                const gap=Math.round((mt-lastMT)*fps)-1;
-                if(gap>=1){
-                  maxRate=Math.max(1,Math.min(maxRate,rate*.8));
-                  rate=Math.min(rate,maxRate);video.playbackRate=rate;
-                  if(gap<=8)for(let k=1;k<=gap;k++){const ts=prevRel+k/fps;if(ts<rel-0.0005)encodeCanvas(ts);}
-                }
-              }
-              drawExportFrame(rel);
-              encodeCanvas(rel);
-              prevRel=rel;
-            }
-            lastMT=mt;
-            const proc=performance.now()-t0;
-            procEMA=procEMA?procEMA*.8+proc*.2:proc;
-            if(++sinceAdj>=8){
-              sinceAdj=0;
-              const target=clamp((1000/fps)/(procEMA*1.5+3),1,maxRate);
-              rate=clamp(rate*.5+target*.5,1,maxRate);
-              video.playbackRate=rate;
-            }
-            if(n%5===0){
-              const pct=Math.min(99,Math.round(rel/length*99));
-              $('exportStatus').textContent='Rendering… '+pct+'% ('+n+' frames, '+Math.round((performance.now()-tBegin)/1000)+'s) — keep this tab open';
-            }
-            if(videoEncoder.encodeQueueSize>12){
-              video.pause();
-              const iv=setInterval(()=>{
-                if(finished){clearInterval(iv);return}
-                if(videoEncoder.encodeQueueSize<3){clearInterval(iv);video.play().catch(fail)}
-              },8);
-            }
-          }
-          video.requestVideoFrameCallback(onFrame);
-        }catch(e){fail(e)}
-      };
-      video.requestVideoFrameCallback(onFrame);
-      video.play().catch(fail);
-    });
-    video.playbackRate=1;
-    video.muted=restoreMute;
-
-    if(encoderFailed)throw encoderFailed;
-
-    $('exportStatus').textContent='Finishing video encoding… 91%';
-    await Promise.race([
-      videoEncoder.flush(),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Video encoder flush timed out.')),60000))
-    ]);
-
-    videoEncoder.close();
-    videoEncoder=null;
-    rejectEncoding=null;
-
-    if(hasAudio){
-      $('exportStatus').textContent='Encoding audio… 94%';
-      const sr=audioBuffer.sampleRate;
-      const ch=audioBuffer.numberOfChannels;
-      const s0=Math.floor(start*sr);
-      const s1=Math.min(audioBuffer.length,Math.floor(end*sr));
-      const audioEncoder=new AudioEncoder({
-        output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),
-        error:e=>console.error('audio encoder error',e)
-      });
-      audioEncoder.configure({
-        codec:'mp4a.40.2',
-        sampleRate:sr,
-        numberOfChannels:ch,
-        bitrate:128000
-      });
-
-      const chunkSize=8192;
-      const totalSamples=Math.max(1,s1-s0);
-      for(let s=s0;s<s1;s+=chunkSize){
-        const n2=Math.min(chunkSize,s1-s);
-        const interleaved=new Float32Array(n2*ch);
-        for(let c=0;c<ch;c++){
-          const data=audioBuffer.getChannelData(c);
-          for(let k=0;k<n2;k++)interleaved[k*ch+c]=data[s+k];
-        }
-        const audioData=new AudioData({
-          format:'f32',
-          sampleRate:sr,
-          numberOfFrames:n2,
-          numberOfChannels:ch,
-          timestamp:Math.round((s-s0)/sr*1e6),
-          data:interleaved
-        });
-        audioEncoder.encode(audioData);
-        audioData.close();
-        const pct=94+Math.round(((s-s0)/totalSamples)*5);
-        $('exportStatus').textContent='Encoding audio… '+Math.min(98,pct)+'%';
-      }
-
-      $('exportStatus').textContent='Finishing audio… 99%';
-      await Promise.race([
-        audioEncoder.flush(),
-        new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio encoder flush timed out.')),15000))
-      ]);
-      audioEncoder.close();
-    }
-
-    $('exportStatus').textContent='Finalizing MP4…';
-    muxer.finalize();
-    exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
-    $('exportStatus').textContent='Video rendered in '+Math.round((performance.now()-tBegin)/1000)+'s — 100% complete. Download button is ready.';
-    $('downloadVideo').disabled=false;
-  }finally{
-    rejectEncoding=null;
-    video.muted=restoreMute;
-    video.playbackRate=1;
-    if(videoEncoder){
-      try{videoEncoder.close()}catch(e){}
-    }
-  }
-}
-
-async function exportVideo(){
-  if(!file)return;
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=end-start;
-  prepareOutput();
-  video.pause();
-  await seekVideo(start);
-
-  const fps=30;
-  const canvasStream=work.captureStream(fps);
-  const sourceStream=video.captureStream?video.captureStream():null;
-  if(sourceStream) sourceStream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
-  let mime='';
-  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
-  if(!mime)throw new Error('This Chrome cannot record video.');
-  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
-  const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
-  let stopped=false,frameId=null,raf=0;
-  const stop=()=>{if(stopped)return;stopped=true;if(frameId!==null&&video.cancelVideoFrameCallback)try{video.cancelVideoFrameCallback(frameId)}catch(e){}if(raf)cancelAnimationFrame(raf);try{video.pause()}catch(e){}try{rec.stop()}catch(e){}};
-  const render=(now,meta)=>{
-    if(stopped)return;
-    const t=meta&&meta.mediaTime!=null?meta.mediaTime:video.currentTime;
-    const elapsed=t-start;
-    if(elapsed>=length-0.02){drawExportFrame(length);stop();return}
-    drawExportFrame(elapsed);
-    if(Math.floor(elapsed*10)%5===0)$('exportStatus').textContent='Rendering (recorder mode)… '+Math.min(99,Math.round(elapsed/length*100))+'%';
-    if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
-  };
-  $('exportStatus').textContent='Rendering (recorder mode)… 0%';
-  rec.start(500);
-  video.muted=true;video.playbackRate=1;
-  if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
-  await video.play();
-  while(!stopped){if(video.currentTime>=end-0.02){stop();break}await new Promise(r=>setTimeout(r,30));}
-  exportBlob=await done;
-  video.muted=false;
-  $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
-  $('downloadVideo').disabled=false;
-}
-async function doExport(){
-  exporting=true;
-  try{ await doExportInner(); } finally { exporting=false; drawPreview(); drawGeoPreview(); drawTimeline(); }
-}
-async function doExportInner(){
-  const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
-  if(hasWebCodecs){
-    try{
-      await exportVideoFrameAccurate();
-      return;
-    }catch(err){
-      console.warn('Fast MP4 export failed, falling back to recorder export.',err);
-      video.pause();video.playbackRate=1;
-    }
-  }
-  await exportVideo();
-  if(exportBlob && exportBlob.type.includes('webm')){
-    const statusEl = ($('geoSection').style.display!=='none') ? $('geoStatus') : $('exportStatus');
-    const reason = (typeof window.isSecureContext!=='undefined' && !window.isSecureContext)
-      ? ' Reason: this page isn\'t served over HTTPS or localhost, so Chrome disables the MP4 encoder (WebCodecs) — deploy this file to a host like Vercel, or run it via a local server, to get real MP4 output.'
-      : ' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
-    statusEl.textContent += reason;
-  }
-}
-$('downloadVideo').onclick=async()=>{
- if(!file)return;
- $('downloadVideo').disabled=true;
- const prevStatus=$('exportStatus').textContent;
- try{
-   await doExport();
- }catch(err){
-   console.error(err);
-   $('exportStatus').textContent='Export failed: '+(err.message||err);
-   $('downloadVideo').disabled=false;
-   return;
- }
- if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
- const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
- const base=file.name.replace(/\.[^.]+$/,'');
- const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
- const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+tag+'.'+ext; a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
- $('downloadVideo').disabled=false;
-}
-let autoFound=false;function autoFind(){if(!autoFound&&lat==null){autoFound=true;setTimeout(()=>{try{findLocation()}catch(e){console.warn(e)}},300);}}
-$('goGeo').onclick=()=>{autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
-$('backEdit').onclick=()=>{video.pause();$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview();updateSelectionBox()}
-$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');updateSelectionBox()}
-$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
-
-for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
- $(id).oninput=()=>{
-   state[id]=+$(id).value;
-   if(id==='gMapW') state.mapW=+$(id).value;
-   if(id==='mapH') state.mapH=+$(id).value;
-   if(id==='gHeight' && !state.mapMoved){
-     state.mapY = 100 - state.gHeight;
-   }
-   const valEl = $(id+'Val');
-   if(valEl) valEl.textContent = $(id).value + '%';
-   drawGeoPreview();
- }
-}
 let mapDrag=null;
-function getMapRectOnPreview(){
- if(!geo.width||!geo.height)return null;
- const W=geo.width,H=geo.height;
- const mx=clamp(W*state.mapX/100,0,Math.max(0,W-20));
- const my=clamp(H*state.mapY/100,0,Math.max(0,H-20));
- const mw=clamp(W*state.mapW/100,20,W-mx);
- const mh=clamp(H*state.mapH/100,20,H-my);
- return {x:mx,y:my,w:mw,h:mh,W,H};
-}
 function mapPointerPos(e){
  const r=geo.getBoundingClientRect();
  return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};
 }
 geo.addEventListener('pointerdown',e=>{
- if(!mapImg||!geo.width)return;
- const r=getMapRectOnPreview(); if(!r)return;
- const p=mapPointerPos(e); const hs=Math.max(10,16*geo.width/Math.max(1,geo.getBoundingClientRect().width));
- const resize=Math.abs(p.x-(r.x+r.w))<=hs && Math.abs(p.y-(r.y+r.h))<=hs;
- if(resize || (p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h)){
-   e.preventDefault(); geo.setPointerCapture(e.pointerId);
-   mapDrag={mode:resize?'resize':'move',startX:p.x,startY:p.y,x:r.x,y:r.y,w:r.w,h:r.h,W:r.W,H:r.H};
- }
+  if(!mapImg||!geo.width)return;
+  const L=computeGeoLayout(geo.width,geo.height);
+  const p=mapPointerPos(e);
+  const hs=Math.max(16,24*geo.width/Math.max(1,geo.getBoundingClientRect().width));
+  const onCorner=Math.abs(p.x-(L.mapX+L.mapW))<=hs&&Math.abs(p.y-(L.mapY+L.mapH))<=hs;
+  const inside=p.x>=L.mapX&&p.x<=L.mapX+L.mapW&&p.y>=L.mapY&&p.y<=L.mapY+L.mapH;
+  if(!onCorner&&!inside)return;
+  e.preventDefault();
+  geo.setPointerCapture(e.pointerId);
+  mapDrag={mode:onCorner?'resize':'move',sx:p.x,sy:p.y,x:L.mapX,y:L.mapY,w:L.mapW,h:L.mapH};
 });
 geo.addEventListener('pointermove',e=>{
- if(!mapDrag)return;
- const p=mapPointerPos(e); const dx=p.x-mapDrag.startX,dy=p.y-mapDrag.startY;
- if(mapDrag.mode==='move'){
-   state.mapX=clamp((mapDrag.x+dx)/mapDrag.W*100,0,100-state.mapW);
-   state.mapY=clamp((mapDrag.y+dy)/mapDrag.H*100,0,100-state.mapH);
-   state.mapMoved=true;
- }else{
-   state.mapW=clamp((mapDrag.w+dx)/mapDrag.W*100,5,100-state.mapX);
-   state.mapH=clamp((mapDrag.h+dy)/mapDrag.H*100,5,100-state.mapY);
-   $('gMapW').value=Math.round(state.mapW); $('gMapWVal').textContent=Math.round(state.mapW)+'%';
-   $('mapH').value=Math.round(state.mapH); $('mapHVal').textContent=Math.round(state.mapH)+'%';
- }
- drawGeoPreview();
+  if(!mapDrag)return;
+  const W=geo.width,H=geo.height,p=mapPointerPos(e);
+  const dx=p.x-mapDrag.sx,dy=p.y-mapDrag.sy;
+  if(mapDrag.mode==='move'){
+    state.mapMoved=true;
+    state.mapX=clamp((mapDrag.x+dx)/W*100,0,100-state.mapW);
+    state.mapY=clamp((mapDrag.y+dy)/H*100,0,100-state.mapH);
+  }else{
+    const maxW=state.mapMoved?100-state.mapX:90, maxH=state.mapMoved?100-state.mapY:90;
+    state.mapW=clamp((mapDrag.w+dx)/W*100,5,maxW);
+    state.mapH=clamp((mapDrag.h+dy)/H*100,5,maxH);
+    $('gMapW').value=Math.round(state.mapW);$('gMapWVal').textContent=Math.round(state.mapW)+'%';
+    $('mapH').value=Math.round(state.mapH);$('mapHVal').textContent=Math.round(state.mapH)+'%';
+  }
+  drawGeoPreview();
 });
-function endMapDrag(){mapDrag=null;}
-geo.addEventListener('pointerup',endMapDrag); geo.addEventListener('pointercancel',endMapDrag); geo.addEventListener('pointerleave',()=>{if(mapDrag)endMapDrag();});
+geo.addEventListener('pointerup',endMapDrag);
+geo.addEventListener('pointercancel',endMapDrag);
 
 function drawGeoPreview(){
  if(exporting||!video.videoWidth)return;

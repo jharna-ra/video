@@ -1,0 +1,1918 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video White Text Remover + GeoTag</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b1117;color:#e9eef3;font:14px Arial,sans-serif}
+header{padding:16px 20px;background:#111a23;border-bottom:1px solid #263340}
+header h1{margin:0;font-size:20px}header p{margin:6px 0 0;color:#9eabb7}
+.wrap{max-width:1400px;margin:auto;padding:16px}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:16px}
+.card{background:#121b24;border:1px solid #273440;border-radius:12px;padding:14px}
+h2,h3{margin:0 0 12px}.section{border-top:1px solid #263440;margin-top:14px;padding-top:14px}
+label{display:block;font-weight:600;margin:8px 0 5px;color:#cdd6de}
+input[type=file],input[type=text],input[type=date],input[type=time],input[type=number],textarea,select{width:100%;padding:9px;border-radius:8px;border:1px solid #344553;background:#0d151d;color:#eef3f7}
+textarea{min-height:72px;resize:vertical}
+button{border:0;border-radius:8px;padding:10px 12px;background:#1976e8;color:#fff;font-weight:700;cursor:pointer;margin:4px 3px 0 0}
+button.secondary{background:#293643}button.danger{background:#b63b3b}button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.sliderTop{display:flex;justify-content:space-between;font-size:12px;color:#cbd4dc}.sliderTop b{color:#6fb1ff}
+input[type=range]{width:100%}
+.checkLine{display:flex;gap:8px;align-items:center;font-weight:600;margin:10px 0 4px;color:#cdd6de;cursor:pointer}
+.checkLine input{width:auto;margin:0}
+.status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
+.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
+#viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#selection{position:absolute;border:2px solid #ff3b30;background:transparent;display:none;pointer-events:none}
+#selection2{position:absolute;border:2px dashed #00e5ff;background:transparent;display:none;pointer-events:none}
+.selExtra{position:absolute;border:2px solid #ff9500;display:none;pointer-events:none}
+.selExtra::after{content:attr(data-n);position:absolute;top:-1px;left:-1px;background:#ff9500;color:#000;font:bold 10px Arial;padding:1px 4px}
+#trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
+#trimRange{width:100%}
+.galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
+.timelineHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}.timelineHead b{font-size:13px}.timelineHead span{font-size:11px;color:#8fa0ad}
+#timelineWrap{position:relative;background:#090f15;border:1px solid #263744;border-radius:10px;padding:8px 34px 9px;overflow:hidden}
+#timelineCanvas{width:100%;height:132px;display:block;border-radius:6px;background:#05090d;touch-action:none;cursor:ew-resize}
+.timelineArrow{position:absolute;top:54px;width:28px;height:40px;margin:0;padding:0;border-radius:7px;background:#202c37;color:#cfd8df;font-size:25px;line-height:35px;z-index:3}
+.timelineArrow.left{left:3px}.timelineArrow.right{right:3px}
+.timelineTimes{display:flex;justify-content:space-between;color:#a3afb9;font-size:11px;margin-top:5px;padding:0 4px}
+.timelineHint{font-size:11px;color:#7f909e;margin-top:5px;text-align:center}
+.queue{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.queue span{padding:5px 8px;border-radius:6px;background:#1d2934}
+.small{font-size:12px;color:#94a3af;line-height:1.45}
+.tabs{display:flex;gap:8px;margin-bottom:14px}.tabs button.active{background:#1769e0}
+#geoSection{display:none}
+.badge{display:inline-block;padding:4px 7px;border-radius:6px;background:#24313d;color:#9fb0be;font-size:11px}
+#mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px;cursor:crosshair;touch-action:none}
+#logoCanvas{display:none}
+#geoSection .geoPage{display:flex;flex-direction:column;gap:12px;width:100%;}
+#geoSection .geoPreviewCard{width:100%;padding:12px;}
+#geoSection .geoPreviewHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;}
+#geoSection .geoPreviewHead h2{margin:0 0 5px;}
+#geoSection .geoPreviewHint{font-size:11px;color:#8fa0ad;text-align:right;max-width:480px;}
+#geoSection .geoPreviewCard .stage{height:calc(100vh - 390px);min-height:330px;max-height:620px;}
+#geoSection #geoCanvas{touch-action:none;max-width:100%;max-height:100%;width:auto;height:auto;display:block;}
+#geoSection .geoOptionGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
+#geoSection .geoOptionCard{min-width:0;padding:12px;}
+#geoSection .geoOptionCard h3{margin-bottom:10px;}
+#geoSection .geoOptionCard .sliderTop{margin-top:7px;}
+#geoSection .geoOptionCard input[type=range]{margin:0 0 2px;}
+#geoSection .geoInfoGrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:12px;align-items:start;}
+#geoSection .geoFields3{display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;}
+#geoSection .geoInfoGrid .card{min-width:0;}
+#geoSection textarea{min-height:48px;}
+#geoSection label{margin:4px 0 2px;}
+#geoSection .small{font-size:11px;line-height:1.25;}
+#geoSection .status{padding:6px;margin-top:6px;}
+#geoSection .row{gap:6px;}
+#geoSection button{padding:7px 9px;margin-top:3px;}
+#geoSection .runningBox{border-top:1px solid #263440;margin-top:10px;padding-top:10px;}
+#geoSection .runningBox h3{margin-bottom:6px;}
+#geoSection #mapPreview{width:100%;max-width:640px;height:auto;aspect-ratio:8/3;margin-top:8px;display:block;border-radius:10px;}
+#geoSection .geoActions{border-top:1px solid #263440;margin-top:14px;padding-top:10px;}
+#geoSection .geoActions button{margin-right:4px;}
+#geoSection #geoSeek{margin-top:8px}
+@media(max-width:900px){
+  #geoSection .geoOptionGrid{grid-template-columns:1fr 1fr;}
+  #geoSection .geoInfoGrid{grid-template-columns:1fr;}
+  #geoSection .geoFields3{grid-template-columns:1fr 1fr;}
+  #geoSection .geoFields3>div:last-child{grid-column:1 / -1;}
+  #geoSection .geoPreviewCard .stage{height:calc(100vh - 360px);min-height:280px;}
+}
+@media(max-width:640px){
+  #geoSection .geoOptionGrid{grid-template-columns:1fr;}
+  #geoSection .geoFields3{grid-template-columns:1fr;}
+  #geoSection .geoFields3>div:last-child{grid-column:auto;}
+  #geoSection .geoPreviewHead{align-items:flex-start;flex-direction:column;}
+  #geoSection .geoPreviewHint{text-align:left;}
+  #geoSection .geoPreviewCard .stage{height:auto;min-height:260px;}
+}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
+@media(max-width:640px){
+  .wrap{padding:10px}
+  header{padding:12px 14px}
+  header h1{font-size:17px}
+  header p{font-size:12px}
+  .card{padding:10px}
+  .row,.row3{grid-template-columns:1fr}
+  button{width:100%;margin:5px 0 0;padding:12px;font-size:14px}
+  .row button,.row3 button{width:100%}
+  .tabs{flex-wrap:wrap}
+  .tabs button{flex:1 1 45%}
+  input[type=range]{height:28px}
+  .stage{min-height:220px}
+  #viewCanvas{max-height:50vh}
+  .queue{gap:5px}
+  #timelineWrap{padding:8px 30px 9px}
+  .timelineArrow{width:26px;height:36px;top:50px;font-size:20px;line-height:32px}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
+</head>
+<body>
+<header>
+<h1>Video White Text Remover + GeoTag</h1>
+<p>Trim + gallery-style crop + remove selected white text (multiple boxes) from every frame + editable GeoTag overlay.</p>
+</header>
+
+<div class="wrap">
+<div class="tabs">
+<button id="tabEdit" class="active">1. Video Edit</button>
+<button id="tabGeo" disabled>2. GeoTag</button>
+</div>
+
+<section id="editSection">
+<div class="grid">
+<aside class="card">
+<h2>Video</h2>
+<label>Choose MP4 / WebM / MOV</label>
+<input id="videoFile" type="file" accept="video/*">
+
+<div class="queue"><span id="fileName">No video selected</span><span id="durationBadge">0.0 s</span></div>
+
+<div class="section">
+<h3>Trim</h3>
+<div class="row">
+<div><label>Start (seconds)</label><input id="trimStart" type="number" min="0" step="0.1" value="0"></div>
+<div><label>End (seconds)</label><input id="trimEnd" type="number" min="0" step="0.1" value="0"></div>
+</div>
+<div class="row3"><button class="secondary quickTrim" data-sec="10">10.0s</button><button class="secondary quickTrim" data-sec="20">20.0s</button><button class="secondary quickTrim" data-sec="30">30.0s</button></div>
+<div class="small">10.0 = 10 seconds, 20.0 = 20 seconds. You can use decimals such as 10.5. You can also drag the yellow handles in the gallery timeline.</div>
+<input id="trimRange" type="range" min="0" max="0" step="0.1" value="0">
+<div class="row">
+<button id="setStart" class="secondary">Set start from current</button>
+<button id="setEnd" class="secondary">Set end from current</button>
+</div>
+</div>
+
+<div class="section">
+<h3>Crop</h3>
+<button id="cropMode" class="secondary">Crop: OFF</button>
+<button id="applyCrop" disabled>Apply Crop</button>
+<button id="resetCrop" class="secondary">Reset Crop</button>
+<div class="small">Turn Crop ON, then drag a rectangular box over the part you want to KEEP, like a gallery crop tool.</div>
+</div>
+
+<div class="section">
+<h3>White Text Removal</h3>
+<button id="removeMode" class="secondary">Select White Text Area</button>
+<button id="removeWhite" disabled>Remove White Text</button>
+<button id="undoWhite" class="secondary">Undo Last Box</button>
+<button id="clearWhite" class="secondary">Clear Selection</button>
+<div class="small" id="boxCount">Boxes: 0 — turn on "Select White Text Area" and drag as many boxes as you need.</div>
+<label class="checkLine"><input id="textChanges" type="checkbox" checked> Text changes while video plays (clock / coordinates)</label>
+<label class="checkLine"><input id="showMask" type="checkbox"> Show detected text in red (for tuning)</label>
+<label>White detection sensitivity <b id="whiteVal">200</b></label>
+<input id="whiteThreshold" type="range" min="80" max="245" value="200">
+<label>Removal strength <b id="removeOpacityVal">100%</b></label>
+<input id="removeOpacity" type="range" min="50" max="100" value="100">
+<label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
+<input id="inpaintPasses" type="range" min="1" max="14" value="5">
+<label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
+<input id="textThick" type="range" min="2" max="30" value="9">
+<label>Removal power (higher = removes more leftover text) <b id="removePowerVal">5</b></label>
+<input id="removePower" type="range" min="0" max="8" value="5">
+<div class="small">Draw a box around each piece of text (as many as you like). The first box is red; extra boxes are numbered orange and are checked on every frame, so text that appears later is still removed. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see which pixels will be removed: if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
+</div>
+
+<div class="section">
+<h3>Export</h3>
+<button id="goGeo" disabled>Continue to GeoTag →</button>
+<button id="downloadVideo" disabled>Download Video</button>
+<div id="exportStatus" class="status">Load a video to begin.</div>
+</div>
+</aside>
+
+<main class="card">
+<h2>Video Preview</h2>
+<div class="stage" id="stage">
+<canvas id="viewCanvas"></canvas>
+<div id="selection"></div>
+<div id="selection2"></div>
+</div>
+<div class="row">
+<button id="playBtn" disabled>▶ Play</button>
+<button id="pauseBtn" class="secondary" disabled>⏸ Pause</button>
+<button id="frameBack" class="secondary" disabled>◀ Frame</button>
+<button id="frameNext" class="secondary" disabled>Frame ▶</button>
+</div>
+<div class="status" id="editStatus">Select a video.</div>
+<div class="galleryTimeline">
+  <div class="timelineHead"><b>VIDEO TIMELINE <span class="badge">Like Gallery</span></b><span>Drag the yellow handles • tap anywhere to move</span></div>
+  <div id="timelineWrap">
+    <button id="timelinePrev" class="timelineArrow left" title="Previous section">‹</button>
+    <canvas id="timelineCanvas" width="1400" height="132"></canvas>
+    <button id="timelineNext" class="timelineArrow right" title="Next section">›</button>
+  </div>
+  <div class="timelineTimes"><span id="timelineStartLabel">00:00</span><span id="timelineCurrentLabel">00:00</span><span id="timelineEndLabel">00:00</span></div>
+  <div class="timelineHint">Yellow area = selected video • Yellow handles = trim • Blue line = current position</div>
+</div>
+</main>
+</div>
+</section>
+
+<section id="geoSection">
+  <div class="geoPage">
+    <main class="card geoPreviewCard">
+      <div class="geoPreviewHead">
+        <div>
+          <h2>GeoTag Preview</h2>
+          <div id="geoCounter" class="badge">Video not ready</div>
+        </div>
+        <div class="geoPreviewHint">Drag the map on the preview to move it. Drag its bottom-right corner to resize it.</div>
+      </div>
+      <div class="stage"><canvas id="geoCanvas"></canvas></div>
+      <div class="row3">
+        <button id="geoPlay">▶ Play</button>
+        <button id="geoPause" class="secondary">⏸ Pause</button>
+        <button id="geoRestart" class="secondary">⏮ Restart</button>
+      </div>
+      <input id="geoSeek" type="range" min="0" max="1000" value="0">
+      <div class="small">This is a generated visual overlay, not embedded camera GPS metadata.</div>
+    </main>
+
+    <div class="geoOptionGrid">
+      <div class="card geoOptionCard">
+        <h3>Overlay</h3>
+        <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
+        <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
+        <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">26%</b></div><input id="gMapW" type="range" min="5" max="90" value="26">
+        <div class="sliderTop"><span>Map height</span><b id="mapHVal">29%</b></div><input id="mapH" type="range" min="5" max="90" value="29">
+        <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
+        <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
+        <div class="sliderTop"><span>Map style</span><b></b></div>
+        <select id="gMapStyle"><option value="satlabel" selected>Satellite + Labels</option><option value="sat">Satellite</option><option value="street">Street (lanes)</option></select>
+        <div class="sliderTop"><span>Map view</span><b></b></div>
+        <select id="gMapView"><option value="detail" selected>Detailed (street level at pin)</option><option value="district">Whole district</option></select>
+        <div class="sliderTop"><span>Map zoom (0 = default, + closer, − wider)</span><b id="gZoomVal">0</b></div><input id="gZoom" type="range" min="-4" max="5" step="1" value="0">
+      </div>
+
+      <div class="card geoOptionCard">
+        <h3>Blue Camera Logo Position</h3>
+        <div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
+        <div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
+        <div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
+      </div>
+    </div>
+
+    <div class="geoInfoGrid">
+      <div class="card">
+        <h3>Location</h3>
+        <div class="geoFields3">
+          <div><label>State</label><input id="gState" type="text" value="Jammu and Kashmir"></div>
+          <div><label>District / Town</label><input id="gPlace" type="text" value="Beerwah"></div>
+          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
+        </div>
+        <button id="findLocation">📍 Find Location</button>
+        <div id="gCoords" class="status">Enter a location and press Find Location.</div>
+        <div class="runningBox">
+          <h3>Running Latitude / Longitude</h3>
+          <div class="small">Latitude and longitude move continuously while the video plays and exports.</div>
+          <div class="row">
+            <div><label>Start Latitude</label><input id="startLat" type="number" step="0.000001" placeholder="34.014362"></div>
+            <div><label>Start Longitude</label><input id="startLon" type="number" step="0.000001" placeholder="74.592252"></div>
+            <div><label>End Latitude</label><input id="endLat" type="number" step="0.000001" placeholder="34.020000"></div>
+            <div><label>End Longitude</label><input id="endLon" type="number" step="0.000001" placeholder="74.610000"></div>
+          </div>
+          <button id="useCurrentAsStart" class="secondary">Use Found Location as Start</button>
+          <button id="useCurrentAsEnd" class="secondary">Use Found Location as End</button>
+          <div id="runningCoords" class="status">Running Lat —° Long —°</div>
+        </div>
+        <canvas id="mapPreview"></canvas>
+        <label>Map not loading? Upload a map screenshot (Google Maps / OSM / any image)</label>
+        <input id="mapUpload" type="file" accept="image/*">
+        <button id="retryMap" class="secondary">🔄 Reload map from internet</button>
+      </div>
+
+      <div class="card geoDateCard">
+        <h3>Date &amp; Moving Time</h3>
+        <div class="row">
+          <div><label>Date</label><input id="gDate" type="date"></div>
+          <div><label>Start Time</label><input id="gTime" type="time" step="1"></div>
+        </div>
+        <div class="small">During export, the displayed time advances with the video.</div>
+        <div class="geoActions">
+          <button id="backEdit" class="secondary">← Back</button>
+          <button id="exportGeo">⬇ Render GeoTagged Video</button>
+          <button id="downloadGeo" disabled>⬇ Download GeoTagged Video</button>
+        </div>
+        <div id="geoStatus" class="status">Find a location, then export.</div>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<video id="video" playsinline preload="auto" style="position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
+<canvas id="workCanvas" style="display:none"></canvas>
+<canvas id="logoCanvas" width="200" height="120"></canvas>
+
+<!-- ===== END OF PART 1 — paste PART 2 (starts with <script>) directly below this line ===== -->
+<script>
+const $=id=>document.getElementById(id);
+const video=$('video'), view=$('viewCanvas'), vctx=view.getContext('2d',{willReadFrequently:true});
+const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true});
+const geo=$('geoCanvas'), gctx=geo.getContext('2d',{willReadFrequently:true});
+if(!wctx) throw new Error('Export canvas context unavailable');
+const stage=$('stage'), selBox=$('selection'), selection2=$('selection2');
+
+let file=null, videoURL=null, duration=0, playing=false;
+// whiteRect = first box. extraRects = any number of additional boxes.
+let crop=null, cropMode=false, whiteRect=null, extraRects=[], removeMode=false, selecting=false, sx=0, sy=0, dragEl=null;
+let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
+let startLat=null, startLon=null, endLat=null, endLon=null;
+let gpsRoute=[], gpsRouteDistances=[], gpsRouteTotal=0, gpsRouteKey='', gpsRouteLoading=false;
+let outputW=0, outputH=0, exporting=false;
+let timelineFrames=[], timelineDragging=null, timelineReady=false;
+
+const state={
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:26,gTitle:100,gDetails:100,mapX:1.5,mapY:68,mapW:26,mapH:29,mapMoved:false,
+ logoX:90,logoY:50,logoSize:70
+};
+
+function fmt(n){return Number(n||0).toFixed(1)}
+function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
+function setToday(){
+ const d=new Date();
+ $('gDate').value=d.toISOString().slice(0,10);
+ $('gTime').value=[d.getHours(),d.getMinutes(),d.getSeconds()].map(x=>String(x).padStart(2,'0')).join(':');
+}
+setToday();
+
+function setStatus(t){$('editStatus').textContent=t}
+function updateBoxCount(){
+ const n=(whiteRect?1:0)+extraRects.length;
+ $('boxCount').textContent='Boxes: '+n+(n?' (1 red + '+extraRects.length+' orange)':' — turn on "Select White Text Area" and drag as many boxes as you need.');
+}
+function resizePreview(){
+ if(!video.videoWidth)return;
+ const max=1100, s=Math.min(1,max/video.videoWidth);
+ view.width=Math.max(1,Math.round(video.videoWidth*s));
+ view.height=Math.max(1,Math.round(video.videoHeight*s));
+ drawPreview();
+}
+function sourceRect(){
+ const W=video.videoWidth,H=video.videoHeight;
+ if(!crop)return {x:0,y:0,w:W,h:H};
+ return crop;
+}
+function drawBase(ctx2,W,H){
+ const r=sourceRect();
+ ctx2.clearRect(0,0,W,H);
+ ctx2.drawImage(video,r.x,r.y,r.w,r.h,0,0,W,H);
+}
+
+// =====================================================================
+//  TEXT REMOVAL ENGINE
+//  (the old unused static-mask code was removed; these stubs keep old calls working)
+// =====================================================================
+const wrCache=new Map();
+let staticMask=null, staticBuilding=null, staticTimer=null;
+function wrKey(){
+  const w=whiteRect; if(!w)return '';
+  return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('textThick').value,$('trimStart').value,$('trimEnd').value,duration].join('|');
+}
+function invalidateWR(){
+  staticMask=null; wrCache.clear();
+}
+function scheduleStaticMask(){}
+async function buildStaticMask(){return null}
+
+function dilateMask(m,w,h,g){
+  const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
+  const pre=new Int32Array(Math.max(w,h)+1);
+  for(let y=0;y<h;y++){
+    pre[0]=0;for(let x=0;x<w;x++)pre[x+1]=pre[x]+m[y*w+x];
+    for(let x=0;x<w;x++){const a=Math.max(0,x-g),b=Math.min(w,x+g+1);tmp[y*w+x]=(pre[b]-pre[a])>0?1:0;}
+  }
+  for(let x=0;x<w;x++){
+    pre[0]=0;for(let y=0;y<h;y++)pre[y+1]=pre[y]+tmp[y*w+x];
+    for(let y=0;y<h;y++){const a=Math.max(0,y-g),b=Math.min(h,y+g+1);out[y*w+x]=(pre[b]-pre[a])>0?1:0;}
+  }
+  return out;
+}
+
+function slidePass(src,dst,n,stride,lines,lineStep,r,useMax,dq){
+  for(let l=0;l<lines;l++){
+    const base=l*lineStep;let head=0,tail=0,nxt=0;
+    for(let i=0;i<n;i++){
+      const hi=Math.min(n-1,i+r);
+      while(nxt<=hi){
+        const v=src[base+nxt*stride];
+        if(useMax){while(tail>head&&src[base+dq[tail-1]*stride]<=v)tail--;}
+        else{while(tail>head&&src[base+dq[tail-1]*stride]>=v)tail--;}
+        dq[tail++]=nxt;nxt++;
+      }
+      while(dq[head]<i-r)head++;
+      dst[base+i*stride]=src[base+dq[head]*stride];
+    }
+  }
+}
+function sepFilter(src,w,h,r,useMax){
+  const tmp=new Float32Array(w*h),out=new Float32Array(w*h),dq=new Int32Array(Math.max(w,h)+1);
+  slidePass(src,tmp,w,1,h,w,r,useMax,dq);
+  slidePass(tmp,out,h,w,w,1,r,useMax,dq);
+  return out;
+}
+
+function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
+  const N=w*h,lum=new Float32Array(N);
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const r=Math.max(1,Math.floor((thk||8)/2));
+  const opened=sepFilter(sepFilter(lum,w,h,r,false),w,h,r,true);
+  const mask=new Uint8Array(N),weak=new Uint8Array(N);let any=false;
+  x0=Math.max(0,x0);y0=Math.max(0,y0);x1=Math.min(w,x1);y1=Math.min(h,y1);
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+    const p=y*w+x,i=p*4,L=lum[p];
+    if(L<t-35)continue;
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+    if(mx-mn>85)continue;
+    const th=L-opened[p];
+    if(mx-mn<=70&&L>=t&&th>=25){mask[p]=1;any=true;}
+    else if(th>=8)weak[p]=1;
+  }
+  if(!any)return null;
+  const near=dilateMask(mask,w,h,2);
+  for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
+  return mask;
+}
+
+function inpaintHole(d,w,h,hole,strength){
+  const N=w*h;
+  let hn=0;for(let p=0;p<N;p++)if(hole[p])hn++;
+  if(!hn||hn===N)return;
+
+  const levels=[null];
+  let cw=(w+1)>>1,ch=(h+1)>>1,val=new Float32Array(cw*ch*3),wt=new Float32Array(cw*ch);
+  for(let y=0;y<h;y++){
+    const qy=(y>>1)*cw;
+    for(let x=0;x<w;x++){
+      const p=y*w+x;
+      if(!hole[p]){const q=qy+(x>>1),i=p*4;wt[q]++;val[q*3]+=d[i];val[q*3+1]+=d[i+1];val[q*3+2]+=d[i+2];}
+    }
+  }
+  levels.push({w:cw,h:ch,val,wt});
+  while(cw>1||ch>1){
+    const nw=(cw+1)>>1,nh=(ch+1)>>1,nv=new Float32Array(nw*nh*3),nwt=new Float32Array(nw*nh);
+    for(let y=0;y<ch;y++){
+      const qy=(y>>1)*nw;
+      for(let x=0;x<cw;x++){
+        const p=y*cw+x,wp=wt[p];
+        if(wp>0){const q=qy+(x>>1);nwt[q]+=wp;nv[q*3]+=val[p*3];nv[q*3+1]+=val[p*3+1];nv[q*3+2]+=val[p*3+2];}
+      }
+    }
+    val=nv;wt=nwt;cw=nw;ch=nh;levels.push({w:cw,h:ch,val,wt});
+  }
+
+  const top=levels[levels.length-1];
+  let col=new Float32Array([top.val[0]/top.wt[0],top.val[1]/top.wt[0],top.val[2]/top.wt[0]]);
+  for(let k=levels.length-2;k>=1;k--){
+    const L=levels[k],lw=L.w,lh=L.h,pw=levels[k+1].w,ph=levels[k+1].h,full=Math.pow(4,k);
+    const nc=new Float32Array(lw*lh*3);
+    for(let y=0;y<lh;y++){
+      const fy=(y+.5)/2-.5,y0=Math.floor(fy),ty=fy-y0,ya=Math.max(0,Math.min(ph-1,y0)),yb=Math.max(0,Math.min(ph-1,y0+1));
+      for(let x=0;x<lw;x++){
+        const fx=(x+.5)/2-.5,x0=Math.floor(fx),tx=fx-x0,xa=Math.max(0,Math.min(pw-1,x0)),xb=Math.max(0,Math.min(pw-1,x0+1));
+        const p=y*lw+x,wp=L.wt[p],c=wp>0?Math.min(1,wp/full):0;
+        for(let q=0;q<3;q++){
+          const up=(col[(ya*pw+xa)*3+q]*(1-tx)+col[(ya*pw+xb)*3+q]*tx)*(1-ty)+
+                   (col[(yb*pw+xa)*3+q]*(1-tx)+col[(yb*pw+xb)*3+q]*tx)*ty;
+          nc[p*3+q]=c>0?(L.val[p*3+q]/wp)*c+up*(1-c):up;
+        }
+      }
+    }
+    col=nc;
+  }
+  const fill=new Float32Array(N*3);
+  {
+    const pw=levels[1].w,ph=levels[1].h;
+    for(let y=0;y<h;y++){
+      const fy=(y+.5)/2-.5,y0=Math.floor(fy),ty=fy-y0,ya=Math.max(0,Math.min(ph-1,y0)),yb=Math.max(0,Math.min(ph-1,y0+1));
+      for(let x=0;x<w;x++){
+        const p=y*w+x;
+        if(!hole[p]){const i=p*4;fill[p*3]=d[i];fill[p*3+1]=d[i+1];fill[p*3+2]=d[i+2];continue;}
+        const fx=(x+.5)/2-.5,x0=Math.floor(fx),tx=fx-x0,xa=Math.max(0,Math.min(pw-1,x0)),xb=Math.max(0,Math.min(pw-1,x0+1));
+        for(let q=0;q<3;q++){
+          fill[p*3+q]=(col[(ya*pw+xa)*3+q]*(1-tx)+col[(ya*pw+xb)*3+q]*tx)*(1-ty)+
+                      (col[(yb*pw+xa)*3+q]*(1-tx)+col[(yb*pw+xb)*3+q]*tx)*ty;
+        }
+      }
+    }
+  }
+
+  const idx=new Int32Array(hn);let j0=0;
+  for(let p=0;p<N;p++)if(hole[p])idx[j0++]=p;
+  for(let it=0;it<10;it++){
+    for(let j=0;j<hn;j++){
+      const p=idx[j],x=p%w,y=(p/w)|0;let c=0,a=0,b=0,e=0;
+      if(x>0){const n=(p-1)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(x<w-1){const n=(p+1)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(y>0){const n=(p-w)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(y<h-1){const n=(p+w)*3;a+=fill[n];b+=fill[n+1];e+=fill[n+2];c++;}
+      if(c){fill[p*3]=a/c;fill[p*3+1]=b/c;fill[p*3+2]=e/c;}
+    }
+  }
+
+  const lum=new Float32Array(N);
+  for(let p=0;p<N;p++){const i=p*4;lum[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}
+  const hist=new Uint32Array(64);let hc=0;
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+    const p=y*w+x;
+    if(hole[p]||hole[p-1]||hole[p+1]||hole[p-w]||hole[p+w])continue;
+    const hp=Math.abs(lum[p]-(lum[p-1]+lum[p+1]+lum[p-w]+lum[p+w])/4);
+    hist[Math.min(63,Math.round(hp))]++;hc++;
+  }
+  let sigma=0.6;
+  if(hc>50){let acc=0,mi=0;for(;mi<64;mi++){acc+=hist[mi];if(acc>=hc/2)break;}sigma=Math.min(6,(mi+.3)/.754);}
+  const amp=sigma*0.85;
+
+  for(let j=0;j<hn;j++){
+    const p=idx[j],i=p*4;
+    const g=(Math.random()+Math.random()+Math.random()+Math.random()-2)*1.732*amp;
+    for(let q=0;q<3;q++){
+      let v=fill[p*3+q]+g;v=v<0?0:v>255?255:v;
+      d[i+q]=d[i+q]*(1-strength)+v*strength;
+    }
+  }
+}
+
+/* ===== ULTRA STRONG ALL-BOX TEXT REMOVER ===== */
+function removeTextRectUltra(ctx,W,H,rect,pass){
+  if(!rect)return;
+  if(rect.w<2||rect.h<2)return;
+  const strong=(pass||0)>0;
+  const mg=Math.round((3+Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5))))*Math.max(.7,W/1080));
+  const rx0=Math.max(0,Math.floor(rect.x)-mg),ry0=Math.max(0,Math.floor(rect.y)-mg);
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+mg),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+mg);
+  if(rx1-rx0<2||ry1-ry0<2)return;
+  const power=Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5)));
+  const userT=Math.max(40,(+$('whiteThreshold').value||105)-power*7-(strong?18:0));
+  const k=Math.max(.7,W/1080);
+  const thick=Math.max(3,Math.round((+$('textThick').value||9)*k));
+  const grow=Math.max(4,Math.round(((+$('inpaintPasses').value||5)+power+(strong?2:0))*Math.max(.8,W/1080)));
+  const pad=Math.max(24,grow*5+thick*2);
+  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
+  const w=x1-x0,h=y1-y0,N=w*h;
+  const img=ctx.getImageData(x0,y0,w,h),d=img.data;
+  const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
+  const lumOf=()=>{const l=new Float32Array(N);for(let p=0;p<N;p++){const i=p*4;l[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}return l;};
+  const clip=(m)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)m[y*w+x]=0;}return m;};
+
+  // Pass 0: broad detector (white, coloured and contrasty lettering)
+  let lum=lumOf();
+  const rad=Math.max(2,Math.ceil(thick/2));
+  let opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
+  const mask=new Uint8Array(N);
+  for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
+    const p=y*w+x,i=p*4,L=lum[p];
+    const neigh=((lum[p-1]??L)+(lum[p+1]??L)+(lum[p-w]??L)+(lum[p+w]??L))/4;
+    const local=L-opened[p],contrast=L-neigh;
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),ch=mx-mn;
+    const bright=L>=Math.max(42,userT-75);
+    const whiteish=ch<=125&&L>=Math.max(45,userT-70);
+    const coloredBright=ch>35&&L>=Math.max(70,userT-25)&&(local>=5||contrast>=7);
+    const coloredEdge=ch>35&&L>=45&&(local>=10||contrast>=11);
+    const stroke=local>=16||contrast>=14;
+    if((whiteish&&local>=2)||(bright&&local>=8)||coloredBright||coloredEdge||stroke)mask[p]=1;
+  }
+  // Multi-sensitivity white detector adds anti-aliased edges
+  const cfgs=[
+    {t:userT,thk:thick},
+    {t:Math.max(60,userT-22),thk:Math.max(3,Math.round(thick*.78))},
+    {t:Math.max(50,userT-40),thk:Math.max(2,Math.round(thick*.55))}
+  ];
+  for(const c of cfgs){
+    const m=detectWhite(d,w,h,c.t,ix0,iy0,ix1,iy1,Math.max(3,Math.round(W/90)),c.thk);
+    if(m)for(let p=0;p<N;p++)if(m[p])mask[p]=1;
+  }
+  if($('showMask').checked&&!exporting){
+    for(let p=0;p<N;p++)if(mask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
+    ctx.putImageData(img,x0,y0);return;
+  }
+  let any=false;for(let p=0;p<N&&!any;p++)if(mask[p])any=true;
+  if(!any)return;
+
+  // Main inpaint, then wider fringe passes
+  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,grow)),1);
+  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,Math.max(3,Math.floor(grow*.75)))),1);
+
+  // Residual sweeps: look again at the CLEANED pixels and remove any white left behind
+  const sweeps=2+Math.min(5,power);
+  for(let it=0;it<sweeps;it++){
+    lum=lumOf();
+    opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
+    const res=new Uint8Array(N);let c=0;
+    for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
+      const p=y*w+x,i=p*4,L=lum[p];
+      const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+      if(mx-mn<=100&&L>=Math.max(55,userT-45)&&(L-opened[p])>=4){res[p]=1;c++;}
+    }
+    if(!c)break;
+    inpaintHole(d,w,h,clip(dilateMask(res,w,h,Math.max(2,Math.round(grow*.6)))),1);
+  }
+  ctx.putImageData(img,x0,y0);
+}
+
+/* ===== END OF PART 2 — paste PART 3 directly below this line (still inside the same <script>) ===== */
+  function applyAllTextRemoval(ctx2, W, H, r, exportMode = false) {
+  // Boxes are applied IN ORDER on the SAME canvas.
+  // With high removal power the whole stack is run a second time.
+  const rects = [];
+  if (whiteRect) rects.push(whiteRect);
+  for (const q of extraRects) rects.push(q);
+  if (!rects.length) return;
+  const toRect = q => ({ x: q.x / r.w * W, y: q.y / r.h * H, w: q.w / r.w * W, h: q.h / r.h * H });
+  const power = +($('removePower') ? $('removePower').value : 3) || 0;
+  const previewMask = $('showMask').checked && !exportMode;
+  const passes = previewMask ? 1 : (power >= 3 ? 2 : 1);
+  for (let pass = 0; pass < passes; pass++) {
+    for (const q of rects) removeTextRectUltra(ctx2, W, H, toRect(q), pass);
+  }
+}
+
+function drawPreview() {
+  if (exporting || !video.videoWidth) return;
+  const r = sourceRect();
+  const s = Math.min(1, 1100 / r.w);
+  const nw = Math.max(1, Math.round(r.w * s));
+  const nh = Math.max(1, Math.round(r.h * s));
+  if (view.width !== nw) view.width = nw;
+  if (view.height !== nh) view.height = nh;
+  vctx.clearRect(0, 0, view.width, view.height);
+  vctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, view.width, view.height);
+  applyAllTextRemoval(vctx, view.width, view.height, r, false);
+}
+function updateSelectionBox(){
+ const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
+ const place=(el,q)=>{
+   if(!q){el.style.display='none';return;}
+   el.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
+   el.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
+   el.style.width=(q.w/r.w*C.width)+'px';
+   el.style.height=(q.h/r.h*C.height)+'px';
+   el.style.display='block';
+ };
+ place(selBox,crop||whiteRect);
+ if(!selecting)selection2.style.display='none';
+ document.querySelectorAll('.selExtra').forEach(e=>e.remove());
+ extraRects.forEach((q,i)=>{
+   const el=document.createElement('div');el.className='selExtra';el.dataset.n=i+2;
+   stage.appendChild(el);place(el,q);
+ });
+ updateBoxCount();
+}
+function pointerPos(e){
+ const R=view.getBoundingClientRect(),r=sourceRect();
+ return {x:clamp((e.clientX-R.left)/R.width*r.w,0,r.w),y:clamp((e.clientY-R.top)/R.height*r.h,0,r.h)}
+}
+view.addEventListener('pointerdown',e=>{
+ if(!cropMode&&!removeMode)return;
+ selecting=true;view.setPointerCapture(e.pointerId);
+ const p=pointerPos(e);sx=p.x;sy=p.y;
+ dragEl=(removeMode&&!cropMode&&whiteRect)?selection2:selBox;
+ dragEl.style.display='block';
+});
+view.addEventListener('pointermove',e=>{
+ if(!selecting||!dragEl)return;
+ const p=pointerPos(e);
+ const q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
+ const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
+ dragEl.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
+ dragEl.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
+ dragEl.style.width=(q.w/r.w*C.width)+'px';
+ dragEl.style.height=(q.h/r.h*C.height)+'px';
+});
+view.addEventListener('pointerup',e=>{
+ if(!selecting)return;selecting=false;
+ const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
+ if(q.w<5||q.h<5){updateSelectionBox();return}
+ if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
+ if(removeMode){
+   if(!whiteRect)whiteRect={...q};else extraRects.push({...q});
+   setStatus('White-text box '+(1+extraRects.length)+' added. Drag again to add more, or press Remove White Text.');
+   invalidateWR();$('removeWhite').disabled=false;
+ }
+ updateSelectionBox();
+ drawPreview();drawGeoPreview();
+});
+$('undoWhite').onclick=()=>{
+ if(extraRects.length)extraRects.pop();else whiteRect=null;
+ if(!whiteRect&&!extraRects.length)$('removeWhite').disabled=true;
+ invalidateWR();updateSelectionBox();drawPreview();drawGeoPreview();
+ setStatus('Last box removed.');
+};
+
+function timelineFmt(sec){
+  sec=Math.max(0,Number(sec)||0); const m=Math.floor(sec/60), s=Math.floor(sec%60);
+  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function drawTimeline(){
+  if(exporting)return;
+  const c=$('timelineCanvas'),ctx=c.getContext('2d');
+  const W=c.width,H=c.height; ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#05090d';ctx.fillRect(0,0,W,H);
+  const top=27, thumbH=76, frames=timelineFrames;
+
+  if(frames.length){
+    const fw=W/frames.length;
+    frames.forEach((im,i)=>{
+      const x=i*fw;
+      ctx.drawImage(im,x,top,Math.ceil(fw)+1,thumbH);
+      ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(x+fw-1,top,1,thumbH);
+    });
+  }else{
+    ctx.fillStyle='#18232d';ctx.fillRect(0,top,W,thumbH);
+    ctx.fillStyle='#72808c';ctx.font='14px Arial';ctx.fillText('Load a video to create the gallery timeline',20,top+40);
+  }
+  if(!duration){return;}
+
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start,duration);
+  const cur=clamp(video.currentTime||0,0,duration);
+  const xS=start/duration*W,xE=end/duration*W,xC=cur/duration*W;
+
+  ctx.fillStyle='rgba(0,0,0,.68)';
+  if(xS>0)ctx.fillRect(0,top,xS,thumbH);
+  if(xE<W)ctx.fillRect(xE,top,W-xE,thumbH);
+
+  ctx.strokeStyle='#ffd400';ctx.lineWidth=4;
+  ctx.strokeRect(Math.max(1,xS),top+1,Math.max(2,xE-xS-2),thumbH-2);
+
+  [xS,xE].forEach(x=>{
+    ctx.fillStyle='#ffd400';ctx.fillRect(x-5,top-6,10,thumbH+12);
+    ctx.fillStyle='#222';ctx.fillRect(x-2,top+24,4,28);
+    ctx.beginPath();ctx.moveTo(x-5,top-9);ctx.lineTo(x+5,top-9);ctx.lineTo(x,top-3);ctx.closePath();ctx.fillStyle='#ffd400';ctx.fill();
+  });
+
+  ctx.font='10px Arial';ctx.textAlign='center';
+  const tickCount=Math.min(12,Math.max(5,Math.ceil(duration/5)+1));
+  for(let i=0;i<tickCount;i++){
+    const t=duration*i/(tickCount-1||1),x=t/duration*W;
+    ctx.strokeStyle='rgba(210,220,230,.35)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,18);ctx.lineTo(x,25);ctx.stroke();
+    ctx.fillStyle='#9ba8b3';ctx.fillText(timelineFmt(t),x,12);
+  }
+  ctx.textAlign='start';
+
+  ctx.strokeStyle='#1597ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(xC,17);ctx.lineTo(xC,H-8);ctx.stroke();
+  ctx.fillStyle='#1597ff';ctx.beginPath();ctx.moveTo(xC-7,17);ctx.lineTo(xC+7,17);ctx.lineTo(xC,25);ctx.closePath();ctx.fill();
+
+  const label=timelineFmt(cur);ctx.font='bold 12px Arial';const tw=ctx.measureText(label).width+16;
+  const bx=clamp(xC-tw/2,2,W-tw-2);ctx.fillStyle='#253542';
+  roundRect(ctx,bx,0,tw,18,4);ctx.fill();
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(label,bx+tw/2,13);ctx.textAlign='start';
+
+  $('timelineStartLabel').textContent=timelineFmt(start);
+  $('timelineCurrentLabel').textContent=timelineFmt(cur);
+  $('timelineEndLabel').textContent=timelineFmt(end);
+}
+function roundRectCorners(ctx,x,y,w,h,tl,tr,br,bl){
+  ctx.beginPath();
+  ctx.moveTo(x+tl,y);
+  ctx.lineTo(x+w-tr,y);
+  ctx.arcTo(x+w,y,x+w,y+tr,tr);
+  ctx.lineTo(x+w,y+h-br);
+  ctx.arcTo(x+w,y+h,x+w-br,y+h,br);
+  ctx.lineTo(x+bl,y+h);
+  ctx.arcTo(x,y+h,x,y+h-bl,bl);
+  ctx.lineTo(x,y+tl);
+  ctx.arcTo(x,y,x+tl,y,tl);
+  ctx.closePath();
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+async function buildTimeline(){
+  if(!duration||!video.videoWidth)return;
+  timelineFrames=[];timelineReady=false;drawTimeline();
+  const saved=video.currentTime;
+  const n=Math.min(18,Math.max(8,Math.ceil(duration/2)));
+  for(let i=0;i<n;i++){
+    const t=duration*(i/(n-1||1));
+    video.currentTime=t;
+    await new Promise(res=>{const f=()=>res();video.addEventListener('seeked',f,{once:true});setTimeout(res,250)});
+    const im=document.createElement('canvas');
+    const w=120;im.width=w;im.height=76;
+    const ictx=im.getContext('2d');
+    ictx.fillStyle='#111';ictx.fillRect(0,0,w,76);
+    const scale=Math.min(w/video.videoWidth,76/video.videoHeight);const dw=video.videoWidth*scale,dh=video.videoHeight*scale;
+    ictx.drawImage(video,(w-dw)/2,(76-dh)/2,dw,dh);timelineFrames.push(im);
+    drawTimeline();
+  }
+  video.currentTime=clamp(saved,0,duration);timelineReady=true;drawTimeline();
+}
+function timelineTimeFromEvent(e){
+  const r=$('timelineCanvas').getBoundingClientRect();return clamp((e.clientX-r.left)/r.width,0,1)*duration;
+}
+$('timelineCanvas').addEventListener('pointerdown',e=>{
+  if(!duration)return;
+  const t=timelineTimeFromEvent(e),start=+$('trimStart').value||0,end=+$('trimEnd').value||duration;
+  const r=$('timelineCanvas').getBoundingClientRect(),px=t/duration*r.width,ps=start/duration*r.width,pe=end/duration*r.width;
+  if(Math.abs(px-ps)<18)timelineDragging='start';
+  else if(Math.abs(px-pe)<18)timelineDragging='end';
+  else timelineDragging='playhead';
+  $('timelineCanvas').setPointerCapture(e.pointerId);
+  timelineMove(e);
+});
+function timelineMove(e){
+  if(!timelineDragging||!duration)return;
+  const t=timelineTimeFromEvent(e);
+  if(timelineDragging==='start'){
+    const end=+$('trimEnd').value||duration; $('trimStart').value=fmt(Math.min(t,end-.1));
+    if(video.currentTime<+$('trimStart').value)video.currentTime=+$('trimStart').value;
+  }else if(timelineDragging==='end'){
+    const start=+$('trimStart').value||0; $('trimEnd').value=fmt(Math.max(t,start+.1));
+    if(video.currentTime>+$('trimEnd').value)video.currentTime=+$('trimEnd').value;
+  }else{
+    video.currentTime=clamp(t,+$('trimStart').value||0,+$('trimEnd').value||duration);
+  }
+  drawTimeline();drawPreview();drawGeoPreview();
+}
+$('timelineCanvas').addEventListener('pointermove',timelineMove);
+$('timelineCanvas').addEventListener('pointerup',()=>timelineDragging=null);
+$('timelineCanvas').addEventListener('pointercancel',()=>timelineDragging=null);
+$('timelinePrev').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)-5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
+$('timelineNext').onclick=()=>{ if(!duration)return; video.currentTime=clamp((video.currentTime||0)+5,+$('trimStart').value||0,+$('trimEnd').value||duration); drawPreview();drawTimeline(); };
+
+document.querySelectorAll('.quickTrim').forEach(btn=>btn.addEventListener('click',()=>{
+ $('trimStart').value='0.0'; $('trimEnd').value=fmt(Math.min(duration,+btn.dataset.sec)); video.currentTime=0; drawTimeline();
+}));
+$('videoFile').addEventListener('change',()=>{
+ file=$('videoFile').files[0]; if(!file)return;
+ if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
+ $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
+ staticMask=null; wrCache.clear();
+});
+video.addEventListener('loadedmetadata',()=>{
+ duration=video.duration||0;
+ $('durationBadge').textContent=fmt(duration)+' s';
+ $('trimStart').value='0';$('trimEnd').value=fmt(duration);
+ $('trimRange').max=duration; $('trimRange').value=0;
+ resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
+ $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text areas.');
+ buildTimeline();
+});
+video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
+video.addEventListener('play',()=>{playing=true;});
+video.addEventListener('pause',()=>{playing=false;});
+$('trimRange').addEventListener('input',()=>{video.currentTime=+$('trimRange').value;drawTimeline()});
+$('trimStart').addEventListener('input',()=>{let v=clamp(+$('trimStart').value||0,0,duration);let e=+$('trimEnd').value||duration;if(v>=e)v=Math.max(0,e-.1);$('trimStart').value=fmt(v);if(video.currentTime<v)video.currentTime=v;drawTimeline()});
+$('trimEnd').addEventListener('input',()=>{let v=clamp(+$('trimEnd').value||duration,0,duration);let s=+$('trimStart').value||0;if(v<=s)v=Math.min(duration,s+.1);$('trimEnd').value=fmt(v);if(video.currentTime>v)video.currentTime=v;drawTimeline()});
+$('setStart').onclick=()=>{$('trimStart').value=fmt(clamp(video.currentTime,0,(+$('trimEnd').value||duration)-.1));drawTimeline()}
+$('setEnd').onclick=()=>{$('trimEnd').value=fmt(clamp(video.currentTime,(+$('trimStart').value||0)+.1,duration));drawTimeline()}
+$('playBtn').onclick=()=>video.play();
+$('pauseBtn').onclick=()=>video.pause();
+$('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.currentTime-1/30)}
+$('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
+$('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
+$('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text… (click to stop)':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around each piece of white text. You can add as many boxes as you need.':'White-text selection mode off.')}
+$('applyCrop').onclick=()=>{if(!crop)return;crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;extraRects=[];invalidateWR();$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop applied. White-text boxes were cleared — select them again on the cropped video.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;extraRects=[];invalidateWR();$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();updateSelectionBox();setStatus('Crop reset.')}
+$('removeWhite').onclick=async()=>{
+ if(!whiteRect&&!extraRects.length)return;
+ video.pause();
+ setStatus('White-text removal is ready for '+((whiteRect?1:0)+extraRects.length)+' box(es). It is applied to every frame when you export / download.');
+ drawPreview();drawGeoPreview();
+}
+$('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.display='none';invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();drawGeoPreview();setStatus('All white-text boxes cleared.')}
+$('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;invalidateWR();drawPreview()}
+$('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';wrCache.clear();drawPreview()}
+$('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;wrCache.clear();drawPreview()}
+$('removePower').oninput=()=>{$('removePowerVal').textContent=$('removePower').value;wrCache.clear();drawPreview();drawGeoPreview()};
+$('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;invalidateWR();drawPreview()}
+$('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
+$('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
+
+/* ===== END OF PART 3 — paste PART 4 directly below this line (still inside the same <script>) ===== */
+  function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
+function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
+function formatMovingTime(base,delta){
+ let t=parseStartTime(base)+Math.max(0,delta),h=Math.floor(t/3600)%24,m=Math.floor(t/60)%60,s=Math.floor(t%60);
+ return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function wrapText(ctx,text,max,font,maxLines=3){
+ ctx.font=font;const words=String(text||'').trim().split(/\s+/),lines=[];let line='';
+ for(const word of words){const test=line?line+' '+word:word;if(ctx.measureText(test).width>max&&line){lines.push(line);line=word;if(lines.length>=maxLines)break}else line=test}
+ if(line&&lines.length<maxLines)lines.push(line);return lines;
+}
+function drawLogo(ctx,x,y,size){
+  ctx.save();
+  ctx.translate(x,y);
+  const r=Math.max(8,size*.18);
+  ctx.fillStyle='#149bd3';
+  ctx.beginPath();
+  ctx.roundRect(-size/2,-size/2,size,size,r);
+  ctx.fill();
+
+  const bodyW=size*.68, bodyH=size*.40, bodyX=-bodyW/2, bodyY=-bodyH/2+size*.035;
+  ctx.fillStyle='#fff';
+  ctx.beginPath();
+  ctx.roundRect(bodyX,bodyY,bodyW,bodyH,Math.max(3,size*.025));
+  ctx.fill();
+
+  const bumpW=size*.25, bumpH=size*.10;
+  ctx.beginPath();
+  ctx.roundRect(-bumpW*.42,bodyY-bumpH*.72,bumpW,bumpH,Math.max(2,size*.015));
+  ctx.fill();
+
+  ctx.fillStyle='#149bd3';
+  ctx.beginPath();
+  ctx.arc(0,bodyY+bodyH/2,size*.145,0,Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle='#fff';
+  ctx.lineWidth=Math.max(2,size*.035);
+  ctx.beginPath();
+  ctx.arc(0,bodyY+bodyH/2,size*.19,0,Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+}
+let userMapImg=null;
+$('mapUpload').onchange=e=>{
+ const f=e.target.files&&e.target.files[0];if(!f)return;
+ const url=URL.createObjectURL(f),im=new Image();
+ im.onload=()=>{
+  const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;
+  c.getContext('2d').drawImage(im,0,0);URL.revokeObjectURL(url);
+  c.srcName='uploaded image';userMapImg=c;mapImg=c;
+  if(lat==null||lon==null){
+   const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
+   if(isFinite(sl)&&isFinite(so)){lat=sl;lon=so;}
+  }
+  state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
+  drawMapPreview();
+  $('gCoords').textContent=(lat==null?'Map image loaded. Now press Find Location (or type Start Latitude / Longitude) so the stamp can be drawn.':`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: uploaded image`);
+  drawGeoPreview();
+ };
+ im.onerror=()=>{$('gCoords').textContent='Could not read that image file.'};
+ im.src=url;
+};
+function drawMapPreview(msg){
+ const c=$('mapPreview');if(!c)return;
+ const W=c.width=640,H=c.height=240,x=c.getContext('2d');
+ x.fillStyle='#d7dde1';x.fillRect(0,0,W,H);
+ if(mapImg&&mapImg.width){
+  const sc=Math.max(W/mapImg.width,H/mapImg.height),dw=mapImg.width*sc,dh=mapImg.height*sc;
+  x.drawImage(mapImg,(W-dw)/2,(H-dh)/2,dw,dh);
+ }else{
+  x.fillStyle='#5b6670';x.font='bold 18px Arial';x.textAlign='center';
+  x.fillText(msg||'Map preview — press Find Location',W/2,H/2);
+ }
+}
+function tileXY(lat,lon,z){
+ const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
+}
+function makeFallbackMap(lat,lon){
+  const size=768;
+  const fallback=document.createElement('canvas');
+  fallback.width=size;fallback.height=size;
+  const fc=fallback.getContext('2d');
+  fc.fillStyle='#e9eef2';fc.fillRect(0,0,size,size);
+  fc.fillStyle='#cfe3c4';fc.fillRect(0,size*.55,size,size*.45);
+  fc.strokeStyle='#ffffff';fc.lineWidth=18;
+  fc.beginPath();fc.moveTo(0,size*.35);fc.lineTo(size,size*.62);fc.stroke();
+  fc.beginPath();fc.moveTo(size*.3,0);fc.lineTo(size*.55,size);fc.stroke();
+  fc.strokeStyle='#c9d2d9';fc.lineWidth=2;
+  for(let i=0;i<=size;i+=64){fc.beginPath();fc.moveTo(i,0);fc.lineTo(i,size);fc.stroke();fc.beginPath();fc.moveTo(0,i);fc.lineTo(size,i);fc.stroke();}
+  const mx=size/2,my=size/2;
+  fc.fillStyle='#e53935';fc.beginPath();fc.arc(mx,my,18,0,Math.PI*2);fc.fill();
+  fc.strokeStyle='#fff';fc.lineWidth=5;fc.stroke();
+  fallback.srcName='placeholder';fallback.isFallback=true;
+  return fallback;
+}
+
+/* =====================================================================
+   DISTRICT / STATE MAP  (now with a Detailed street-level view)
+   ===================================================================== */
+let mapGeo=null,mapBuildToken=0,mapTimer=null,findToken=0,findTimer=null;
+const tileCache=new Map();
+const T_IMG={name:'© Esri, Maxar',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`};
+const T_REF={name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${y}/${x}`};
+const T_STREETS=[
+ {name:'© CARTO © OpenStreetMap',url:(z,x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
+ {name:'© OpenStreetMap',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
+ {name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
+ {name:'© OSM France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`}
+];
+
+async function geocodeAny(q,place,stateName){
+ const tryFetch=async url=>{
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9000);
+  try{
+   const r=await fetch(url,{signal:ctl.signal,headers:{Accept:'application/json'}});
+   if(!r.ok)throw Error('HTTP '+r.status);
+   return await r.json();
+  }finally{clearTimeout(t)}
+ };
+ const nom=j=>{
+  const f=j&&j[0];if(!f)return null;
+  const bb=(f.boundingbox||[]).map(Number),g=f.geojson;
+  return {
+   lat:+f.lat,lon:+f.lon,
+   bbox:bb.length===4&&bb.every(isFinite)?bb:null,
+   poly:g&&(g.type==='Polygon'||g.type==='MultiPolygon')?g:null
+  };
+ };
+ const base={format:'json',limit:'1',countrycodes:'in',polygon_geojson:'1',polygon_threshold:'0.002'};
+ const NOM='https://nominatim.openstreetmap.org/search?';
+ const tries=[
+  async()=>nom(await tryFetch(NOM+new URLSearchParams({...base,q}))),
+  async()=>place&&stateName?nom(await tryFetch(NOM+new URLSearchParams({...base,county:place,state:stateName,country:'India'}))):null,
+  async()=>place&&stateName?nom(await tryFetch(NOM+new URLSearchParams({...base,city:place,state:stateName,country:'India'}))):null,
+  async()=>{
+   const j=await tryFetch('https://photon.komoot.io/api/?'+new URLSearchParams({q,limit:'1'}));
+   const f=j.features&&j.features[0];if(!f)return null;
+   const e=f.properties&&f.properties.extent;
+   return {lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],bbox:e&&e.length===4?[e[3],e[1],e[0],e[2]]:null,poly:null};
+  },
+  async()=>{
+   const j=await tryFetch('https://geocoding-api.open-meteo.com/v1/search?'+new URLSearchParams({name:place||stateName,count:'1',country_code:'IN'}));
+   const f=j.results&&j.results[0];
+   return f?{lat:f.latitude,lon:f.longitude,bbox:null,poly:null}:null;
+  }
+ ];
+ for(const t of tries){
+  try{const r=await t();if(r&&isFinite(r.lat)&&isFinite(r.lon))return r;}
+  catch(e){console.warn('geocoder failed',e)}
+ }
+ return null;
+}
+
+function loadTile(src,z,x,y){
+ const key=src.url(z,x,y);
+ if(tileCache.has(key))return Promise.resolve(tileCache.get(key));
+ return new Promise(res=>{
+  const im=new Image();im.crossOrigin='anonymous';let fin=false;
+  const done=v=>{
+   if(fin)return;fin=true;
+   if(v){if(tileCache.size>400)tileCache.clear();tileCache.set(key,v);}
+   res(v);
+  };
+  im.onload=()=>done(im);
+  im.onerror=()=>done(null);
+  setTimeout(()=>done(null),8000);
+  im.src=src.url(z,x,y);
+ });
+}
+function fitZoom(g,cw,ch){
+ let z=13;
+ if(g.bbox){
+  const [s,n,w,e]=g.bbox;
+  if(Math.abs(n-s)>0.004||Math.abs(e-w)>0.004){
+   for(z=16;z>=5;z--){
+    const a=tileXY(n,w,z),b=tileXY(s,e,z);
+    if((b.x-a.x)*256<=cw*0.86&&(b.y-a.y)*256<=ch*0.86)break;
+   }
+  }
+ }
+ return z;
+}
+function mapHaloText(cc,text,x,y,size,weight){
+ cc.font=`${weight} ${size}px Arial, sans-serif`;
+ cc.textAlign='center';cc.textBaseline='alphabetic';cc.lineJoin='round';
+ cc.lineWidth=Math.max(3,size*.28);cc.strokeStyle='rgba(0,0,0,.85)';cc.strokeText(text,x,y);
+ cc.fillStyle='#fff';cc.fillText(text,x,y);
+}
+async function renderMap(cw,ch){
+ const g=mapGeo;if(!g)return null;
+ const style=($('gMapStyle')&&$('gMapStyle').value)||'satlabel';
+ const adj=+($('gZoom')&&$('gZoom').value)||0;
+ const detail=(($('gMapView')&&$('gMapView').value)||'detail')==='detail';
+ const wantSat=style!=='street';
+ const baseZ=detail?16:fitZoom(g,cw,ch);
+ const z=clamp(baseZ+adj,3,wantSat?17:18),n=2**z;
+ const cLat=detail?g.lat:(g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat);
+ const cLon=detail?g.lon:(g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon);
+ const c=tileXY(cLat,cLon,z);
+ const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*256,y:ch/2+(p.y-c.y)*256};};
+ const x0=Math.floor(c.x-cw/512),x1=Math.floor(c.x+cw/512),y0=Math.floor(c.y-ch/512),y1=Math.floor(c.y+ch/512);
+ const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
+ const cc=cv.getContext('2d');
+ cc.fillStyle=wantSat?'#1d2b1d':'#e8e8e8';cc.fillRect(0,0,cw,ch);
+ const pos=[];
+ for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n)pos.push([tx,ty]);
+ const paint=async src=>{
+  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n)+n)%n,ty)));
+  const ok=imgs.filter(Boolean).length;
+  if(ok<Math.max(1,Math.ceil(pos.length*.6)))return false;
+  pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*256,ch/2+(ty-c.y)*256,256,256);});
+  return true;
+ };
+ let used=null;
+ if(wantSat){
+  if(await paint(T_IMG)){used=T_IMG;if(style==='satlabel')await paint(T_REF);}
+ }
+ if(!used){
+  cc.fillStyle='#e8e8e8';cc.fillRect(0,0,cw,ch);
+  for(const s of T_STREETS){if(await paint(s)){used=s;break;}}
+ }
+ const onSat=used===T_IMG;
+ if(!used){
+  cc.fillStyle='#dfe7ee';cc.fillRect(0,0,cw,ch);
+  cc.strokeStyle='#c5d0da';cc.lineWidth=1;
+  for(let i=0;i<=cw;i+=48){cc.beginPath();cc.moveTo(i,0);cc.lineTo(i,ch);cc.stroke();}
+  for(let i=0;i<=ch;i+=48){cc.beginPath();cc.moveTo(0,i);cc.lineTo(cw,i);cc.stroke();}
+ }
+ if(g.poly){
+  const polys=g.poly.type==='Polygon'?[g.poly.coordinates]:g.poly.coordinates;
+  const sw=Math.max(2,cw/260);
+  cc.save();cc.lineJoin='round';cc.beginPath();
+  for(const rings of polys)for(const ring of rings){
+   ring.forEach(([lo,la],i)=>{const p=proj(la,lo);if(i)cc.lineTo(p.x,p.y);else cc.moveTo(p.x,p.y);});
+   cc.closePath();
+  }
+  cc.fillStyle=onSat?'rgba(255,212,0,.08)':'rgba(21,101,192,.10)';cc.fill('evenodd');
+  cc.strokeStyle='rgba(0,0,0,.65)';cc.lineWidth=sw*2.6;cc.stroke();
+  cc.strokeStyle=onSat?'#ffd400':'#1565c0';cc.lineWidth=sw*1.2;cc.stroke();
+  cc.restore();
+ }
+ const pp=proj(g.lat,g.lon),pr=clamp(cw/40,7,18);
+ cc.save();
+ cc.shadowColor='rgba(0,0,0,.5)';cc.shadowBlur=pr*.6;
+ cc.fillStyle='#e53935';cc.beginPath();cc.arc(pp.x,pp.y,pr,0,Math.PI*2);cc.fill();
+ cc.shadowBlur=0;cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,pr*.3);cc.stroke();
+ cc.fillStyle='#fff';cc.beginPath();cc.arc(pp.x,pp.y,pr*.34,0,Math.PI*2);cc.fill();
+ cc.restore();
+ const place=($('gPlace').value||'').trim(),stateName=($('gState').value||'').trim();
+ if(place||stateName){
+  let fs=clamp(cw*.085,13,52);
+  cc.font=`800 ${fs}px Arial, sans-serif`;
+  while(place&&fs>10&&cc.measureText(place).width>cw*.92){fs-=1;cc.font=`800 ${fs}px Arial, sans-serif`;}
+  const ss=fs*.62;
+  const lx=clamp(pp.x,10,cw-10);
+  let placeY=pp.y-pr*1.7-(stateName?ss*1.25:0),stateY=pp.y-pr*1.7;
+  if(placeY-fs<2){placeY=pp.y+pr*1.7+fs;stateY=placeY+ss*1.3;}
+  const halfW=Math.max(place?cc.measureText(place).width:0,60)/2+6;
+  const cx2=clamp(lx,halfW,cw-halfW);
+  if(place)mapHaloText(cc,place,cx2,placeY,fs,800);
+  if(stateName)mapHaloText(cc,stateName,cx2,stateY,ss,700);
+ }
+ {
+  const t=used?used.name:'map tiles blocked',as=clamp(cw*.026,8,13);
+  cc.font=`600 ${as}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
+  const tw=cc.measureText(t).width+as;
+  cc.fillStyle='rgba(0,0,0,.55)';cc.fillRect(cw-tw-2,ch-as*1.7-2,tw,as*1.7);
+  cc.fillStyle='#fff';cc.fillText(t,cw-as*.5-2,ch-as*.6-2);
+ }
+ cv.srcName=used?((onSat?(style==='satlabel'?'Satellite + Labels':'Satellite'):'Street')+(wantSat&&!onSat?' (satellite blocked, using street)':'')):'no tiles';
+ cv.isFallback=!used;
+ return cv;
+}
+async function buildMapCanvas(){
+ const r=sourceRect();
+ let bw=(r.w||0)*state.mapW/100,bh=(r.h||0)*state.mapH/100;
+ if(!(bw>20&&bh>20)){bw=520;bh=380;}
+ const m=Math.max(bw,bh);
+ let f=Math.max(1,640/m);f=Math.min(f,1400/m);
+ return renderMap(Math.max(96,Math.round(bw*f)),Math.max(96,Math.round(bh*f)));
+}
+async function rebuildMap(){
+ if(userMapImg){mapImg=userMapImg;return;}
+ if(!mapGeo)return;
+ const tok=++mapBuildToken;
+ const cv=await buildMapCanvas();
+ if(tok!==mapBuildToken||!cv)return;
+ mapImg=cv;
+ drawMapPreview();drawGeoPreview();
+}
+function scheduleMapRebuild(){
+ clearTimeout(mapTimer);
+ mapTimer=setTimeout(()=>{rebuildMap().catch(e=>console.warn('map rebuild failed',e));},300);
+}
+async function makeMap(la,lo){
+ if(!mapGeo)mapGeo={lat:la,lon:lo,bbox:null,poly:null};
+ return buildMapCanvas();
+}
+
+/* ---------- Find Location (State + District/Town) ---------- */
+async function findLocation(){
+ const tok=++findToken;
+ const place=$('gPlace').value.trim(),stateName=$('gState').value.trim();
+ if(!place&&!stateName){$('gCoords').textContent='Enter a State and District / Town.';return;}
+ const q=[place,stateName,'India'].filter(Boolean).join(', ');
+ $('gCoords').textContent='Finding '+q+'…';
+ let p=await geocodeAny(q,place,stateName);
+ if(tok!==findToken)return;
+ if(!p&&$('startLat').dataset.auto!=='1'){
+  const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
+  if(isFinite(sl)&&isFinite(so))p={lat:sl,lon:so,bbox:null,poly:null};
+ }
+ if(!p){
+  drawMapPreview('Location not found');
+  $('gCoords').textContent='Location not found (geocoder blocked or name not recognised). Check the State / District spelling, or type Start Latitude / Longitude and press Find Location again.';
+  return;
+ }
+ lat=p.lat;lon=p.lon;
+ mapGeo={lat:p.lat,lon:p.lon,bbox:p.bbox,poly:p.poly};
+ const sEl=$('startLat'),oEl=$('startLon');
+ if(!sEl.value||sEl.dataset.auto==='1'){
+  sEl.value=lat.toFixed(6);oEl.value=lon.toFixed(6);sEl.dataset.auto='1';oEl.dataset.auto='1';
+ }
+ gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
+ state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
+ state.mapW=+$('gMapW').value||26;state.mapH=+$('mapH').value||29;
+ $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
+ try{await rebuildMap();}catch(e){console.warn('map failed',e);}
+ if(tok!==findToken)return;
+ if(!userMapImg&&(!mapImg||!mapImg.width))mapImg=makeFallbackMap(lat,lon);
+ $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+
+  (mapImg&&mapImg.srcName||'placeholder')+(p.poly?' • district outline shown':'')+
+  (mapImg&&mapImg.isFallback?' (map tiles blocked — check internet / ad-blocker, then press Find Location again)':'');
+ try{loadRealGPSRoute();}catch(e){}
+ drawMapPreview();drawGeoPreview();
+}
+$('findLocation').onclick=findLocation;
+$('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';tileCache.clear();findLocation();};
+
+/* ---------- re-build triggers ---------- */
+['gState','gPlace'].forEach(id=>$(id).addEventListener('input',()=>{
+ clearTimeout(findTimer);
+ findTimer=setTimeout(()=>{if($('geoSection').style.display!=='none')findLocation();},1300);
+}));
+['gMapW','mapH','gMapStyle','gZoom','gMapView'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
+$('gMapStyle').addEventListener('change',scheduleMapRebuild);
+$('gMapView').addEventListener('change',scheduleMapRebuild);
+$('gZoom').addEventListener('input',()=>{$('gZoomVal').textContent=$('gZoom').value;});
+geo.addEventListener('pointerup',scheduleMapRebuild);
+['applyCrop','resetCrop'].forEach(id=>$(id).addEventListener('click',scheduleMapRebuild));
+['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.auto='0';}));
+
+function readRunningCoords(){
+  startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
+  endLat=parseFloat($('endLat').value); endLon=parseFloat($('endLon').value);
+  return [startLat,startLon].every(Number.isFinite);
+}
+
+async function loadRealGPSRoute(){
+  if(!readRunningCoords()) return;
+  if(!Number.isFinite(endLat)||!Number.isFinite(endLon)) return;
+  const key=[startLat,startLon,endLat,endLon].map(v=>v.toFixed(6)).join(',');
+  if(key===gpsRouteKey || gpsRouteLoading) return;
+  gpsRouteLoading=true;
+  $('runningCoords').textContent='Loading real road route…';
+  try{
+    const url='https://router.project-osrm.org/route/v1/driving/'+
+      `${startLon},${startLat};${endLon},${endLat}`+
+      '?overview=full&geometries=geojson&steps=false';
+    const r=await fetch(url,{headers:{Accept:'application/json'}});
+    if(!r.ok) throw Error('Route request failed');
+    const j=await r.json();
+    if(j.code!=='Ok'||!j.routes?.[0]?.geometry?.coordinates?.length) throw Error('No route');
+
+    gpsRoute=j.routes[0].geometry.coordinates.map(([lo,la])=>({lat:la,lon:lo}));
+    gpsRouteDistances=[0];
+    for(let i=1;i<gpsRoute.length;i++){
+      gpsRouteDistances[i]=gpsRouteDistances[i-1]+gpsDistanceMeters(
+        gpsRoute[i-1].lat,gpsRoute[i-1].lon,gpsRoute[i].lat,gpsRoute[i].lon
+      );
+    }
+    gpsRouteTotal=gpsRouteDistances[gpsRouteDistances.length-1]||0;
+    gpsRouteKey=key;
+    $('runningCoords').textContent='Real road GPS route loaded';
+    drawGeoPreview();
+  }catch(e){
+    gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;gpsRouteKey='';
+    $('runningCoords').textContent='Road route unavailable — using smooth GPS movement';
+    drawGeoPreview();
+  }finally{gpsRouteLoading=false;}
+}
+
+function gpsDistanceMeters(aLat,aLon,bLat,bLon){
+  const R=6371000, p1=aLat*Math.PI/180, p2=bLat*Math.PI/180;
+  const dp=(bLat-aLat)*Math.PI/180, dl=(bLon-aLon)*Math.PI/180;
+  const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+
+function getRoutePoint(progress){
+  if(!gpsRoute.length) return null;
+  if(progress<=0) return gpsRoute[0];
+  if(progress>=1) return gpsRoute[gpsRoute.length-1];
+  const target=progress*gpsRouteTotal;
+  let lo=0,hi=gpsRouteDistances.length-1;
+  while(lo<hi){
+    const mid=(lo+hi)>>1;
+    if(gpsRouteDistances[mid]<target) lo=mid+1; else hi=mid;
+  }
+  const i=Math.max(1,lo), a=gpsRoute[i-1], b=gpsRoute[i];
+  const span=Math.max(0.000001,gpsRouteDistances[i]-gpsRouteDistances[i-1]);
+  const t=(target-gpsRouteDistances[i-1])/span;
+  return {lat:a.lat+(b.lat-a.lat)*t,lon:a.lon+(b.lon-a.lon)*t};
+}
+
+function getRunningCoords(seconds){
+  const trimStart=+$('trimStart').value||0;
+  const trimEnd=+$('trimEnd').value||duration;
+  const length=Math.max(0.001,trimEnd-trimStart);
+  const p=clamp(seconds/length,0,1);
+  if(!readRunningCoords()) return {lat,lon};
+
+  const seed=(startLat*1000003+startLon*9176+(endLat||0)*37+(endLon||0)*13);
+  const rand=(n)=>{
+    const x=Math.sin(seed+n*12.9898)*43758.5453;
+    return x-Math.floor(x);
+  };
+
+  const cosLat=Math.max(.2,Math.cos(startLat*Math.PI/180));
+  const mToLat=m=>m/111320;
+  const mToLon=m=>m/(111320*cosLat);
+
+  const radius=Math.max(18,Math.min(90,25+length*0.7));
+  const points=[];
+  for(let i=0;i<13;i++){
+    if(i===0||i===12){ points.push({x:0,y:0}); continue; }
+    const angle=rand(i)*Math.PI*2;
+    const r=radius*(0.35+rand(i+30)*0.65);
+    points.push({x:Math.cos(angle)*r,y:Math.sin(angle)*r});
+  }
+
+  function wander(q){
+    q=clamp(q,0,1);
+    const pos=q*12;
+    const i=Math.min(11,Math.floor(pos));
+    const t=pos-i;
+    const ease=t*t*(3-2*t);
+    const a=points[i], b=points[i+1];
+    return {x:a.x+(b.x-a.x)*ease,y:a.y+(b.y-a.y)*ease};
+  }
+
+  if(p<=0.5){
+    const w=wander(p*2);
+    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
+  }
+
+  const q=(p-0.5)*2;
+  const w=wander(q);
+  const hasEnd=Number.isFinite(endLat)&&Number.isFinite(endLon)&&
+               (Math.abs(endLat-startLat)>0.0000001||Math.abs(endLon-startLon)>0.0000001);
+  if(!hasEnd){
+    return {lat:startLat+mToLat(w.y),lon:startLon+mToLon(w.x)};
+  }
+
+  const endNorth=(endLat-startLat)*111320;
+  const endEast=(endLon-startLon)*111320*cosLat;
+  const routeWeight=q*q*(3-2*q);
+  return {
+    lat:startLat+mToLat(w.y*(1-routeWeight)+endNorth*routeWeight),
+    lon:startLon+mToLon(w.x*(1-routeWeight)+endEast*routeWeight)
+  };
+}
+function updateRunningCoords(seconds){
+  const c=getRunningCoords(seconds);
+  if(c.lat!=null&&c.lon!=null) $('runningCoords').textContent=`Running Lat ${c.lat.toFixed(6)}°  Long ${c.lon.toFixed(6)}°`;
+  return c;
+}
+$('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat').value=lat.toFixed(6); $('startLon').value=lon.toFixed(6); if(!$('endLat').value)$('endLat').value=lat.toFixed(6); if(!$('endLon').value)$('endLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
+$('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
+['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
+
+/* ===== END OF PART 4 — paste PART 5 directly below this line (still inside the same <script>) ===== */
+  function computeGeoLayout(W,H){
+  const pad=Math.max(6,Math.round(H*.012));
+  const mapW=clamp(W*state.mapW/100,24,W-2*pad);
+  const mapH=clamp(H*state.mapH/100,24,H*.96-2*pad);
+  let stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
+  if(!state.mapMoved)stampH=Math.min(H*.96,Math.max(stampH,mapH+2*pad));
+  const stampY=Math.round(H-stampH);
+  let mapX,mapY;
+  if(!state.mapMoved){
+    mapX=pad;
+    mapY=stampY+(stampH-mapH)/2;
+  }else{
+    mapX=clamp(W*state.mapX/100,0,Math.max(0,W-mapW));
+    mapY=clamp(H*state.mapY/100,0,Math.max(0,H-mapH));
+  }
+  return {pad,mapW,mapH,mapX,mapY,stampH,stampY};
+}
+
+function drawGeoFrame(baseCtx,W,H,seconds){
+  const stampOpacity=clamp(state.gOpacity/100,0,1);
+  const mapOpacity=clamp(state.gMapO/100,0,1);
+  const L=computeGeoLayout(W,H);
+  const {mapW,mapH,mapX,mapY,stampH,stampY}=L;
+  const stampX=0,stampW=W;
+  const stampRadius=Math.max(18,Math.round(stampH*.14));
+  const stampPad=Math.max(5,Math.round(stampH*.022));
+  const stampGap=Math.max(12,Math.round(stampH*.045));
+
+  // blurred backdrop
+  if(stampOpacity>0.02){
+    const bw=Math.max(8,Math.round(W/28)),bh=Math.max(4,Math.round(stampH/28));
+    _blur.width=bw;_blur.height=bh;
+    const bc=_blur.getContext('2d');bc.imageSmoothingQuality='high';
+    bc.drawImage(baseCtx.canvas,0,stampY,W,stampH,0,0,bw,bh);
+    baseCtx.save();
+    baseCtx.globalAlpha=Math.min(1,stampOpacity*1.6);
+    baseCtx.imageSmoothingEnabled=true;baseCtx.imageSmoothingQuality='high';
+    roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
+    baseCtx.clip();
+    baseCtx.drawImage(_blur,0,0,bw,bh,stampX,stampY,stampW,stampH);
+    baseCtx.restore();
+  }
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='rgba(0,0,0,.76)';
+  roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
+  baseCtx.fill();
+  baseCtx.restore();
+
+  // map
+  const mr=Math.max(6,Math.min(mapW,mapH)*.06);
+  if(mapImg&&mapImg.width>0&&mapImg.height>0){
+    baseCtx.save();
+    baseCtx.globalAlpha=mapOpacity;
+    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
+    baseCtx.clip();
+    baseCtx.imageSmoothingEnabled=true;baseCtx.imageSmoothingQuality='high';
+    const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height);
+    const dw=mapImg.width*ms,dh=mapImg.height*ms;
+    baseCtx.drawImage(mapImg,mapX+(mapW-dw)/2,mapY+(mapH-dh)/2,dw,dh);
+    baseCtx.restore();
+    baseCtx.save();
+    baseCtx.globalAlpha=mapOpacity;
+    baseCtx.strokeStyle='#fff';
+    baseCtx.lineWidth=Math.max(2,Math.min(mapW,mapH)*.018);
+    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
+    baseCtx.stroke();
+    baseCtx.restore();
+  }
+
+  // logo
+  const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
+  const logoCenterX=clamp(W*state.logoX/100,stampX+stampW*.72+logoSize/2,stampX+stampW-logoSize/2-stampPad);
+  const logoCenterY=clamp(stampY+stampH*(state.logoY/100),stampY+logoSize/2+stampPad,stampY+stampH-logoSize/2-stampPad);
+  const logoLeft=logoCenterX-logoSize/2;
+
+  // text (starts to the right of the map)
+  let textX=stampX+stampW*.255;
+  if(mapImg&&mapY+mapH>stampY&&mapX<stampW*.6)textX=Math.max(textX,mapX+mapW+Math.max(10,stampGap));
+  const maxW=Math.max(120,logoLeft-stampGap-textX);
+  const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
+  const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
+  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+  const address=$('gAddress').value.trim();
+  const running=getRunningCoords(seconds);
+  const coordText=`Lat ${running.lat==null?'—':running.lat.toFixed(6)}°  Long ${running.lon==null?'—':running.lon.toFixed(6)}°`;
+  updateRunningCoords(seconds);
+  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
+
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  baseCtx.fillStyle='#fff';
+  baseCtx.textBaseline='alphabetic';
+  baseCtx.shadowColor='rgba(0,0,0,.30)';
+  baseCtx.shadowBlur=Math.max(1,stampH*.008);
+  baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
+  const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
+  let yy=stampY+stampPad+titleSize;
+  titleLines.forEach(line=>{baseCtx.fillText(line,textX,yy);yy+=titleSize*1.02});
+  baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
+  const lineGap=Math.max(3,detailSize*.25);
+  const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
+  addressLines.forEach(line=>{if(yy<=stampY+stampH-stampPad)baseCtx.fillText(line,textX,yy);yy+=detailSize+lineGap});
+  if(yy<=stampY+stampH-stampPad){baseCtx.fillText(coordText,textX,yy);yy+=detailSize+lineGap*1.05;}
+  if(yy<=stampY+stampH-stampPad)baseCtx.fillText(dateTime,textX,yy);
+  baseCtx.restore();
+
+  baseCtx.save();
+  baseCtx.globalAlpha=stampOpacity;
+  drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
+  baseCtx.restore();
+
+  // preview-only handles (never exported)
+  if(baseCtx===gctx&&mapImg){
+    baseCtx.save();
+    baseCtx.strokeStyle='rgba(255,255,255,.95)';
+    baseCtx.lineWidth=Math.max(1,2*W/geo.width);
+    baseCtx.setLineDash([6,4]);
+    baseCtx.strokeRect(mapX,mapY,mapW,mapH);
+    baseCtx.setLineDash([]);
+    const hs=Math.max(10,14*W/geo.width);
+    baseCtx.fillStyle='rgba(255,255,255,.95)';
+    baseCtx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
+    baseCtx.restore();
+  }
+}
+function prepareOutput(){
+ const r=sourceRect();
+ outputW=Math.max(2,Math.round(r.w/2)*2);
+ outputH=Math.max(2,Math.round(r.h/2)*2);
+ work.width=outputW;work.height=outputH;
+}
+function exportNeedsFrameProcessing(){
+  return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null);
+}
+function drawExportFrame(elapsedOverride){
+  const r=sourceRect();
+  wctx.clearRect(0,0,outputW,outputH);
+  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
+  applyAllTextRemoval(wctx,outputW,outputH,r,true);
+  if(lat!=null&&lon!=null){
+    const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
+    drawGeoFrame(wctx,outputW,outputH,elapsed);
+  }
+}
+function seekVideo(target){
+  return new Promise(resolve=>{
+    const t=clamp(target,0,duration||target);
+    if(Math.abs(video.currentTime-t)<1e-4&&!video.seeking){requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));return;}
+    let done=false;
+    const finish=()=>{if(done)return;done=true;video.removeEventListener('seeked',onSeeked);resolve();};
+    const onSeeked=()=>{requestAnimationFrame(()=>requestAnimationFrame(finish));};
+    video.addEventListener('seeked',onSeeked,{once:true});
+    video.currentTime=t;
+    setTimeout(finish,2000);
+  });
+}
+async function pickVideoCodec(width,height,fps){
+  const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
+  for(const hw of ['prefer-hardware','no-preference']){
+    for(const codec of candidates){
+      try{
+        const s=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:8_000_000,framerate:fps,hardwareAcceleration:hw});
+        if(s&&s.supported)return {codec,hardwareAcceleration:hw};
+      }catch(e){}
+    }
+  }
+  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
+}
+async function estimateFps(){
+  const std=[23.976,24,25,29.97,30,48,50,59.94,60];
+  if(typeof video.requestVideoFrameCallback!=='function')return 30;
+  const saved=video.currentTime,muted=video.muted;
+  const times=[];
+  await new Promise(resolve=>{
+    let done=false;
+    const fin=()=>{if(done)return;done=true;try{video.pause()}catch(e){}resolve()};
+    const cb=(now,m)=>{times.push(m.mediaTime);if(times.length>=14){fin();return}video.requestVideoFrameCallback(cb)};
+    video.muted=true;
+    video.requestVideoFrameCallback(cb);
+    video.play().catch(fin);
+    setTimeout(fin,2000);
+  });
+  video.muted=muted;
+  await seekVideo(saved);
+  const diffs=[];for(let i=1;i<times.length;i++){const d=times[i]-times[i-1];if(d>0.004&&d<0.2)diffs.push(d)}
+  if(diffs.length<4)return 30;
+  diffs.sort((a,b)=>a-b);
+  const fps=1/diffs[Math.floor(diffs.length/2)];
+  let best=std[0];for(const v of std)if(Math.abs(v-fps)<Math.abs(best-fps))best=v;
+  return Math.abs(best-fps)<2?best:Math.round(fps);
+}
+async function exportVideoFrameAccurate(){
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=Math.max(0.05,end-start);
+  $('exportStatus').textContent='Detecting video frame rate…';
+  const fps=await estimateFps();
+  prepareOutput();
+  video.pause();
+  if(lat!=null&&lon!=null&&(!mapImg||!mapImg.width)){
+    $('exportStatus').textContent='Preparing map…';
+    try{mapImg=await makeMap(lat,lon);}catch(e){mapImg=makeFallbackMap(lat,lon);}
+    if(!mapImg||!mapImg.width)mapImg=makeFallbackMap(lat,lon);
+  }
+  const audioPromise=(async()=>{
+    try{
+      const arr=await file.arrayBuffer();
+      const actx=new (window.AudioContext||window.webkitAudioContext)();
+      const buf=await actx.decodeAudioData(arr);
+      try{actx.close()}catch(e){}
+      return buf;
+    }catch(e){console.warn('No usable audio track for export',e);return null;}
+  })();
+  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
+  const audioBuffer=await audioPromise;
+  const hasAudio=!!audioBuffer;
+  const muxer=new Mp4Muxer.Muxer({
+    target:new Mp4Muxer.ArrayBufferTarget(),
+    fastStart:'in-memory',
+    firstTimestampBehavior:'offset',
+    video:{codec:'avc',width:outputW,height:outputH},
+    audio:hasAudio?{codec:'aac',numberOfChannels:audioBuffer.numberOfChannels,sampleRate:audioBuffer.sampleRate}:undefined,
+  });
+  let encoderFailed=null,rejectEncoding=null,videoEncoder=null,restoreMute=video.muted;
+  const bitrate=clamp(Math.round(outputW*outputH*fps*0.12),4_000_000,20_000_000);
+  try{
+    videoEncoder=new VideoEncoder({
+      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
+      error:e=>{console.error('video encoder error',e);encoderFailed=e;if(rejectEncoding)rejectEncoding(e);}
+    });
+    videoEncoder.configure({codec,width:outputW,height:outputH,bitrate,framerate:fps,hardwareAcceleration});
+    const needsFrameProcessing=exportNeedsFrameProcessing();
+    $('exportStatus').textContent=needsFrameProcessing?'Rendering selected changes… 0% (keep this tab open)':'Rendering crop/trim only… 0% (keep this tab open)';
+    video.pause();restoreMute=video.muted;video.muted=true;
+    await seekVideo(start);
+    const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
+    let rate=needsFrameProcessing?(extraRects.length>1?2:3):6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
+    const tBegin=performance.now();
+    video.playbackRate=rate;
+    await new Promise((resolve,reject)=>{
+      rejectEncoding=reject;
+      let finished=false,lastCb=performance.now(),dog=null;
+      const finish=()=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(e){}resolve()};
+      const fail=e=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(x){}reject(e)};
+      dog=setInterval(()=>{
+        if(!finished&&performance.now()-lastCb>12000&&videoEncoder.encodeQueueSize<3)
+          fail(new Error('The browser stopped delivering video frames (keep this tab visible while rendering).'));
+      },1000);
+      video.addEventListener('ended',finish,{once:true});
+      const encodeCanvas=ts=>{
+        const vf=new VideoFrame(work,{timestamp:Math.round(ts*1e6),duration:frameDur});
+        videoEncoder.encode(vf,{keyFrame:n%keyEvery===0});vf.close();n++;
+      };
+      const onFrame=(now,m)=>{
+        if(finished)return;
+        lastCb=performance.now();
+        try{
+          if(encoderFailed)throw encoderFailed;
+          const mt=m.mediaTime;
+          if(mt>=end-0.0005){finish();return}
+          if(mt>=start-0.001&&mt>lastMT+1e-4){
+            const t0=performance.now();
+            const rel=n===0?0:Math.max(0,mt-start);
+            if(n===0||rel>prevRel+0.0005){
+              if(lastMT>=0){
+                const gap=Math.round((mt-lastMT)*fps)-1;
+                if(gap>=1){
+                  maxRate=Math.max(1,Math.min(maxRate,rate*.8));
+                  rate=Math.min(rate,maxRate);video.playbackRate=rate;
+                  if(gap<=8)for(let k=1;k<=gap;k++){const ts=prevRel+k/fps;if(ts<rel-0.0005)encodeCanvas(ts);}
+                }
+              }
+              drawExportFrame(rel);
+              encodeCanvas(rel);
+              prevRel=rel;
+            }
+            lastMT=mt;
+            const proc=performance.now()-t0;
+            procEMA=procEMA?procEMA*.8+proc*.2:proc;
+            if(++sinceAdj>=8){
+              sinceAdj=0;
+              const target=clamp((1000/fps)/(procEMA*1.5+3),1,maxRate);
+              rate=clamp(rate*.5+target*.5,1,maxRate);
+              video.playbackRate=rate;
+            }
+            if(n%5===0){
+              const pct=Math.min(99,Math.round(rel/length*99));
+              $('exportStatus').textContent='Rendering… '+pct+'% ('+n+' frames, '+Math.round((performance.now()-tBegin)/1000)+'s) — keep this tab open';
+            }
+            if(videoEncoder.encodeQueueSize>12){
+              video.pause();
+              const iv=setInterval(()=>{
+                if(finished){clearInterval(iv);return}
+                if(videoEncoder.encodeQueueSize<3){clearInterval(iv);video.play().catch(fail)}
+              },8);
+            }
+          }
+          video.requestVideoFrameCallback(onFrame);
+        }catch(e){fail(e)}
+      };
+      video.requestVideoFrameCallback(onFrame);
+      video.play().catch(fail);
+    });
+    video.playbackRate=1;
+    video.muted=restoreMute;
+    if(encoderFailed)throw encoderFailed;
+    $('exportStatus').textContent='Finishing video encoding… 91%';
+    await Promise.race([videoEncoder.flush(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Video encoder flush timed out.')),60000))]);
+    videoEncoder.close();videoEncoder=null;rejectEncoding=null;
+    if(hasAudio){
+      $('exportStatus').textContent='Encoding audio… 94%';
+      const sr=audioBuffer.sampleRate,ch=audioBuffer.numberOfChannels;
+      const s0=Math.floor(start*sr),s1=Math.min(audioBuffer.length,Math.floor(end*sr));
+      const audioEncoder=new AudioEncoder({output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),error:e=>console.error('audio encoder error',e)});
+      audioEncoder.configure({codec:'mp4a.40.2',sampleRate:sr,numberOfChannels:ch,bitrate:128000});
+      const chunkSize=8192,totalSamples=Math.max(1,s1-s0);
+      for(let s=s0;s<s1;s+=chunkSize){
+        const n2=Math.min(chunkSize,s1-s);
+        const interleaved=new Float32Array(n2*ch);
+        for(let c=0;c<ch;c++){const data=audioBuffer.getChannelData(c);for(let k=0;k<n2;k++)interleaved[k*ch+c]=data[s+k];}
+        const audioData=new AudioData({format:'f32',sampleRate:sr,numberOfFrames:n2,numberOfChannels:ch,timestamp:Math.round((s-s0)/sr*1e6),data:interleaved});
+        audioEncoder.encode(audioData);audioData.close();
+        $('exportStatus').textContent='Encoding audio… '+Math.min(98,94+Math.round(((s-s0)/totalSamples)*5))+'%';
+      }
+      $('exportStatus').textContent='Finishing audio… 99%';
+      await Promise.race([audioEncoder.flush(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Audio encoder flush timed out.')),15000))]);
+      audioEncoder.close();
+    }
+    $('exportStatus').textContent='Finalizing MP4…';
+    muxer.finalize();
+    exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
+    $('exportStatus').textContent='Video rendered in '+Math.round((performance.now()-tBegin)/1000)+'s — 100% complete. Download button is ready.';
+    $('downloadVideo').disabled=false;
+  }finally{
+    rejectEncoding=null;
+    video.muted=restoreMute;
+    video.playbackRate=1;
+    if(videoEncoder){try{videoEncoder.close()}catch(e){}}
+  }
+}
+async function exportVideo(){
+  if(!file)return;
+  const start=clamp(+$('trimStart').value||0,0,duration);
+  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
+  const length=end-start;
+  prepareOutput();
+  video.pause();
+  await seekVideo(start);
+  const fps=30;
+  const canvasStream=work.captureStream(fps);
+  const sourceStream=video.captureStream?video.captureStream():null;
+  if(sourceStream)sourceStream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
+  let mime='';
+  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
+  if(!mime)throw new Error('This Chrome cannot record video.');
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
+  const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
+  let stopped=false,frameId=null,raf=0;
+  const stop=()=>{if(stopped)return;stopped=true;if(frameId!==null&&video.cancelVideoFrameCallback)try{video.cancelVideoFrameCallback(frameId)}catch(e){}if(raf)cancelAnimationFrame(raf);try{video.pause()}catch(e){}try{rec.stop()}catch(e){}};
+  const render=(now,meta)=>{
+    if(stopped)return;
+    const t=meta&&meta.mediaTime!=null?meta.mediaTime:video.currentTime;
+    const elapsed=t-start;
+    if(elapsed>=length-0.02){drawExportFrame(length);stop();return}
+    drawExportFrame(elapsed);
+    $('exportStatus').textContent='Rendering (recorder mode)… '+Math.min(99,Math.round(elapsed/length*100))+'%';
+    if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  };
+  $('exportStatus').textContent='Rendering (recorder mode)… 0%';
+  rec.start(500);
+  video.muted=true;video.playbackRate=1;
+  if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
+  await video.play();
+  while(!stopped){if(video.currentTime>=end-0.02){stop();break}await new Promise(r=>setTimeout(r,30));}
+  exportBlob=await done;
+  video.muted=false;
+  $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
+  $('downloadVideo').disabled=false;
+}
+async function doExport(){
+  exporting=true;
+  try{await doExportInner();}finally{exporting=false;drawPreview();drawGeoPreview();drawTimeline();}
+}
+async function doExportInner(){
+  const hasWebCodecs=typeof window.VideoEncoder!=='undefined'&&typeof window.AudioEncoder!=='undefined'&&typeof window.Mp4Muxer!=='undefined';
+  if(hasWebCodecs){
+    try{await exportVideoFrameAccurate();return;}
+    catch(err){console.warn('Fast MP4 export failed, falling back to recorder export.',err);video.pause();video.playbackRate=1;}
+  }
+  await exportVideo();
+  if(exportBlob&&exportBlob.type.includes('webm')){
+    const statusEl=($('geoSection').style.display!=='none')?$('geoStatus'):$('exportStatus');
+    statusEl.textContent+=' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
+  }
+}
+$('downloadVideo').onclick=async()=>{
+ if(!file)return;
+ $('downloadVideo').disabled=true;
+ const prevStatus=$('exportStatus').textContent;
+ try{await doExport();}
+ catch(err){console.error(err);$('exportStatus').textContent='Export failed: '+(err.message||err);$('downloadVideo').disabled=false;return;}
+ if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
+ const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
+ const base=file.name.replace(/\.[^.]+$/,'');
+ const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
+ const ext=exportBlob.type.includes('mp4')?'mp4':'webm';a.download=base+tag+'.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+ $('downloadVideo').disabled=false;
+}
+
+/* ===== END OF PART 5 — paste PART 6 directly below this line (still inside the same <script>) ===== */
+  let autoFound=false;function autoFind(){if(!autoFound&&lat==null){autoFound=true;setTimeout(()=>{try{findLocation()}catch(e){console.warn(e)}},300);}}
+$('goGeo').onclick=()=>{autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
+$('backEdit').onclick=()=>{video.pause();$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview();updateSelectionBox()}
+$('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');updateSelectionBox()}
+$('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
+for(const id of ['gOpacity','gMapO','gHeight','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
+ $(id).oninput=()=>{
+   state[id]=+$(id).value;
+   if(id==='gMapW')state.mapW=+$(id).value;
+   if(id==='mapH')state.mapH=+$(id).value;
+   const valEl=$(id+'Val');
+   if(valEl)valEl.textContent=$(id).value+'%';
+   drawGeoPreview();
+ }
+}
+let mapDrag=null;
+function endMapDrag(){mapDrag=null;}
+function mapPointerPos(e){
+ const r=geo.getBoundingClientRect();
+ return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};
+}
+geo.addEventListener('pointerdown',e=>{
+  if(!mapImg||!geo.width)return;
+  const L=computeGeoLayout(geo.width,geo.height);
+  const p=mapPointerPos(e);
+  const hs=Math.max(16,24*geo.width/Math.max(1,geo.getBoundingClientRect().width));
+  const onCorner=Math.abs(p.x-(L.mapX+L.mapW))<=hs&&Math.abs(p.y-(L.mapY+L.mapH))<=hs;
+  const inside=p.x>=L.mapX&&p.x<=L.mapX+L.mapW&&p.y>=L.mapY&&p.y<=L.mapY+L.mapH;
+  if(!onCorner&&!inside)return;
+  e.preventDefault();
+  geo.setPointerCapture(e.pointerId);
+  mapDrag={mode:onCorner?'resize':'move',sx:p.x,sy:p.y,x:L.mapX,y:L.mapY,w:L.mapW,h:L.mapH};
+});
+geo.addEventListener('pointermove',e=>{
+  if(!mapDrag)return;
+  const W=geo.width,H=geo.height,p=mapPointerPos(e);
+  const dx=p.x-mapDrag.sx,dy=p.y-mapDrag.sy;
+  if(mapDrag.mode==='move'){
+    state.mapMoved=true;
+    state.mapX=clamp((mapDrag.x+dx)/W*100,0,100-state.mapW);
+    state.mapY=clamp((mapDrag.y+dy)/H*100,0,100-state.mapH);
+  }else{
+    const maxW=state.mapMoved?100-state.mapX:90, maxH=state.mapMoved?100-state.mapY:90;
+    state.mapW=clamp((mapDrag.w+dx)/W*100,5,maxW);
+    state.mapH=clamp((mapDrag.h+dy)/H*100,5,maxH);
+    $('gMapW').value=Math.round(state.mapW);$('gMapWVal').textContent=Math.round(state.mapW)+'%';
+    $('mapH').value=Math.round(state.mapH);$('mapHVal').textContent=Math.round(state.mapH)+'%';
+  }
+  drawGeoPreview();
+});
+geo.addEventListener('pointerup',endMapDrag);
+geo.addEventListener('pointercancel',endMapDrag);
+
+function drawGeoPreview(){
+ if(exporting||!video.videoWidth)return;
+ const r=sourceRect();
+ const max=1100,s=Math.min(1,max/r.w);
+ const nw=Math.max(1,Math.round(r.w*s));
+ const nh=Math.max(1,Math.round(r.h*s));
+ if(geo.width!==nw)geo.width=nw;
+ if(geo.height!==nh)geo.height=nh;
+ gctx.clearRect(0,0,geo.width,geo.height);
+ gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
+ applyAllTextRemoval(gctx, geo.width, geo.height, r, false);
+ if(lat!=null && lon!=null){
+   drawGeoFrame(gctx, geo.width, geo.height, Math.max(0, video.currentTime - (+$('trimStart').value || 0)));
+ }
+}
+$('exportGeo').onclick=async()=>{
+ if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}
+ $('exportGeo').disabled=true;
+ $('downloadGeo').disabled=true;
+ $('geoStatus').textContent='Rendering GeoTagged Video…';
+ const poll=setInterval(()=>{if(exporting)$('geoStatus').textContent=$('exportStatus').textContent},300);
+ try{
+   await doExport();
+   if(exportBlob){
+     $('downloadGeo').disabled=false;
+     $('geoStatus').textContent='GeoTagged video rendered successfully. Download button is ready.';
+   }else{
+     $('geoStatus').textContent='Could not render the GeoTagged video.';
+   }
+ }catch(err){
+   console.error(err);
+   $('geoStatus').textContent='GeoTagged video export failed: '+(err.message||err);
+ }finally{
+   clearInterval(poll);
+   $('exportGeo').disabled=false;
+ }
+}
+$('downloadGeo').onclick=()=>{
+ if(!exportBlob||!file)return;
+ const a=document.createElement('a');
+ const url=URL.createObjectURL(exportBlob);
+ a.href=url;
+ const base=file.name.replace(/\.[^.]+$/,'');
+ const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+'_geotag.'+ext;
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),3000);
+};
+
+video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
+setInterval(()=>{if(video.videoWidth&&!exporting){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
+
+// ===== GeoTag live preview controls =====
+function playFromTrim(){
+  const s=+$('trimStart').value||0,e=+$('trimEnd').value||duration;
+  if(video.currentTime<s||video.currentTime>=e-0.05)video.currentTime=s;
+  video.muted=false;video.play();
+}
+$('geoPlay').onclick=playFromTrim;
+$('geoPause').onclick=()=>video.pause();
+$('geoRestart').onclick=()=>{video.currentTime=+$('trimStart').value||0;drawGeoPreview()};
+$('geoSeek').oninput=()=>{
+  const s=+$('trimStart').value||0,e=+$('trimEnd').value||duration;
+  video.currentTime=s+(e-s)*$('geoSeek').value/1000;
+};
+video.addEventListener('timeupdate',()=>{
+  const s=+$('trimStart').value||0,e=+$('trimEnd').value||duration;
+  if(e>s)$('geoSeek').value=Math.round((video.currentTime-s)/(e-s)*1000);
+});
+(function loop(){
+  if(!video.paused&&!exporting&&video.videoWidth){
+    if($('geoSection').style.display!=='none')drawGeoPreview();else drawPreview();
+  }
+  video.requestVideoFrameCallback?video.requestVideoFrameCallback(loop):requestAnimationFrame(loop);
+})();
+
+const _blur=document.createElement('canvas');
+drawMapPreview();
+updateBoxCount();
+</script>
+</body>
+</html>

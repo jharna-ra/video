@@ -244,7 +244,9 @@ input[type=range]{width:100%}
         <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
         <div class="sliderTop"><span>Map style</span><b></b></div>
         <select id="gMapStyle"><option value="satlabel" selected>Satellite + Labels</option><option value="sat">Satellite</option><option value="street">Street (lanes)</option></select>
-        <div class="sliderTop"><span>Map zoom (0 = fit whole district)</span><b id="gZoomVal">0</b></div><input id="gZoom" type="range" min="-4" max="5" step="1" value="0">
+        <div class="sliderTop"><span>Map view</span><b></b></div>
+        <select id="gMapView"><option value="detail" selected>Detailed (street level at pin)</option><option value="district">Whole district</option></select>
+        <div class="sliderTop"><span>Map zoom (0 = default, + closer, − wider)</span><b id="gZoomVal">0</b></div><input id="gZoom" type="range" min="-4" max="5" step="1" value="0">
       </div>
 
       <div class="card geoOptionCard">
@@ -307,7 +309,8 @@ input[type=range]{width:100%}
 <canvas id="workCanvas" style="display:none"></canvas>
 <canvas id="logoCanvas" width="200" height="120"></canvas>
 
-<script>
+<!-- ===== END OF PART 1 — paste PART 2 (starts with <script>) directly below this line ===== -->
+  <script>
 const $=id=>document.getElementById(id);
 const video=$('video'), view=$('viewCanvas'), vctx=view.getContext('2d',{willReadFrequently:true});
 const work=$('workCanvas'), wctx=work.getContext('2d',{willReadFrequently:true});
@@ -316,7 +319,7 @@ if(!wctx) throw new Error('Export canvas context unavailable');
 const stage=$('stage'), selBox=$('selection'), selection2=$('selection2');
 
 let file=null, videoURL=null, duration=0, playing=false;
-// whiteRect = first box (static-mask pipeline). extraRects = any number of additional boxes (per-frame detailed remover).
+// whiteRect = first box. extraRects = any number of additional boxes.
 let crop=null, cropMode=false, whiteRect=null, extraRects=[], removeMode=false, selecting=false, sx=0, sy=0, dragEl=null;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let startLat=null, startLon=null, endLat=null, endLon=null;
@@ -362,35 +365,20 @@ function drawBase(ctx2,W,H){
 }
 
 // =====================================================================
-//  CLEAN WHITE-TEXT REMOVAL
+//  TEXT REMOVAL ENGINE
+//  (the old unused static-mask code was removed; these stubs keep old calls working)
 // =====================================================================
 const wrCache=new Map();
 let staticMask=null, staticBuilding=null, staticTimer=null;
-
 function wrKey(){
   const w=whiteRect; if(!w)return '';
   return [w.x,w.y,w.w,w.h,JSON.stringify(crop),$('whiteThreshold').value,$('textThick').value,$('trimStart').value,$('trimEnd').value,duration].join('|');
 }
 function invalidateWR(){
   staticMask=null; wrCache.clear();
-  scheduleStaticMask(true);
 }
-function scheduleStaticMask(force){
-  if(force){clearTimeout(staticTimer);staticTimer=null;}
-  if(staticTimer||!whiteRect||!duration||exporting)return;
-  staticTimer=setTimeout(async()=>{
-    staticTimer=null;
-    if(exporting||!whiteRect||!duration)return;
-    if(staticMask&&staticMask.key===wrKey())return;
-    try{
-      video.pause();
-      setStatus('Analysing the text area across the video…');
-      await buildStaticMask();
-      setStatus('Text area analysed — the preview now shows the clean result.');
-    }catch(e){console.warn('text analysis failed',e)}
-    drawPreview();drawGeoPreview();
-  },force?250:450);
-}
+function scheduleStaticMask(){}
+async function buildStaticMask(){return null}
 
 function dilateMask(m,w,h,g){
   const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
@@ -449,59 +437,6 @@ function detectWhite(d,w,h,t,x0,y0,x1,y1,mr,thk){
   const near=dilateMask(mask,w,h,2);
   for(let p=0;p<N;p++)if(weak[p]&&near[p])mask[p]=1;
   return mask;
-}
-
-async function buildStaticMask(){
-  while(staticBuilding){try{await staticBuilding}catch(e){}}
-  if(!whiteRect||!duration)return null;
-  const key=wrKey();
-  if(staticMask&&staticMask.key===key)return staticMask;
-  const job=(async()=>{
-    const wr={...whiteRect},r={...sourceRect()};
-    const t=+$('whiteThreshold').value||115;
-    const s0=clamp(+$('trimStart').value||0,0,duration);
-    const e0=clamp(+$('trimEnd').value||duration,s0+.05,duration);
-    const rw=Math.max(2,Math.round(wr.w)),rh=Math.max(2,Math.round(wr.h));
-    const sc=Math.min(1,1200/Math.max(rw,rh));
-    const aw=Math.max(2,Math.round(rw*sc)),ah=Math.max(2,Math.round(rh*sc));
-    const cv=document.createElement('canvas');cv.width=aw;cv.height=ah;
-    const cx=cv.getContext('2d',{willReadFrequently:true});
-    const n=Math.min(14,Math.max(8,Math.ceil((e0-s0)/1.5)));
-    const count=new Uint16Array(aw*ah);
-    const mr=Math.max(7,Math.round(r.w*sc/60));
-    const saved=video.currentTime;
-    video.pause();
-    for(let i=0;i<n;i++){
-      await seekVideo(s0+(e0-s0)*(i+.5)/n);
-      cx.drawImage(video,r.x+wr.x,r.y+wr.y,wr.w,wr.h,0,0,aw,ah);
-      const id=cx.getImageData(0,0,aw,ah);
-      const thk=Math.max(3,Math.round((+$('textThick').value||9)*(r.w*sc)/1080));
-      const m=detectWhite(id.data,aw,ah,t,0,0,aw,ah,mr,thk);
-      if(m)for(let p=0;p<m.length;p++)if(m[p])count[p]++;
-    }
-    await seekVideo(saved);
-    const need=Math.max(2,Math.ceil(n*.5));
-    const out=document.createElement('canvas');out.width=aw;out.height=ah;
-    const ox=out.getContext('2d'),oi=ox.createImageData(aw,ah);let any=false;
-    for(let p=0;p<count.length;p++)if(count[p]>=need){
-      const i=p*4;oi.data[i]=oi.data[i+1]=oi.data[i+2]=255;oi.data[i+3]=255;any=true;
-    }
-    ox.putImageData(oi,0,0);
-    staticMask={key,canvas:out,any,sc:{}};
-  })();
-  staticBuilding=job;
-  try{await job}finally{staticBuilding=null}
-  return staticMask;
-}
-
-function scaledStatic(sm,w,h){
-  const k=w+'x'+h;if(sm.sc[k])return sm.sc[k];
-  const c=document.createElement('canvas');c.width=w;c.height=h;
-  const cx=c.getContext('2d',{willReadFrequently:true});
-  cx.imageSmoothingEnabled=true;cx.drawImage(sm.canvas,0,0,w,h);
-  const a=cx.getImageData(0,0,w,h).data,m=new Uint8Array(w*h);
-  for(let p=0;p<m.length;p++)m[p]=a[p*4+3]>70?1:0;
-  sm.sc[k]=m;return m;
 }
 
 function inpaintHole(d,w,h,hole,strength){
@@ -603,260 +538,87 @@ function inpaintHole(d,w,h,hole,strength){
   }
 }
 
-function removeWhiteFromCanvas(ctx2,W,H,rect){
+/* ===== ULTRA STRONG ALL-BOX TEXT REMOVER ===== */
+function removeTextRectUltra(ctx,W,H,rect,pass){
   if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  if(rect.w<2||rect.h<2)return;
+  const strong=(pass||0)>0;
+  const mg=Math.round((3+Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5))))*Math.max(.7,W/1080));
+  const rx0=Math.max(0,Math.floor(rect.x)-mg),ry0=Math.max(0,Math.floor(rect.y)-mg);
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+mg),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+mg);
   if(rx1-rx0<2||ry1-ry0<2)return;
-
-  const t=+$('whiteThreshold').value||115;
-  const strength=(+$('removeOpacity').value||100)/100;
-  const grow=Math.max(1,Math.round((+$('inpaintPasses').value||5)*W/1080*0.6));
-  const thk=Math.max(3,Math.round((+$('textThick').value||9)*W/1080));
-  const dynamic=$('textChanges').checked;
-  const key=wrKey();
-  const sm=(staticMask&&staticMask.key===key)?staticMask:null;
-  if(!sm&&!exporting&&!staticBuilding)scheduleStaticMask(false);
-  const useStatic=!!(sm&&sm.any);
-
-  const showMask=$('showMask').checked&&!exporting;
-  const cacheable=!exporting&&video.paused&&!showMask;
-  let ckey=null;
-  if(cacheable){
-    ckey=[W,H,rx0,ry0,rx1,ry1,t,thk,strength,grow,dynamic,sm?1:0,video.currentTime.toFixed(3),JSON.stringify(crop)].join('|');
-    const hit=wrCache.get(ckey);
-    if(hit){ctx2.putImageData(hit.img,hit.x0,hit.y0);return;}
-  }
-
-  const pad=Math.round(Math.max(16,Math.min(48,W/36)))+grow;
+  const power=Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5)));
+  const userT=Math.max(40,(+$('whiteThreshold').value||105)-power*7-(strong?18:0));
+  const k=Math.max(.7,W/1080);
+  const thick=Math.max(3,Math.round((+$('textThick').value||9)*k));
+  const grow=Math.max(4,Math.round(((+$('inpaintPasses').value||5)+power+(strong?2:0))*Math.max(.8,W/1080)));
+  const pad=Math.max(24,grow*5+thick*2);
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
-  const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
+  const img=ctx.getImageData(x0,y0,w,h),d=img.data;
+  const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
+  const lumOf=()=>{const l=new Float32Array(N);for(let p=0;p<N;p++){const i=p*4;l[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}return l;};
+  const clip=(m)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)m[y*w+x]=0;}return m;};
 
-  let hole=new Uint8Array(N),any=false;
-  const rectArea=(rx1-rx0)*(ry1-ry0);
-  let staticTooBig=false;
-  if(useStatic){
-    const rw=rx1-rx0,rh=ry1-ry0,sc=scaledStatic(sm,rw,rh);
-    let c=0;
-    for(let y=0;y<rh;y++){const o=(y+ry0-y0)*w+(rx0-x0);for(let x=0;x<rw;x++)if(sc[y*rw+x]){hole[o+x]=1;c++;}}
-    if(c/rectArea>0.08){hole.fill(0);staticTooBig=true;}else if(c)any=true;
+  // Pass 0: broad detector (white, coloured and contrasty lettering)
+  let lum=lumOf();
+  const rad=Math.max(2,Math.ceil(thick/2));
+  let opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
+  const mask=new Uint8Array(N);
+  for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
+    const p=y*w+x,i=p*4,L=lum[p];
+    const neigh=((lum[p-1]??L)+(lum[p+1]??L)+(lum[p-w]??L)+(lum[p+w]??L))/4;
+    const local=L-opened[p],contrast=L-neigh;
+    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),ch=mx-mn;
+    const bright=L>=Math.max(42,userT-75);
+    const whiteish=ch<=125&&L>=Math.max(45,userT-70);
+    const coloredBright=ch>35&&L>=Math.max(70,userT-25)&&(local>=5||contrast>=7);
+    const coloredEdge=ch>35&&L>=45&&(local>=10||contrast>=11);
+    const stroke=local>=16||contrast>=14;
+    if((whiteish&&local>=2)||(bright&&local>=8)||coloredBright||coloredEdge||stroke)mask[p]=1;
   }
-  if(dynamic||!useStatic||staticTooBig){
-    let tt=t,det=null;
-    for(let k=0;k<5;k++){
-      det=detectWhite(d,w,h,tt,rx0-x0,ry0-y0,rx1-x0,ry1-y0,Math.max(7,Math.round(W/60)),thk);
-      if(!det)break;
-      let c=0;for(let p=0;p<N;p++)c+=det[p];
-      if(c/rectArea<=0.08)break;
-      if(k===4)det=null;
-      tt+=20;
-    }
-    if(det)for(let p=0;p<N;p++)if(det[p]){hole[p]=1;any=true;}
+  // Multi-sensitivity white detector adds anti-aliased edges
+  const cfgs=[
+    {t:userT,thk:thick},
+    {t:Math.max(60,userT-22),thk:Math.max(3,Math.round(thick*.78))},
+    {t:Math.max(50,userT-40),thk:Math.max(2,Math.round(thick*.55))}
+  ];
+  for(const c of cfgs){
+    const m=detectWhite(d,w,h,c.t,ix0,iy0,ix1,iy1,Math.max(3,Math.round(W/90)),c.thk);
+    if(m)for(let p=0;p<N;p++)if(m[p])mask[p]=1;
   }
-  if(showMask){
-    let c=0;
-    if(any)for(let p=0;p<N;p++)if(hole[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;c++;}
-    ctx2.putImageData(img,x0,y0);
-    setStatus('Detected text pixels: '+(c/rectArea*100).toFixed(2)+'% of the selected box (red = will be removed).');
-    return;
+  if($('showMask').checked&&!exporting){
+    for(let p=0;p<N;p++)if(mask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
+    ctx.putImageData(img,x0,y0);return;
   }
+  let any=false;for(let p=0;p<N&&!any;p++)if(mask[p])any=true;
   if(!any)return;
 
-  hole=dilateMask(hole,w,h,grow);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const gx=x+x0,gy=y+y0;
-    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
-  }
+  // Main inpaint, then wider fringe passes
+  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,grow)),1);
+  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,Math.max(3,Math.floor(grow*.75)))),1);
 
-  inpaintHole(d,w,h,hole,strength);
-  ctx2.putImageData(img,x0,y0);
-  if(cacheable){
-    wrCache.set(ckey,{img,x0,y0});
-    if(wrCache.size>6)wrCache.delete(wrCache.keys().next().value);
-  }
-}
-function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
-
-/* EXTRA BOXES: micro-pixel exemplar inpainting.
-   The box is only a search area. Only pixels identified as white/grey lettering are changed,
-   and each replacement RGB value is copied from a real untouched pixel in the same frame. */
-function removeWhiteDetailedFromCanvasV3(ctx2,W,H,rect){
-  if(!rect)return;
-  const rx0=Math.max(0,Math.floor(rect.x)), ry0=Math.max(0,Math.floor(rect.y));
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)), ry1=Math.min(H,Math.ceil(rect.y+rect.h));
-  if(rx1-rx0<4||ry1-ry0<4)return;
-
-  const pad=10;
-  const x0=Math.max(0,rx0-pad), y0=Math.max(0,ry0-pad);
-  const x1=Math.min(W,rx1+pad), y1=Math.min(H,ry1+pad);
-  const w=x1-x0, h=y1-y0, N=w*h;
-  const img=ctx2.getImageData(x0,y0,w,h), d=img.data;
-  const original=new Uint8ClampedArray(d);
-  const mask=new Uint8Array(N);
-  const userT=+$('whiteThreshold').value||115;
-  const baseThk=+$('textThick').value||9;
-  const area=Math.max(1,(rx1-rx0)*(ry1-ry0));
-
-  const passes=[
-    {t:Math.max(72,userT-34), thk:2, mr:Math.max(3,Math.round(W/110))},
-    {t:Math.max(82,userT-24), thk:Math.max(2,Math.round(baseThk*.42)), mr:Math.max(4,Math.round(W/96))},
-    {t:Math.max(92,userT-14), thk:Math.max(2,Math.round(baseThk*.58)), mr:Math.max(4,Math.round(W/84))},
-    {t:Math.max(102,userT-4), thk:Math.max(2,Math.round(baseThk*.72)), mr:Math.max(4,Math.round(W/72))}
-  ];
-  for(const cfg of passes){
-    const m=detectWhite(d,w,h,cfg.t,rx0-x0,ry0-y0,rx1-x0,ry1-y0,cfg.mr,cfg.thk);
-    if(!m)continue;
-    const before=mask.slice();
-    for(let p=0;p<N;p++)if(m[p])mask[p]=1;
-    let c=0;
-    for(let yy=ry0-y0;yy<ry1-y0;yy++)for(let xx=rx0-x0;xx<rx1-x0;xx++)if(mask[yy*w+xx])c++;
-    if(c/area>0.055)mask.set(before);
-  }
-
-  const edge=mask.slice();
-  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
-    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
-      const p=y*w+x;if(mask[p])continue;
-      let near=false;
-      for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){
-        if(dx||dy){if(mask[(y+dy)*w+x+dx]){near=true;break;}}
-      }
-      if(!near)continue;
-      const i=p*4,mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-      const L=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-      if(mx-mn<62 && L>=Math.max(74,userT-34))edge[p]=1;
+  // Residual sweeps: look again at the CLEANED pixels and remove any white left behind
+  const sweeps=2+Math.min(5,power);
+  for(let it=0;it<sweeps;it++){
+    lum=lumOf();
+    opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
+    const res=new Uint8Array(N);let c=0;
+    for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
+      const p=y*w+x,i=p*4,L=lum[p];
+      const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
+      if(mx-mn<=100&&L>=Math.max(55,userT-45)&&(L-opened[p])>=4){res[p]=1;c++;}
     }
+    if(!c)break;
+    inpaintHole(d,w,h,clip(dilateMask(res,w,h,Math.max(2,Math.round(grow*.6)))),1);
   }
-  mask.set(edge);
-
-  const clean=mask.slice();
-  for(let y=Math.max(1,ry0-y0);y<Math.min(h-1,ry1-y0);y++){
-    for(let x=Math.max(1,rx0-x0);x<Math.min(w-1,rx1-x0);x++){
-      const p=y*w+x;if(!mask[p])continue;
-      let n=0;
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy&&mask[(y+dy)*w+x+dx])n++;
-      if(n===0)clean[p]=0;
-    }
-  }
-  mask.set(clean);
-
-  let total=0;
-  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++)if(mask[y*w+x])total++;
-  if(!total || total/area>0.065)return;
-
-  const work=new Uint8ClampedArray(original);
-  const filled=new Uint8Array(mask);
-  const R=Math.min(22,Math.max(10,Math.round(Math.max(12,W/90))));
-  const ctxR=2;
-  const inside=(x,y)=>x>=ctxR&&y>=ctxR&&x<w-ctxR&&y<h-ctxR;
-
-  function lumaAt(buf,p){const i=p*4;return buf[i]*.299+buf[i+1]*.587+buf[i+2]*.114;}
-
-  function sourceClean(sx,sy){
-    for(let yy=-ctxR;yy<=ctxR;yy++)for(let xx=-ctxR;xx<=ctxR;xx++){
-      if(filled[(sy+yy)*w+(sx+xx)])return false;
-    }
-    return true;
-  }
-
-  function contextScore(tx,ty,sx,sy){
-    let score=0,n=0;
-    for(let yy=-ctxR;yy<=ctxR;yy++){
-      for(let xx=-ctxR;xx<=ctxR;xx++){
-        const tp=(ty+yy)*w+(tx+xx);
-        if(!inside(tx+xx,ty+yy)||filled[tp])continue;
-        const sp=(sy+yy)*w+(sx+xx);
-        const ti=tp*4,si=sp*4;
-        const dr=original[ti]-original[si],dg=original[ti+1]-original[si+1],db=original[ti+2]-original[si+2];
-        score+=(dr*dr+dg*dg+db*db)*0.72;
-        n++;
-      }
-    }
-    if(n<4)return Infinity;
-    const tp=ty*w+tx,sp=sy*w+sx;
-    const tgx=lumaAt(original,tp+1)-lumaAt(original,tp-1);
-    const tgy=lumaAt(original,tp+w)-lumaAt(original,tp-w);
-    const sgx=lumaAt(original,sp+1)-lumaAt(original,sp-1);
-    const sgy=lumaAt(original,sp+w)-lumaAt(original,sp-w);
-    score+=(tgx-sgx)*(tgx-sgx)+(tgy-sgy)*(tgy-sgy);
-    return score/n + 0.025*((sx-tx)*(sx-tx)+(sy-ty)*(sy-ty));
-  }
-
-  for(let pass=0;pass<32;pass++){
-    const boundary=[];
-    for(let y=Math.max(ctxR,ry0-y0);y<Math.min(h-ctxR,ry1-y0);y++){
-      for(let x=Math.max(ctxR,rx0-x0);x<Math.min(w-ctxR,rx1-x0);x++){
-        const p=y*w+x;if(!filled[p])continue;
-        let isBoundary=false;
-        for(let dy=-1;dy<=1&&!isBoundary;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy){
-          if(!filled[(y+dy)*w+x+dx]){isBoundary=true;break;}
-        }
-        if(isBoundary)boundary.push(p);
-      }
-    }
-    if(!boundary.length)break;
-
-    for(const p of boundary){
-      const tx=p%w,ty=(p/w)|0;
-      let bestS=null,best=Infinity;
-      for(let dy=-R;dy<=R;dy+=2){
-        for(let dx=-R;dx<=R;dx+=2){
-          if(dx===0&&dy===0)continue;
-          const sx=tx+dx,sy=ty+dy;
-          if(!inside(sx,sy)||!sourceClean(sx,sy))continue;
-          const sc=contextScore(tx,ty,sx,sy);
-          if(sc<best){best=sc;bestS={sx,sy};}
-        }
-      }
-      if(!bestS)continue;
-      const si=(bestS.sy*w+bestS.sx)*4,di=p*4;
-      work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=original[di+3];
-      filled[p]=0;
-    }
-  }
-
-  for(let y=ry0-y0;y<ry1-y0;y++)for(let x=rx0-x0;x<rx1-x0;x++){
-    const p=y*w+x;if(!filled[p])continue;
-    let bestS=null,best=Infinity;
-    for(let dy=-R;dy<=R;dy+=2)for(let dx=-R;dx<=R;dx+=2){
-      const sx=x+dx,sy=y+dy;
-      if(!inside(sx,sy)||!sourceClean(sx,sy))continue;
-      const sc=contextScore(x,y,sx,sy);
-      if(sc<best){best=sc;bestS={sx,sy};}
-    }
-    if(bestS){const si=(bestS.sy*w+bestS.sx)*4,di=p*4;work[di]=original[si];work[di+1]=original[si+1];work[di+2]=original[si+2];work[di+3]=original[si+3];filled[p]=0;}
-  }
-
-  for(let p=0;p<N;p++)if(mask[p]){
-    const i=p*4;d[i]=work[i];d[i+1]=work[i+1];d[i+2]=work[i+2];d[i+3]=original[i+3];
-  }
-  ctx2.putImageData(img,x0,y0);
+  ctx.putImageData(img,x0,y0);
 }
 
-// Apply every extra box to a canvas. (rw,rh) = source-rect size, (W,H) = canvas size.
-function applyExtraBoxes(ctx2, W, H, r) {
-  // Every orange box works on the result of the previous box.
-  // Canvas is intentionally NOT cleared between boxes.
-  for (let i = 0; i < extraRects.length; i++) {
-    const q = extraRects[i];
-
-    const rect = {
-      x: q.x / r.w * W,
-      y: q.y / r.h * H,
-      w: q.w / r.w * W,
-      h: q.h / r.h * H
-    };
-
-    removeTextRect(ctx2, W, H, rect);
-  }
-}
-
-function applyAllTextRemoval(ctx2, W, H, r, exportMode = false) {
-  // Boxes are applied IN ORDER on the SAME canvas:
-  //   box 1 (red) is cleaned first, box 2 is then applied on top of box 1's result, box 3 on top of that...
-  // With high removal power the whole stack is run a second time, so anything the first
-  // round left behind (including text where boxes overlap) is removed too.
+/* ===== END OF PART 2 — paste PART 3 directly below this line (still inside the same <script>) ===== */
+    function applyAllTextRemoval(ctx2, W, H, r, exportMode = false) {
+  // Boxes are applied IN ORDER on the SAME canvas.
+  // With high removal power the whole stack is run a second time.
   const rects = [];
   if (whiteRect) rects.push(whiteRect);
   for (const q of extraRects) rects.push(q);
@@ -871,48 +633,16 @@ function applyAllTextRemoval(ctx2, W, H, r, exportMode = false) {
 }
 
 function drawPreview() {
-
   if (exporting || !video.videoWidth) return;
-
   const r = sourceRect();
-
   const s = Math.min(1, 1100 / r.w);
-
   const nw = Math.max(1, Math.round(r.w * s));
   const nh = Math.max(1, Math.round(r.h * s));
-
   if (view.width !== nw) view.width = nw;
   if (view.height !== nh) view.height = nh;
-
-  // ------------------------------------------------------------
-  // ORIGINAL FRAME
-  // ------------------------------------------------------------
-
   vctx.clearRect(0, 0, view.width, view.height);
-
-  vctx.drawImage(
-    video,
-    r.x,
-    r.y,
-    r.w,
-    r.h,
-    0,
-    0,
-    view.width,
-    view.height
-  );
-
-  // ------------------------------------------------------------
-  // ALL TEXT REMOVERS — SEQUENTIAL
-  // ------------------------------------------------------------
-
-  applyAllTextRemoval(
-    vctx,
-    view.width,
-    view.height,
-    r,
-    false
-  );
+  vctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, view.width, view.height);
+  applyAllTextRemoval(vctx, view.width, view.height, r, false);
 }
 function updateSelectionBox(){
  const r=sourceRect(),R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
@@ -1143,11 +873,7 @@ $('resetCrop').onclick=()=>{crop=null;whiteRect=null;extraRects=[];invalidateWR(
 $('removeWhite').onclick=async()=>{
  if(!whiteRect&&!extraRects.length)return;
  video.pause();
- setStatus('Analysing the text area across the video…');
- try{
-   await buildStaticMask();
-   setStatus('White-text removal is ready for '+((whiteRect?1:0)+extraRects.length)+' box(es). It is applied to every frame when you export / download.');
- }catch(e){setStatus('Text analysis failed: '+(e.message||e))}
+ setStatus('White-text removal is ready for '+((whiteRect?1:0)+extraRects.length)+' box(es). It is applied to every frame when you export / download.');
  drawPreview();drawGeoPreview();
 }
 $('clearWhite').onclick=()=>{whiteRect=null;extraRects=[];selection2.style.display='none';invalidateWR();$('removeWhite').disabled=true;updateSelectionBox();drawPreview();drawGeoPreview();setStatus('All white-text boxes cleared.')}
@@ -1159,7 +885,8 @@ $('textThick').oninput=()=>{$('textThickVal').textContent=$('textThick').value;i
 $('showMask').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 $('textChanges').onchange=()=>{wrCache.clear();drawPreview();drawGeoPreview()}
 
-function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
+/* ===== END OF PART 3 — paste PART 4 directly below this line (still inside the same <script>) ===== */
+    function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
 function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
 function formatMovingTime(base,delta){
  let t=parseStartTime(base)+Math.max(0,delta),h=Math.floor(t/3600)%24,m=Math.floor(t/60)%60,s=Math.floor(t%60);
@@ -1221,24 +948,6 @@ $('mapUpload').onchange=e=>{
  im.onerror=()=>{$('gCoords').textContent='Could not read that image file.'};
  im.src=url;
 };
-$('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';findLocation();};
-function drawMapPreviewNoCors(){
- const c=$('mapPreview');if(!c||lat==null)return;
- const W=640,H=240,x=c.getContext('2d'),z=16,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),n=2**z;
- const urls=[(a,b)=>`https://tile.openstreetmap.org/${z}/${a}/${b}.png`,(a,b)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${b}/${a}`];
- let k=0;const tryNext=()=>{
-  if(k>=urls.length){x.fillStyle='rgba(255,255,255,.92)';x.fillRect(0,92,W,56);x.fillStyle='#b3261e';x.font='bold 17px Arial';x.textAlign='center';x.fillText('Map tiles blocked on this network/browser',W/2,116);x.fillStyle='#333';x.font='15px Arial';x.fillText('Upload a map screenshot below to use your own map',W/2,138);return;}
-  const mk=urls[k++];let ok=0;const jobs=[];
-  x.fillStyle='#e8e8e8';x.fillRect(0,0,W,H);
-  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-   jobs.push(new Promise(res=>{const im=new Image();im.onload=()=>{const sz=256*1.0;const px=W/2+(dx-(t.x-cx))*sz,py=H/2+(dy-(t.y-cy))*sz;x.drawImage(im,px,py,sz,sz);ok++;res()};im.onerror=res;setTimeout(res,6000);im.src=mk((((cx+dx)%n)+n)%n,cy+dy);}));
-  }
-  Promise.all(jobs).then(()=>{if(ok<1){tryNext();return}
-   x.fillStyle='#e53935';x.beginPath();x.arc(W/2,H/2,9,0,Math.PI*2);x.fill();x.strokeStyle='#fff';x.lineWidth=3;x.stroke();
-   x.fillStyle='rgba(255,255,255,.92)';x.fillRect(0,H-26,W,26);x.fillStyle='#8a1c14';x.font='bold 13px Arial';x.textAlign='center';
-   x.fillText('Preview only — to put this map on the video, upload a map screenshot below',W/2,H-8);});
- };tryNext();
-}
 function drawMapPreview(msg){
  const c=$('mapPreview');if(!c)return;
  const W=c.width=640,H=c.height=240,x=c.getContext('2d');
@@ -1274,12 +983,7 @@ function makeFallbackMap(lat,lon){
 }
 
 /* =====================================================================
-   DISTRICT / STATE MAP
-   - Built from State + District/Town: finds the place, fits the whole district
-     boundary inside the map box, draws the boundary, a red pin and the
-     district name ON the map.
-   - Only 3 styles: Satellite, Satellite + Labels, Street (lanes).
-   - If tiles are blocked the map is still drawn (boundary + name) so it is never empty.
+   DISTRICT / STATE MAP  (now with a Detailed street-level view)
    ===================================================================== */
 let mapGeo=null,mapBuildToken=0,mapTimer=null,findToken=0,findTimer=null;
 const tileCache=new Map();
@@ -1352,7 +1056,7 @@ function loadTile(src,z,x,y){
  });
 }
 function fitZoom(g,cw,ch){
- let z=13; // a town / single point: show some surroundings
+ let z=13;
  if(g.bbox){
   const [s,n,w,e]=g.bbox;
   if(Math.abs(n-s)>0.004||Math.abs(e-w)>0.004){
@@ -1374,9 +1078,12 @@ async function renderMap(cw,ch){
  const g=mapGeo;if(!g)return null;
  const style=($('gMapStyle')&&$('gMapStyle').value)||'satlabel';
  const adj=+($('gZoom')&&$('gZoom').value)||0;
+ const detail=(($('gMapView')&&$('gMapView').value)||'detail')==='detail';
  const wantSat=style!=='street';
- const z=clamp(fitZoom(g,cw,ch)+adj,3,wantSat?17:18),n=2**z;
- const cLat=g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat,cLon=g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon;
+ const baseZ=detail?16:fitZoom(g,cw,ch);
+ const z=clamp(baseZ+adj,3,wantSat?17:18),n=2**z;
+ const cLat=detail?g.lat:(g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat);
+ const cLon=detail?g.lon:(g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon);
  const c=tileXY(cLat,cLon,z);
  const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*256,y:ch/2+(p.y-c.y)*256};};
  const x0=Math.floor(c.x-cw/512),x1=Math.floor(c.x+cw/512),y0=Math.floor(c.y-ch/512),y1=Math.floor(c.y+ch/512);
@@ -1401,13 +1108,12 @@ async function renderMap(cw,ch){
   for(const s of T_STREETS){if(await paint(s)){used=s;break;}}
  }
  const onSat=used===T_IMG;
- if(!used){ // every tile server blocked: plain background, boundary + name are still drawn
+ if(!used){
   cc.fillStyle='#dfe7ee';cc.fillRect(0,0,cw,ch);
   cc.strokeStyle='#c5d0da';cc.lineWidth=1;
   for(let i=0;i<=cw;i+=48){cc.beginPath();cc.moveTo(i,0);cc.lineTo(i,ch);cc.stroke();}
   for(let i=0;i<=ch;i+=48){cc.beginPath();cc.moveTo(0,i);cc.lineTo(cw,i);cc.stroke();}
  }
- // district / town boundary
  if(g.poly){
   const polys=g.poly.type==='Polygon'?[g.poly.coordinates]:g.poly.coordinates;
   const sw=Math.max(2,cw/260);
@@ -1421,7 +1127,6 @@ async function renderMap(cw,ch){
   cc.strokeStyle=onSat?'#ffd400':'#1565c0';cc.lineWidth=sw*1.2;cc.stroke();
   cc.restore();
  }
- // pin
  const pp=proj(g.lat,g.lon),pr=clamp(cw/40,7,18);
  cc.save();
  cc.shadowColor='rgba(0,0,0,.5)';cc.shadowBlur=pr*.6;
@@ -1429,14 +1134,13 @@ async function renderMap(cw,ch){
  cc.shadowBlur=0;cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,pr*.3);cc.stroke();
  cc.fillStyle='#fff';cc.beginPath();cc.arc(pp.x,pp.y,pr*.34,0,Math.PI*2);cc.fill();
  cc.restore();
- // district name + state on the map
  const place=($('gPlace').value||'').trim(),stateName=($('gState').value||'').trim();
  if(place||stateName){
   let fs=clamp(cw*.085,13,52);
   cc.font=`800 ${fs}px Arial, sans-serif`;
   while(place&&fs>10&&cc.measureText(place).width>cw*.92){fs-=1;cc.font=`800 ${fs}px Arial, sans-serif`;}
   const ss=fs*.62;
-  const lx=clamp(pp.x,cw*.46*0+10,cw-10);
+  const lx=clamp(pp.x,10,cw-10);
   let placeY=pp.y-pr*1.7-(stateName?ss*1.25:0),stateY=pp.y-pr*1.7;
   if(placeY-fs<2){placeY=pp.y+pr*1.7+fs;stateY=placeY+ss*1.3;}
   const halfW=Math.max(place?cc.measureText(place).width:0,60)/2+6;
@@ -1444,7 +1148,6 @@ async function renderMap(cw,ch){
   if(place)mapHaloText(cc,place,cx2,placeY,fs,800);
   if(stateName)mapHaloText(cc,stateName,cx2,stateY,ss,700);
  }
- // attribution (small, bottom-right)
  {
   const t=used?used.name:'map tiles blocked',as=clamp(cw*.026,8,13);
   cc.font=`600 ${as}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
@@ -1477,7 +1180,7 @@ function scheduleMapRebuild(){
  clearTimeout(mapTimer);
  mapTimer=setTimeout(()=>{rebuildMap().catch(e=>console.warn('map rebuild failed',e));},300);
 }
-async function makeMap(la,lo){ // used by the export path
+async function makeMap(la,lo){
  if(!mapGeo)mapGeo={lat:la,lon:lo,bbox:null,poly:null};
  return buildMapCanvas();
 }
@@ -1491,7 +1194,7 @@ async function findLocation(){
  $('gCoords').textContent='Finding '+q+'…';
  let p=await geocodeAny(q,place,stateName);
  if(tok!==findToken)return;
- if(!p&&$('startLat').dataset.auto!=='1'){ // typed coordinates as last resort
+ if(!p&&$('startLat').dataset.auto!=='1'){
   const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
   if(isFinite(sl)&&isFinite(so))p={lat:sl,lon:so,bbox:null,poly:null};
  }
@@ -1503,7 +1206,7 @@ async function findLocation(){
  lat=p.lat;lon=p.lon;
  mapGeo={lat:p.lat,lon:p.lon,bbox:p.bbox,poly:p.poly};
  const sEl=$('startLat'),oEl=$('startLon');
- if(!sEl.value||sEl.dataset.auto==='1'){ // follow the new place unless the user typed their own values
+ if(!sEl.value||sEl.dataset.auto==='1'){
   sEl.value=lat.toFixed(6);oEl.value=lon.toFixed(6);sEl.dataset.auto='1';oEl.dataset.auto='1';
  }
  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
@@ -1527,7 +1230,9 @@ $('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';tileCache.cle
  clearTimeout(findTimer);
  findTimer=setTimeout(()=>{if($('geoSection').style.display!=='none')findLocation();},1300);
 }));
-['gMapW','mapH','gMapStyle','gZoom'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
+['gMapW','mapH','gMapStyle','gZoom','gMapView'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
+$('gMapStyle').addEventListener('change',scheduleMapRebuild);
+$('gMapView').addEventListener('change',scheduleMapRebuild);
 $('gZoom').addEventListener('input',()=>{$('gZoomVal').textContent=$('gZoom').value;});
 geo.addEventListener('pointerup',scheduleMapRebuild);
 ['applyCrop','resetCrop'].forEach(id=>$(id).addEventListener('click',scheduleMapRebuild));
@@ -1662,417 +1367,8 @@ $('useCurrentAsStart').onclick=()=>{if(lat==null||lon==null)return; $('startLat'
 $('useCurrentAsEnd').onclick=()=>{if(lat==null||lon==null)return; $('endLat').value=lat.toFixed(6); $('endLon').value=lon.toFixed(6); if(!$('startLat').value)$('startLat').value=lat.toFixed(6); if(!$('startLon').value)$('startLon').value=lon.toFixed(6); updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0))); drawGeoPreview();};
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;updateRunningCoords(Math.max(0,video.currentTime-(+$('trimStart').value||0)));drawGeoPreview();loadRealGPSRoute();}));
 
-function computeGeoLayout(W,H){
-  const pad=Math.max(6,Math.round(H*.012));
-  const mapW=clamp(W*state.mapW/100,24,W-2*pad);
-  const mapH=clamp(H*state.mapH/100,24,H*.96-2*pad);
-  let stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  if(!state.mapMoved)stampH=Math.min(H*.96,Math.max(stampH,mapH+2*pad));
-  const stampY=Math.round(H-stampH);
-  let mapX,mapY;
-  if(!state.mapMoved){
-    mapX=pad;
-    mapY=stampY+(stampH-mapH)/2;
-  }else{
-    mapX=clamp(W*state.mapX/100,0,Math.max(0,W-mapW));
-    mapY=clamp(H*state.mapY/100,0,Math.max(0,H-mapH));
-  }
-  return {pad,mapW,mapH,mapX,mapY,stampH,stampY};
-}
-
-function drawGeoFrame(baseCtx,W,H,seconds){
-  const stampOpacity=clamp(state.gOpacity/100,0,1);
-  const mapOpacity=clamp(state.gMapO/100,0,1);
-  const L=computeGeoLayout(W,H);
-  const {mapW,mapH,mapX,mapY,stampH,stampY}=L;
-  const stampX=0,stampW=W;
-  const stampRadius=Math.max(18,Math.round(stampH*.14));
-  const stampPad=Math.max(5,Math.round(stampH*.022));
-  const stampGap=Math.max(12,Math.round(stampH*.045));
-
-  // blurred backdrop
-  if(stampOpacity>0.02){
-    const bw=Math.max(8,Math.round(W/28)),bh=Math.max(4,Math.round(stampH/28));
-    _blur.width=bw;_blur.height=bh;
-    const bc=_blur.getContext('2d');bc.imageSmoothingQuality='high';
-    bc.drawImage(baseCtx.canvas,0,stampY,W,stampH,0,0,bw,bh);
-    baseCtx.save();
-    baseCtx.globalAlpha=Math.min(1,stampOpacity*1.6);
-    baseCtx.imageSmoothingEnabled=true;baseCtx.imageSmoothingQuality='high';
-    roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
-    baseCtx.clip();
-    baseCtx.drawImage(_blur,0,0,bw,bh,stampX,stampY,stampW,stampH);
-    baseCtx.restore();
-  }
-  baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  baseCtx.fillStyle='rgba(0,0,0,.76)';
-  roundRectCorners(baseCtx,stampX,stampY,stampW,stampH,stampRadius,stampRadius,0,0);
-  baseCtx.fill();
-  baseCtx.restore();
-
-  // map
-  const mr=Math.max(6,Math.min(mapW,mapH)*.06);
-  if(mapImg&&mapImg.width>0&&mapImg.height>0){
-    baseCtx.save();
-    baseCtx.globalAlpha=mapOpacity;
-    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
-    baseCtx.clip();
-    baseCtx.imageSmoothingEnabled=true;baseCtx.imageSmoothingQuality='high';
-    const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height); // fill box, pin stays centered
-    const dw=mapImg.width*ms,dh=mapImg.height*ms;
-    baseCtx.drawImage(mapImg,mapX+(mapW-dw)/2,mapY+(mapH-dh)/2,dw,dh);
-    baseCtx.restore();
-    baseCtx.save();
-    baseCtx.globalAlpha=mapOpacity;
-    baseCtx.strokeStyle='#fff';
-    baseCtx.lineWidth=Math.max(2,Math.min(mapW,mapH)*.018);
-    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);
-    baseCtx.stroke();
-    baseCtx.restore();
-  }
-
-  // logo
-  const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
-  const logoCenterX=clamp(W*state.logoX/100,stampX+stampW*.72+logoSize/2,stampX+stampW-logoSize/2-stampPad);
-  const logoCenterY=clamp(stampY+stampH*(state.logoY/100),stampY+logoSize/2+stampPad,stampY+stampH-logoSize/2-stampPad);
-  const logoLeft=logoCenterX-logoSize/2;
-
-  // text (starts to the right of the map)
-  let textX=stampX+stampW*.255;
-  if(mapImg&&mapY+mapH>stampY&&mapX<stampW*.6)textX=Math.max(textX,mapX+mapW+Math.max(10,stampGap));
-  const maxW=Math.max(120,logoLeft-stampGap-textX);
-  const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
-  const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
-  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
-  const address=$('gAddress').value.trim();
-  const running=getRunningCoords(seconds);
-  const coordText=`Lat ${running.lat==null?'—':running.lat.toFixed(6)}°  Long ${running.lon==null?'—':running.lon.toFixed(6)}°`;
-  updateRunningCoords(seconds);
-  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
-
-  baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  baseCtx.fillStyle='#fff';
-  baseCtx.textBaseline='alphabetic';
-  baseCtx.shadowColor='rgba(0,0,0,.30)';
-  baseCtx.shadowBlur=Math.max(1,stampH*.008);
-  baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
-  const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
-  let yy=stampY+stampPad+titleSize;
-  titleLines.forEach(line=>{baseCtx.fillText(line,textX,yy);yy+=titleSize*1.02});
-  baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
-  const lineGap=Math.max(3,detailSize*.25);
-  const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
-  addressLines.forEach(line=>{if(yy<=stampY+stampH-stampPad)baseCtx.fillText(line,textX,yy);yy+=detailSize+lineGap});
-  if(yy<=stampY+stampH-stampPad){baseCtx.fillText(coordText,textX,yy);yy+=detailSize+lineGap*1.05;}
-  if(yy<=stampY+stampH-stampPad)baseCtx.fillText(dateTime,textX,yy);
-  baseCtx.restore();
-
-  baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
-  baseCtx.restore();
-
-  // preview-only handles (never exported)
-  if(baseCtx===gctx&&mapImg){
-    baseCtx.save();
-    baseCtx.strokeStyle='rgba(255,255,255,.95)';
-    baseCtx.lineWidth=Math.max(1,2*W/geo.width);
-    baseCtx.setLineDash([6,4]);
-    baseCtx.strokeRect(mapX,mapY,mapW,mapH);
-    baseCtx.setLineDash([]);
-    const hs=Math.max(10,14*W/geo.width);
-    baseCtx.fillStyle='rgba(255,255,255,.95)';
-    baseCtx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
-    baseCtx.restore();
-  }
-}
-function prepareOutput(){
- const r=sourceRect();
- outputW=Math.max(2,Math.round(r.w/2)*2);
- outputH=Math.max(2,Math.round(r.h/2)*2);
- work.width=outputW;work.height=outputH;
-}
-function exportNeedsFrameProcessing(){
-  return !!whiteRect || extraRects.length>0 || (lat!=null && lon!=null);
-}
-function drawExportFrame(elapsedOverride){
-  const r=sourceRect();
-  wctx.clearRect(0,0,outputW,outputH);
-  wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
-  applyAllTextRemoval(wctx,outputW,outputH,r,true);
-  if(lat!=null&&lon!=null){
-    const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
-    drawGeoFrame(wctx,outputW,outputH,elapsed);
-  }
-}
-function seekVideo(target){
-  return new Promise(resolve=>{
-    const t=clamp(target,0,duration||target);
-    if(Math.abs(video.currentTime-t)<1e-4&&!video.seeking){requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()));return;}
-    let done=false;
-    const finish=()=>{if(done)return;done=true;video.removeEventListener('seeked',onSeeked);resolve();};
-    const onSeeked=()=>{requestAnimationFrame(()=>requestAnimationFrame(finish));};
-    video.addEventListener('seeked',onSeeked,{once:true});
-    video.currentTime=t;
-    setTimeout(finish,2000);
-  });
-}
-async function pickVideoCodec(width,height,fps){
-  const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
-  for(const hw of ['prefer-hardware','no-preference']){
-    for(const codec of candidates){
-      try{
-        const s=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:8_000_000,framerate:fps,hardwareAcceleration:hw});
-        if(s&&s.supported)return {codec,hardwareAcceleration:hw};
-      }catch(e){}
-    }
-  }
-  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
-}
-async function estimateFps(){
-  const std=[23.976,24,25,29.97,30,48,50,59.94,60];
-  if(typeof video.requestVideoFrameCallback!=='function')return 30;
-  const saved=video.currentTime,muted=video.muted;
-  const times=[];
-  await new Promise(resolve=>{
-    let done=false;
-    const fin=()=>{if(done)return;done=true;try{video.pause()}catch(e){}resolve()};
-    const cb=(now,m)=>{times.push(m.mediaTime);if(times.length>=14){fin();return}video.requestVideoFrameCallback(cb)};
-    video.muted=true;
-    video.requestVideoFrameCallback(cb);
-    video.play().catch(fin);
-    setTimeout(fin,2000);
-  });
-  video.muted=muted;
-  await seekVideo(saved);
-  const diffs=[];for(let i=1;i<times.length;i++){const d=times[i]-times[i-1];if(d>0.004&&d<0.2)diffs.push(d)}
-  if(diffs.length<4)return 30;
-  diffs.sort((a,b)=>a-b);
-  const fps=1/diffs[Math.floor(diffs.length/2)];
-  let best=std[0];for(const v of std)if(Math.abs(v-fps)<Math.abs(best-fps))best=v;
-  return Math.abs(best-fps)<2?best:Math.round(fps);
-}
-async function exportVideoFrameAccurate(){
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=Math.max(0.05,end-start);
-  $('exportStatus').textContent='Detecting video frame rate…';
-  const fps=await estimateFps();
-  prepareOutput();
-  video.pause();
-  if(lat!=null&&lon!=null&&(!mapImg||!mapImg.width)){
-    $('exportStatus').textContent='Preparing map…';
-    try{mapImg=await makeMap(lat,lon);}catch(e){mapImg=makeFallbackMap(lat,lon);}
-    if(!mapImg||!mapImg.width)mapImg=makeFallbackMap(lat,lon);
-  }
-  const audioPromise=(async()=>{
-    try{
-      const arr=await file.arrayBuffer();
-      const actx=new (window.AudioContext||window.webkitAudioContext)();
-      const buf=await actx.decodeAudioData(arr);
-      try{actx.close()}catch(e){}
-      return buf;
-    }catch(e){console.warn('No usable audio track for export',e);return null;}
-  })();
-  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
-  const audioBuffer=await audioPromise;
-  const hasAudio=!!audioBuffer;
-  const muxer=new Mp4Muxer.Muxer({
-    target:new Mp4Muxer.ArrayBufferTarget(),
-    fastStart:'in-memory',
-    firstTimestampBehavior:'offset',
-    video:{codec:'avc',width:outputW,height:outputH},
-    audio:hasAudio?{codec:'aac',numberOfChannels:audioBuffer.numberOfChannels,sampleRate:audioBuffer.sampleRate}:undefined,
-  });
-  let encoderFailed=null,rejectEncoding=null,videoEncoder=null,restoreMute=video.muted;
-  const bitrate=clamp(Math.round(outputW*outputH*fps*0.12),4_000_000,20_000_000);
-  try{
-    videoEncoder=new VideoEncoder({
-      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
-      error:e=>{console.error('video encoder error',e);encoderFailed=e;if(rejectEncoding)rejectEncoding(e);}
-    });
-    videoEncoder.configure({codec,width:outputW,height:outputH,bitrate,framerate:fps,hardwareAcceleration});
-    const needsFrameProcessing=exportNeedsFrameProcessing();
-    $('exportStatus').textContent=needsFrameProcessing?'Rendering selected changes… 0% (keep this tab open)':'Rendering crop/trim only… 0% (keep this tab open)';
-    video.pause();restoreMute=video.muted;video.muted=true;
-    await seekVideo(start);
-    const frameDur=Math.round(1e6/fps),keyEvery=Math.max(1,Math.round(fps*2));
-    let rate=needsFrameProcessing?(extraRects.length>1?2:3):6,maxRate=8,lastMT=-1,prevRel=-1,n=0,procEMA=0,sinceAdj=0;
-    const tBegin=performance.now();
-    video.playbackRate=rate;
-    await new Promise((resolve,reject)=>{
-      rejectEncoding=reject;
-      let finished=false,lastCb=performance.now(),dog=null;
-      const finish=()=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(e){}resolve()};
-      const fail=e=>{if(finished)return;finished=true;clearInterval(dog);try{video.pause()}catch(x){}reject(e)};
-      dog=setInterval(()=>{
-        if(!finished&&performance.now()-lastCb>12000&&videoEncoder.encodeQueueSize<3)
-          fail(new Error('The browser stopped delivering video frames (keep this tab visible while rendering).'));
-      },1000);
-      video.addEventListener('ended',finish,{once:true});
-      const encodeCanvas=ts=>{
-        const vf=new VideoFrame(work,{timestamp:Math.round(ts*1e6),duration:frameDur});
-        videoEncoder.encode(vf,{keyFrame:n%keyEvery===0});vf.close();n++;
-      };
-      const onFrame=(now,m)=>{
-        if(finished)return;
-        lastCb=performance.now();
-        try{
-          if(encoderFailed)throw encoderFailed;
-          const mt=m.mediaTime;
-          if(mt>=end-0.0005){finish();return}
-          if(mt>=start-0.001&&mt>lastMT+1e-4){
-            const t0=performance.now();
-            const rel=n===0?0:Math.max(0,mt-start);
-            if(n===0||rel>prevRel+0.0005){
-              if(lastMT>=0){
-                const gap=Math.round((mt-lastMT)*fps)-1;
-                if(gap>=1){
-                  maxRate=Math.max(1,Math.min(maxRate,rate*.8));
-                  rate=Math.min(rate,maxRate);video.playbackRate=rate;
-                  if(gap<=8)for(let k=1;k<=gap;k++){const ts=prevRel+k/fps;if(ts<rel-0.0005)encodeCanvas(ts);}
-                }
-              }
-              drawExportFrame(rel);
-              encodeCanvas(rel);
-              prevRel=rel;
-            }
-            lastMT=mt;
-            const proc=performance.now()-t0;
-            procEMA=procEMA?procEMA*.8+proc*.2:proc;
-            if(++sinceAdj>=8){
-              sinceAdj=0;
-              const target=clamp((1000/fps)/(procEMA*1.5+3),1,maxRate);
-              rate=clamp(rate*.5+target*.5,1,maxRate);
-              video.playbackRate=rate;
-            }
-            if(n%5===0){
-              const pct=Math.min(99,Math.round(rel/length*99));
-              $('exportStatus').textContent='Rendering… '+pct+'% ('+n+' frames, '+Math.round((performance.now()-tBegin)/1000)+'s) — keep this tab open';
-            }
-            if(videoEncoder.encodeQueueSize>12){
-              video.pause();
-              const iv=setInterval(()=>{
-                if(finished){clearInterval(iv);return}
-                if(videoEncoder.encodeQueueSize<3){clearInterval(iv);video.play().catch(fail)}
-              },8);
-            }
-          }
-          video.requestVideoFrameCallback(onFrame);
-        }catch(e){fail(e)}
-      };
-      video.requestVideoFrameCallback(onFrame);
-      video.play().catch(fail);
-    });
-    video.playbackRate=1;
-    video.muted=restoreMute;
-    if(encoderFailed)throw encoderFailed;
-    $('exportStatus').textContent='Finishing video encoding… 91%';
-    await Promise.race([videoEncoder.flush(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Video encoder flush timed out.')),60000))]);
-    videoEncoder.close();videoEncoder=null;rejectEncoding=null;
-    if(hasAudio){
-      $('exportStatus').textContent='Encoding audio… 94%';
-      const sr=audioBuffer.sampleRate,ch=audioBuffer.numberOfChannels;
-      const s0=Math.floor(start*sr),s1=Math.min(audioBuffer.length,Math.floor(end*sr));
-      const audioEncoder=new AudioEncoder({output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta),error:e=>console.error('audio encoder error',e)});
-      audioEncoder.configure({codec:'mp4a.40.2',sampleRate:sr,numberOfChannels:ch,bitrate:128000});
-      const chunkSize=8192,totalSamples=Math.max(1,s1-s0);
-      for(let s=s0;s<s1;s+=chunkSize){
-        const n2=Math.min(chunkSize,s1-s);
-        const interleaved=new Float32Array(n2*ch);
-        for(let c=0;c<ch;c++){const data=audioBuffer.getChannelData(c);for(let k=0;k<n2;k++)interleaved[k*ch+c]=data[s+k];}
-        const audioData=new AudioData({format:'f32',sampleRate:sr,numberOfFrames:n2,numberOfChannels:ch,timestamp:Math.round((s-s0)/sr*1e6),data:interleaved});
-        audioEncoder.encode(audioData);audioData.close();
-        $('exportStatus').textContent='Encoding audio… '+Math.min(98,94+Math.round(((s-s0)/totalSamples)*5))+'%';
-      }
-      $('exportStatus').textContent='Finishing audio… 99%';
-      await Promise.race([audioEncoder.flush(),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Audio encoder flush timed out.')),15000))]);
-      audioEncoder.close();
-    }
-    $('exportStatus').textContent='Finalizing MP4…';
-    muxer.finalize();
-    exportBlob=new Blob([muxer.target.buffer],{type:'video/mp4'});
-    $('exportStatus').textContent='Video rendered in '+Math.round((performance.now()-tBegin)/1000)+'s — 100% complete. Download button is ready.';
-    $('downloadVideo').disabled=false;
-  }finally{
-    rejectEncoding=null;
-    video.muted=restoreMute;
-    video.playbackRate=1;
-    if(videoEncoder){try{videoEncoder.close()}catch(e){}}
-  }
-}
-async function exportVideo(){
-  if(!file)return;
-  const start=clamp(+$('trimStart').value||0,0,duration);
-  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
-  const length=end-start;
-  prepareOutput();
-  video.pause();
-  await seekVideo(start);
-  const fps=30;
-  const canvasStream=work.captureStream(fps);
-  const sourceStream=video.captureStream?video.captureStream():null;
-  if(sourceStream)sourceStream.getAudioTracks().forEach(t=>canvasStream.addTrack(t));
-  let mime='';
-  for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
-  if(!mime)throw new Error('This Chrome cannot record video.');
-  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
-  const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-  const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
-  let stopped=false,frameId=null,raf=0;
-  const stop=()=>{if(stopped)return;stopped=true;if(frameId!==null&&video.cancelVideoFrameCallback)try{video.cancelVideoFrameCallback(frameId)}catch(e){}if(raf)cancelAnimationFrame(raf);try{video.pause()}catch(e){}try{rec.stop()}catch(e){}};
-  const render=(now,meta)=>{
-    if(stopped)return;
-    const t=meta&&meta.mediaTime!=null?meta.mediaTime:video.currentTime;
-    const elapsed=t-start;
-    if(elapsed>=length-0.02){drawExportFrame(length);stop();return}
-    drawExportFrame(elapsed);
-    $('exportStatus').textContent='Rendering (recorder mode)… '+Math.min(99,Math.round(elapsed/length*100))+'%';
-    if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
-  };
-  $('exportStatus').textContent='Rendering (recorder mode)… 0%';
-  rec.start(500);
-  video.muted=true;video.playbackRate=1;
-  if(video.requestVideoFrameCallback)frameId=video.requestVideoFrameCallback(render);else raf=requestAnimationFrame(()=>render(performance.now(),null));
-  await video.play();
-  while(!stopped){if(video.currentTime>=end-0.02){stop();break}await new Promise(r=>setTimeout(r,30));}
-  exportBlob=await done;
-  video.muted=false;
-  $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
-  $('downloadVideo').disabled=false;
-}
-async function doExport(){
-  exporting=true;
-  try{await doExportInner();}finally{exporting=false;drawPreview();drawGeoPreview();drawTimeline();}
-}
-async function doExportInner(){
-  const hasWebCodecs=typeof window.VideoEncoder!=='undefined'&&typeof window.AudioEncoder!=='undefined'&&typeof window.Mp4Muxer!=='undefined';
-  if(hasWebCodecs){
-    try{await exportVideoFrameAccurate();return;}
-    catch(err){console.warn('Fast MP4 export failed, falling back to recorder export.',err);video.pause();video.playbackRate=1;}
-  }
-  await exportVideo();
-  if(exportBlob&&exportBlob.type.includes('webm')){
-    const statusEl=($('geoSection').style.display!=='none')?$('geoStatus'):$('exportStatus');
-    statusEl.textContent+=' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
-  }
-}
-$('downloadVideo').onclick=async()=>{
- if(!file)return;
- $('downloadVideo').disabled=true;
- const prevStatus=$('exportStatus').textContent;
- try{await doExport();}
- catch(err){console.error(err);$('exportStatus').textContent='Export failed: '+(err.message||err);$('downloadVideo').disabled=false;return;}
- if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
- const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
- const base=file.name.replace(/\.[^.]+$/,'');
- const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
- const ext=exportBlob.type.includes('mp4')?'mp4':'webm';a.download=base+tag+'.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
- $('downloadVideo').disabled=false;
-}
-let autoFound=false;function autoFind(){if(!autoFound&&lat==null){autoFound=true;setTimeout(()=>{try{findLocation()}catch(e){console.warn(e)}},300);}}
+/* ===== END OF PART 4 — paste PART 5 directly below this line (still inside the same <script>) ===== */
+    let autoFound=false;function autoFind(){if(!autoFound&&lat==null){autoFound=true;setTimeout(()=>{try{findLocation()}catch(e){console.warn(e)}},300);}}
 $('goGeo').onclick=()=>{autoFind();$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
 $('backEdit').onclick=()=>{video.pause();$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');drawPreview();updateSelectionBox()}
 $('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active');updateSelectionBox()}
@@ -2135,7 +1431,6 @@ function drawGeoPreview(){
  if(geo.height!==nh)geo.height=nh;
  gctx.clearRect(0,0,geo.width,geo.height);
  gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
- // Sequential text removal (same pipeline as preview / export)
  applyAllTextRemoval(gctx, geo.width, geo.height, r, false);
  if(lat!=null && lon!=null){
    drawGeoFrame(gctx, geo.width, geo.height, Math.max(0, video.currentTime - (+$('trimStart').value || 0)));
@@ -2203,98 +1498,9 @@ video.addEventListener('timeupdate',()=>{
   video.requestVideoFrameCallback?video.requestVideoFrameCallback(loop):requestAnimationFrame(loop);
 })();
 
-/* ===== Final unified text remover + GeoTag fixes ===== */
-function scheduleStaticMask(){}
-async function buildStaticMask(){return null}
-function removeWhiteFromCanvas(c,W,H,r){removeTextRect(c,W,H,r)}
-function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRect(c,W,H,r)}
-function removeTextRect(c,W,H,r){removeTextRectUltra(c,W,H,r)}
-
 const _blur=document.createElement('canvas');
 drawMapPreview();
-
 updateBoxCount();
-
-/* ===== ULTRA STRONG ALL-BOX TEXT REMOVER ===== */
-function removeWhiteFromCanvas(c,W,H,r){removeTextRectUltra(c,W,H,r)}
-function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRectUltra(c,W,H,r)}
-function removeWhiteFromCanvasExport(c,W,H,r){removeTextRectUltra(c,W,H,r)}
-function removeTextRectUltra(ctx,W,H,rect,pass){
-  if(!rect)return;
-  if(rect.w<2||rect.h<2)return;
-  // Small safety margin so letters touching / just outside a tight box edge are still caught.
-  const strong=(pass||0)>0;
-  const mg=Math.round((3+Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5))))*Math.max(.7,W/1080));
-  const rx0=Math.max(0,Math.floor(rect.x)-mg),ry0=Math.max(0,Math.floor(rect.y)-mg);
-  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+mg),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+mg);
-  if(rx1-rx0<2||ry1-ry0<2)return;
-  const power=Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5)));
-  const userT=Math.max(40,(+$('whiteThreshold').value||105)-power*7-(strong?18:0));   // power lowers the brightness bar
-  const k=Math.max(.7,W/1080);
-  const thick=Math.max(3,Math.round((+$('textThick').value||9)*k));
-  const grow=Math.max(4,Math.round(((+$('inpaintPasses').value||5)+power+(strong?2:0))*Math.max(.8,W/1080)));
-  const pad=Math.max(24,grow*5+thick*2);
-  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
-  const w=x1-x0,h=y1-y0,N=w*h;
-  const img=ctx.getImageData(x0,y0,w,h),d=img.data;
-  const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
-  const lumOf=()=>{const l=new Float32Array(N);for(let p=0;p<N;p++){const i=p*4;l[p]=d[i]*.299+d[i+1]*.587+d[i+2]*.114;}return l;};
-  const clip=(m)=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)m[y*w+x]=0;}return m;};
-
-  // ---- Pass 0: broad detector (white, coloured and contrasty lettering) ----
-  let lum=lumOf();
-  const rad=Math.max(2,Math.ceil(thick/2));
-  let opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
-  const mask=new Uint8Array(N);
-  for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
-    const p=y*w+x,i=p*4,L=lum[p];
-    const neigh=((lum[p-1]??L)+(lum[p+1]??L)+(lum[p-w]??L)+(lum[p+w]??L))/4;
-    const local=L-opened[p],contrast=L-neigh;
-    const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),ch=mx-mn;
-    const bright=L>=Math.max(42,userT-75);
-    const whiteish=ch<=125&&L>=Math.max(45,userT-70);
-    const coloredBright=ch>35&&L>=Math.max(70,userT-25)&&(local>=5||contrast>=7);
-    const coloredEdge=ch>35&&L>=45&&(local>=10||contrast>=11);
-    const stroke=local>=16||contrast>=14;
-    if((whiteish&&local>=2)||(bright&&local>=8)||coloredBright||coloredEdge||stroke)mask[p]=1;
-  }
-  // ---- Multi-sensitivity white detector adds anti-aliased edges the broad one can miss ----
-  const cfgs=[
-    {t:userT,thk:thick},
-    {t:Math.max(60,userT-22),thk:Math.max(3,Math.round(thick*.78))},
-    {t:Math.max(50,userT-40),thk:Math.max(2,Math.round(thick*.55))}
-  ];
-  for(const c of cfgs){
-    const m=detectWhite(d,w,h,c.t,ix0,iy0,ix1,iy1,Math.max(3,Math.round(W/90)),c.thk);
-    if(m)for(let p=0;p<N;p++)if(m[p])mask[p]=1;
-  }
-  if($('showMask').checked&&!exporting){
-    for(let p=0;p<N;p++)if(mask[p]){const i=p*4;d[i]=255;d[i+1]=0;d[i+2]=60;d[i+3]=255;}
-    ctx.putImageData(img,x0,y0);return;
-  }
-  let any=false;for(let p=0;p<N&&!any;p++)if(mask[p])any=true;
-  if(!any)return;
-
-  // ---- Main inpaint, then wider fringe passes ----
-  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,grow)),1);
-  inpaintHole(d,w,h,clip(dilateMask(mask,w,h,Math.max(3,Math.floor(grow*.75)))),1);
-
-  // ---- Residual sweeps: look again at the CLEANED pixels and remove any white left behind ----
-  const sweeps=2+Math.min(5,power);
-  for(let it=0;it<sweeps;it++){
-    lum=lumOf();
-    opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
-    const res=new Uint8Array(N);let c=0;
-    for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
-      const p=y*w+x,i=p*4,L=lum[p];
-      const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-      if(mx-mn<=100&&L>=Math.max(55,userT-45)&&(L-opened[p])>=4){res[p]=1;c++;}
-    }
-    if(!c)break;
-    inpaintHole(d,w,h,clip(dilateMask(res,w,h,Math.max(2,Math.round(grow*.6)))),1);
-  }
-  ctx.putImageData(img,x0,y0);
-}
 </script>
 </body>
 </html>

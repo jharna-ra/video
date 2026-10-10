@@ -1915,16 +1915,15 @@ drawMapPreview();
 updateBoxCount();
 
 /* =====================================================================
-   FIX BLOCK v2 — wide OSM street map + thin white-letter removal
+   FIX BLOCK v2 — OSM France / Esri map + thin white-letter removal
    ===================================================================== */
 
 /* ---------------------------- MAP ---------------------------- */
 const MAP_SRC=[
- {name:'© CARTO © OpenStreetMap',url:(z,x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}@2x.png`},
- {name:'© CARTO © OpenStreetMap',url:(z,x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
- {name:'© OpenStreetMap contributors',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
+ // CARTO is not used because some endpoints return an API-key-required watermark.
+ {name:'© OpenStreetMap contributors, OSM France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`},
  {name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
- {name:'© OSM France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`}
+ {name:'© OpenStreetMap contributors',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`}
 ];
 
 async function renderMap(cw0,ch0){
@@ -1940,22 +1939,33 @@ async function renderMap(cw0,ch0){
   }
  }
  const n2=2**z,c=tileXY(g.lat,g.lon,z);
- const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*TS,y:ch/2+(p.y-c.y)*TS};};
- const x0=Math.floor(c.x-cw/(2*TS)),x1=Math.floor(c.x+cw/(2*TS)),y0=Math.floor(c.y-ch/(2*TS)),y1=Math.floor(c.y+ch/(2*TS));
+ const proj=(la,lo)=>{const q=tileXY(la,lo,z);return {x:cw/2+(q.x-c.x)*TS,y:ch/2+(q.y-c.y)*TS};};
+ const x0=Math.floor(c.x-cw/(2*TS)),x1=Math.floor(c.x+cw/(2*TS));
+ const y0=Math.floor(c.y-ch/(2*TS)),y1=Math.floor(c.y+ch/(2*TS));
  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
  const cc=cv.getContext('2d');cc.imageSmoothingEnabled=true;cc.imageSmoothingQuality='high';
  cc.fillStyle='#e8e6e1';cc.fillRect(0,0,cw,ch);
- const pos=[];for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n2)pos.push([tx,ty]);
+ const pos=[];
+ for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n2)pos.push([tx,ty]);
  let used=null;
  for(const src of MAP_SRC){
   const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n2)+n2)%n2,ty)));
   if(imgs.filter(Boolean).length<Math.max(1,Math.ceil(pos.length*.6)))continue;
-  pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*TS,ch/2+(ty-c.y)*TS,TS+1,TS+1);});used=src;break;
+  pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*TS,ch/2+(ty-c.y)*TS,TS+1,TS+1);});
+  used=src;break;
  }
- if(!used){cc.fillStyle='#f2f4f5';cc.fillRect(0,0,cw,ch);cc.fillStyle='#344054';cc.textAlign='center';cc.textBaseline='middle';cc.font=`700 ${clamp(cw*.045,28,48)}px Arial, sans-serif`;cc.fillText('Real map tiles could not load',cw/2,ch/2-24);cc.font=`${clamp(cw*.026,20,28)}px Arial, sans-serif`;cc.fillStyle='#667085';cc.fillText('Check internet / browser blocking, then press Reload map',cw/2,ch/2+30);
+ if(!used){
+  cc.fillStyle='#f2f4f5';cc.fillRect(0,0,cw,ch);cc.fillStyle='#344054';cc.textAlign='center';cc.textBaseline='middle';
+  cc.font=`700 ${clamp(cw*.045,28,48)}px Arial, sans-serif`;cc.fillText('Real map tiles could not load',cw/2,ch/2-24);
+  cc.font=`${clamp(cw*.026,20,28)}px Arial, sans-serif`;cc.fillStyle='#667085';cc.fillText('Check internet / browser blocking, then press Reload map',cw/2,ch/2+30);
  }else{
-  const p=proj(g.lat,g.lon),r=clamp(cw0/60,3,6)*S;cc.fillStyle='#e53935';cc.beginPath();cc.arc(p.x,p.y,r,0,Math.PI*2);cc.fill();cc.strokeStyle='rgba(255,255,255,.95)';cc.lineWidth=Math.max(1.5,r*.35);cc.stroke();
-  const t=used.name,fs=Math.max(7,Math.min(cw0,ch0)/38)*S;cc.font=`${fs}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';const tw=cc.measureText(t).width+fs*.8;cc.fillStyle='rgba(255,255,255,.7)';cc.fillRect(cw-tw,ch-fs*1.5,tw,fs*1.5);cc.fillStyle='#333';cc.fillText(t,cw-fs*.4,ch-fs*.45);
+  const q=proj(g.lat,g.lon),r=clamp(cw0/60,3,6)*S;
+  cc.fillStyle='#e53935';cc.beginPath();cc.arc(q.x,q.y,r,0,Math.PI*2);cc.fill();
+  cc.strokeStyle='rgba(255,255,255,.95)';cc.lineWidth=Math.max(1.5,r*.35);cc.stroke();
+  const t=used.name,fs=Math.max(7,Math.min(cw0,ch0)/38)*S;
+  cc.font=`${fs}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
+  const tw=cc.measureText(t).width+fs*.8;cc.fillStyle='rgba(255,255,255,.7)';cc.fillRect(cw-tw,ch-fs*1.5,tw,fs*1.5);
+  cc.fillStyle='#333';cc.fillText(t,cw-fs*.4,ch-fs*.45);
  }
  cv.srcName=used?used.name:'no tiles';cv.isFallback=!used;return cv;
 }
@@ -1965,26 +1975,6 @@ async function buildMapCanvas(){
  const m=Math.max(bw,bh),f=Math.min(1100/m,Math.max(1,360/m));
  return renderMap(Math.max(96,Math.round(bw*f)),Math.max(96,Math.round(bh*f)));
 }
-
-/* Add a location caption and attribution to the map on preview and export. */
-const _geoFrameBase=drawGeoFrame;
-drawGeoFrame=function(ctx,W,H,seconds){
- _geoFrameBase(ctx,W,H,seconds);
- if(!mapImg||!mapImg.width||mapImg.srcName==='uploaded image')return;
- const {mapW,mapH,mapX,mapY}=computeGeoLayout(W,H);
- const cs=Math.max(8,Math.min(mapW,mapH)*.07),bh=cs*1.6,mr=Math.max(6,Math.min(mapW,mapH)*.06);
- ctx.save();ctx.globalAlpha=clamp(state.gMapO/100,0,1);
- roundRectCorners(ctx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);ctx.clip();
- ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(mapX,mapY+mapH-bh,mapW,bh);
- ctx.textBaseline='middle';const cy=mapY+mapH-bh/2,attr=mapImg.isFallback?'':(mapImg.srcName||'');let aw=0;
- if(attr){ctx.font=`600 ${cs*.62}px Arial, sans-serif`;aw=ctx.measureText(attr).width;ctx.fillStyle='rgba(255,255,255,.75)';ctx.textAlign='right';ctx.fillText(attr,mapX+mapW-cs*.4,cy);}
- ctx.font=`700 ${cs}px Arial, sans-serif`;ctx.textAlign='left';ctx.fillStyle='#fff';
- let cap=[$('gPlace')?.value?.trim(),$('gState')?.value?.trim()].filter(Boolean).join(', '),cut=false;
- const maxc=Math.max(0,mapW-aw-cs*1.3);
- while(cap.length>3&&ctx.measureText(cap+(cut?'…':'')).width>maxc){cap=cap.slice(0,-1);cut=true;}
- ctx.fillText(cap+(cut?'…':''),mapX+cs*.5,cy);ctx.restore();
- if(ctx===gctx){ctx.save();ctx.strokeStyle='rgba(255,255,255,.95)';ctx.lineWidth=Math.max(1,2*W/geo.width);ctx.setLineDash([6,4]);ctx.strokeRect(mapX,mapY,mapW,mapH);ctx.setLineDash([]);const hs=Math.max(10,14*W/geo.width);ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);ctx.restore();}
-};
 
 /* ------------------------ TEXT REMOVER ------------------------ */
 function removeTextRectUltra(ctx,W,H,rect){

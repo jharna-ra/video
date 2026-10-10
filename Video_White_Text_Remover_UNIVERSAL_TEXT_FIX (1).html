@@ -164,7 +164,7 @@ input[type=range]{width:100%}
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
 <label>Edge expand (halo cleanup) <b id="inpaintPassVal">5</b>px</label>
 <input id="inpaintPasses" type="range" min="1" max="8" value="5">
-<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get cloned over with real neighbouring pixels, so nothing else is blurred.</div>
+<div class="small">Lower the sensitivity number if text is still visible — it lowers the brightness bar for what counts as "white text". Only true white/light-gray pixels are ever touched (bright colors like yellow vests are ignored), and only those pixels get filled from the real surrounding pixels, with matching video grain, so nothing else is blurred.</div>
 </div>
 
 <div class="section">
@@ -348,49 +348,140 @@ function isWhite(data,i,t){
  const brightness=(r+g+b)/3;
  return neutral && (mx>=t || brightness>=t-15);
 }
-function removeWhiteFromCanvas(ctx2,W,H,rect){
- if(!rect)return;
- const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
- const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
- if(x1<=x0||y1<=y0)return;
- const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
- const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
- const W2=x1-x0,H2=y1-y0,N=W2*H2;
- const mask=new Uint8Array(N);
- for(let y=0;y<H2;y++){
-   for(let x=0;x<W2;x++){
-     const p=y*W2+x,i=p*4;
-     if(isWhite(d,i,t)) mask[p]=1;
-   }
- }
- const grow=Math.max(1,Math.min(6,+$('inpaintPasses').value||3));
- const expanded=new Uint8Array(mask);
- for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x; if(mask[p]){
-     for(let dy=-grow;dy<=grow;dy++) for(let dx=-grow;dx<=grow;dx++){
-       if(dx*dx+dy*dy>grow*grow+1)continue;
-       const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
-     }
-   }
- }
- const out=new Uint8ClampedArray(d);
- const maxSearch=60;
- for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x; if(!expanded[p])continue;
-   let sr=0,sg=0,sb=0,n=0;
-   for(let k=1;k<=maxSearch;k++){const xx=x-k;if(xx<0)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const xx=x+k;if(xx>=W2)break;const q=y*W2+xx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const yy=y-k;if(yy<0)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   for(let k=1;k<=maxSearch;k++){const yy=y+k;if(yy>=H2)break;const q=yy*W2+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}
-   if(n){
-     const i=p*4,a=strength;
-     out[i]=d[i]*(1-a)+(sr/n)*a;
-     out[i+1]=d[i+1]*(1-a)+(sg/n)*a;
-     out[i+2]=d[i+2]*(1-a)+(sb/n)*a;
-   }
- }
- ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
+
+// ===== Natural white-text removal (smooth fill + matched grain) =====
+function dilateMask(m,w,h,g){
+  const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
+  const pre=new Int32Array(Math.max(w,h)+1);
+  for(let y=0;y<h;y++){
+    pre[0]=0;for(let x=0;x<w;x++)pre[x+1]=pre[x]+m[y*w+x];
+    for(let x=0;x<w;x++){const a=Math.max(0,x-g),b=Math.min(w,x+g+1);tmp[y*w+x]=(pre[b]-pre[a])>0?1:0;}
+  }
+  for(let x=0;x<w;x++){
+    pre[0]=0;for(let y=0;y<h;y++)pre[y+1]=pre[y]+tmp[y*w+x];
+    for(let y=0;y<h;y++){const a=Math.max(0,y-g),b=Math.min(h,y+g+1);out[y*w+x]=(pre[b]-pre[a])>0?1:0;}
+  }
+  return out;
 }
+
+function pushPullFill(src,hole,w,h){
+  // Level 0: known pixels only
+  const L=[];
+  let lv={w,h,c:[new Float32Array(w*h),new Float32Array(w*h),new Float32Array(w*h)],a:new Float32Array(w*h)};
+  let knownCount=0;
+  for(let p=0;p<w*h;p++){
+    if(!hole[p]){lv.c[0][p]=src[0][p];lv.c[1][p]=src[1][p];lv.c[2][p]=src[2][p];lv.a[p]=1;knownCount++;}
+  }
+  if(!knownCount)return null;
+  L.push(lv);
+  // Push: build coarser levels
+  while(lv.w>1||lv.h>1){
+    const nw=(lv.w+1)>>1,nh=(lv.h+1)>>1;
+    const n={w:nw,h:nh,c:[new Float32Array(nw*nh),new Float32Array(nw*nh),new Float32Array(nw*nh)],a:new Float32Array(nw*nh)};
+    for(let y=0;y<lv.h;y++)for(let x=0;x<lv.w;x++){
+      const s=y*lv.w+x,t=(y>>1)*nw+(x>>1);
+      n.c[0][t]+=lv.c[0][s]*.25;n.c[1][t]+=lv.c[1][s]*.25;n.c[2][t]+=lv.c[2][s]*.25;n.a[t]+=lv.a[s]*.25;
+    }
+    L.push(n);lv=n;
+  }
+  // Pull: start at coarsest
+  const top=L[L.length-1];
+  let res=[new Float32Array(top.w*top.h),new Float32Array(top.w*top.h),new Float32Array(top.w*top.h)];
+  for(let p=0;p<top.w*top.h;p++)for(let k=0;k<3;k++)res[k][p]=top.a[p]>1e-6?top.c[k][p]/top.a[p]:0;
+  for(let l=L.length-2;l>=0;l--){
+    const cur=L[l],cw=L[l+1].w,chh=L[l+1].h;
+    const nr=[new Float32Array(cur.w*cur.h),new Float32Array(cur.w*cur.h),new Float32Array(cur.w*cur.h)];
+    for(let y=0;y<cur.h;y++)for(let x=0;x<cur.w;x++){
+      const p=y*cur.w+x;
+      const fx=Math.max(0,Math.min(cw-1,(x+.5)/2-.5)),fy=Math.max(0,Math.min(chh-1,(y+.5)/2-.5));
+      const x0=Math.floor(fx),y0=Math.floor(fy),x1=Math.min(cw-1,x0+1),y1=Math.min(chh-1,y0+1);
+      const tx=fx-x0,ty=fy-y0;
+      const a=cur.a[p],wgt=a>1?1:a;
+      for(let k=0;k<3;k++){
+        const r=res[k];
+        const up=(r[y0*cw+x0]*(1-tx)+r[y0*cw+x1]*tx)*(1-ty)+(r[y1*cw+x0]*(1-tx)+r[y1*cw+x1]*tx)*ty;
+        const known=a>1e-6?cur.c[k][p]/a:up;
+        nr[k][p]=known*wgt+up*(1-wgt);
+      }
+    }
+    res=nr;
+  }
+  // Relax: make the hole continuous with its border
+  for(let it=0;it<12;it++){
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      const p=y*w+x; if(!hole[p])continue;
+      const l=x>0?p-1:p,r=x<w-1?p+1:p,u=y>0?p-w:p,d=y<h-1?p+w:p;
+      for(let k=0;k<3;k++)res[k][p]=(res[k][l]+res[k][r]+res[k][u]+res[k][d])*.25;
+    }
+  }
+  return res;
+}
+
+function removeWhiteFromCanvas(ctx2,W,H,rect){
+  if(!rect)return;
+  const rx0=Math.max(0,Math.floor(rect.x)),ry0=Math.max(0,Math.floor(rect.y));
+  const rx1=Math.min(W,Math.ceil(rect.x+rect.w)),ry1=Math.min(H,Math.ceil(rect.y+rect.h));
+  if(rx1-rx0<2||ry1-ry0<2)return;
+
+  // read extra context around the selection so the fill matches real surroundings
+  const pad=Math.round(Math.max(6,Math.min(16,W/80)));
+  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
+  const w=x1-x0,h=y1-y0,N=w*h;
+  const img=ctx2.getImageData(x0,y0,w,h),d=img.data;
+  const t=+$('whiteThreshold').value||115;
+  const strength=(+$('removeOpacity').value||100)/100;
+  const scale=Math.max(1,W/640);
+  const grow=Math.max(1,Math.round((+$('inpaintPasses').value||5)*scale*0.8));
+
+  // 1) detect white text only inside the selected rectangle
+  const mask=new Uint8Array(N);
+  let any=false;
+  for(let y=ry0;y<ry1;y++)for(let x=rx0;x<rx1;x++){
+    const p=(y-y0)*w+(x-x0);
+    if(isWhite(d,p*4,t)){mask[p]=1;any=true;}
+  }
+  if(!any)return;
+
+  // 2) expand to swallow the anti-aliased halo, but never outside the rectangle
+  const hole=dilateMask(mask,w,h,grow);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const gx=x+x0,gy=y+y0;
+    if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)hole[y*w+x]=0;
+  }
+
+  // 3) smooth fill from all surrounding pixels
+  const src=[new Float32Array(N),new Float32Array(N),new Float32Array(N)];
+  for(let p=0;p<N;p++){src[0][p]=d[p*4];src[1][p]=d[p*4+1];src[2][p]=d[p*4+2];}
+  const fill=pushPullFill(src,hole,w,h);
+  if(!fill)return;
+
+  // 4) measure the video's own grain so the filled area has the same texture
+  let sum=0,cnt=0;
+  for(let y=0;y<h;y++)for(let x=0;x<w-1;x++){
+    const p=y*w+x;
+    if(hole[p]||hole[p+1])continue;
+    const l1=src[0][p]*.299+src[1][p]*.587+src[2][p]*.114;
+    const l2=src[0][p+1]*.299+src[1][p+1]*.587+src[2][p+1]*.114;
+    sum+=Math.min(24,Math.abs(l1-l2));cnt++;
+  }
+  const sigma=Math.min(10,cnt?(sum/cnt)/1.128:0);
+
+  // 5) write result with matching grain
+  for(let p=0;p<N;p++){
+    if(!hole[p])continue;
+    const i=p*4;
+    const n=((Math.random()+Math.random()+Math.random()-1.5)*2)*sigma;
+    for(let k=0;k<3;k++){
+      let v=fill[k][p]+n;
+      v=v<0?0:v>255?255:v;
+      d[i+k]=d[i+k]*(1-strength)+v*strength;
+    }
+  }
+  ctx2.putImageData(img,x0,y0);
+}
+// Preview and export now use the exact same routine
+function removeWhiteFromCanvasExport(ctx2,W,H,rect){removeWhiteFromCanvas(ctx2,W,H,rect);}
+
 function drawPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();
@@ -981,160 +1072,6 @@ function prepareOutput(){
  outputH=Math.max(2,Math.round(r.h/2)*2);
  work.width=outputW;work.height=outputH;
 }
-function removeWhiteFromCanvasExport(ctx2,W,H,rect){
-  if(!rect)return;
-  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
-  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
-  const rw=x1-x0, rh=y1-y0;
-  if(rw<2||rh<2)return;
-
-  const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data, threshold=+$('whiteThreshold').value, strength=+$('removeOpacity').value/100;
-  const N=rw*rh, mask=new Uint8Array(N), expanded=new Uint8Array(N);
-  for(let y=0;y<rh;y++){
-    for(let x=0;x<rw;x++){
-      const p=y*rw+x,i=p*4;
-      const rr=d[i],gg=d[i+1],bb=d[i+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
-      const neutral=(mx-mn)<=115;
-      const bright=(rr+gg+bb)/3;
-      if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
-    }
-  }
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x;
-    if(mask[p]){
-      for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
-        const xx=x+dx,yy=y+dy;
-        if(xx>=0&&yy>=0&&xx<rw&&yy<rh) expanded[yy*rw+xx]=1;
-      }
-    }
-  }
-
-  const maxSearch=Math.min(50,Math.max(24,Math.round(Math.max(rw,rh)/2)));
-  const filled=new Uint8ClampedArray(d);
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x;
-    if(!expanded[p])continue;
-    let sr=0,sg=0,sb=0,n=0;
-    for(let k=1;k<=maxSearch;k++){const lx=x-k;if(lx>=0){const q=y*rw+lx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const rx=x+k;if(rx<rw){const q=y*rw+rx;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const ty=y-k;if(ty>=0){const q=ty*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    for(let k=1;k<=maxSearch;k++){const by=y+k;if(by<rh){const q=by*rw+x;if(!expanded[q]){const j=q*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;break}}}
-    if(n){const i=p*4;filled[i]=d[i]*(1-strength)+(sr/n)*strength;filled[i+1]=d[i+1]*(1-strength)+(sg/n)*strength;filled[i+2]=d[i+2]*(1-strength)+(sb/n)*strength;}
-  }
-
-  const out=new Uint8ClampedArray(filled);
-  for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
-    const p=y*rw+x; if(!expanded[p])continue;
-    let sr=0,sg=0,sb=0,n=0;
-    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-      const xx=x+dx,yy=y+dy;
-      if(xx<0||yy<0||xx>=rw||yy>=rh)continue;
-      const q=yy*rw+xx,j=q*4;
-      sr+=filled[j];sg+=filled[j+1];sb+=filled[j+2];n++;
-    }
-    if(n){const i=p*4;out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;}
-  }
-  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
-}
-
-function removeWhiteFromCanvasFast(ctx2,W,H,rect){
-  if(!rect)return;
-  const x0=Math.max(0,Math.floor(rect.x)), y0=Math.max(0,Math.floor(rect.y));
-  const x1=Math.min(W,Math.ceil(rect.x+rect.w)), y1=Math.min(H,Math.ceil(rect.y+rect.h));
-  const rw=x1-x0, rh=y1-y0;
-  if(rw<2||rh<2)return;
-
-  // Fast inpaint: detect white pixels once, then use only the four nearest
-  // non-white neighbours. This avoids the old long per-pixel searches.
-  const img=ctx2.getImageData(x0,y0,rw,rh);
-  const d=img.data, threshold=+$('whiteThreshold').value||115;
-  const strength=(+$('removeOpacity').value||100)/100;
-  const N=rw*rh, mask=new Uint8Array(N);
-
-  for(let p=0,i=0;p<N;p++,i+=4){
-    const r=d[i],g=d[i+1],b=d[i+2];
-    const mx=r>g?(r>b?r:b):(g>b?g:b);
-    const mn=r<g?(r<b?r:b):(g<b?g:b);
-    if(mx>=threshold && (r+g+b)/3>=threshold && mx-mn<=115) mask[p]=1;
-  }
-
-  const out=new Uint8ClampedArray(d);
-  for(let y=0;y<rh;y++){
-    const row=y*rw;
-    for(let x=0;x<rw;x++){
-      const p=row+x;
-      if(!mask[p])continue;
-      let sr=0,sg=0,sb=0,n=0,j;
-      if(x>0 && !mask[p-1]){j=(p-1)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(x+1<rw && !mask[p+1]){j=(p+1)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(y>0 && !mask[p-rw]){j=(p-rw)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(y+1<rh && !mask[p+rw]){j=(p+rw)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];n++;}
-      if(n){
-        j=p*4;
-        out[j]=d[j]*(1-strength)+(sr/n)*strength;
-        out[j+1]=d[j+1]*(1-strength)+(sg/n)*strength;
-        out[j+2]=d[j+2]*(1-strength)+(sb/n)*strength;
-      }
-    }
-  }
-  ctx2.putImageData(new ImageData(out,rw,rh),x0,y0);
-}
-
-let fastGL=null;
-function initFastGL(){
-  if(fastGL && fastGL.c.width===outputW && fastGL.c.height===outputH)return fastGL;
-  fastGL=null;
-  const c=document.createElement('canvas');
-  c.width=outputW;c.height=outputH;
-  const gl=c.getContext('webgl',{premultipliedAlpha:false,antialias:false,preserveDrawingBuffer:false});
-  if(!gl)return null;
-  const vs=`attribute vec2 p; varying vec2 uv; void main(){uv=(p+1.0)*0.5; gl_Position=vec4(p,0.,1.);}`;
-  const fs=`precision mediump float; varying vec2 uv; uniform sampler2D tex; uniform vec4 rr; uniform float th; uniform float strength; uniform vec2 px;
-  bool white(vec3 c){float mx=max(c.r,max(c.g,c.b));float mn=min(c.r,min(c.g,c.b));float bright=(c.r+c.g+c.b)/3.0;return mx>=th && bright>=th && (mx-mn)<=0.45;}
-  void main(){
-    vec4 c=texture2D(tex,uv);
-    bool inside=uv.x>=rr.x&&uv.x<=rr.z&&uv.y>=rr.y&&uv.y<=rr.w;
-    if(inside && white(c.rgb)){
-      vec3 s=vec3(0.0);float n=0.0;
-      vec3 a=texture2D(tex,uv+vec2(-px.x,0.)).rgb;if(!white(a)){s+=a;n+=1.0;}
-      vec3 b=texture2D(tex,uv+vec2(px.x,0.)).rgb;if(!white(b)){s+=b;n+=1.0;}
-      vec3 d=texture2D(tex,uv+vec2(0.,-px.y)).rgb;if(!white(d)){s+=d;n+=1.0;}
-      vec3 e=texture2D(tex,uv+vec2(0.,px.y)).rgb;if(!white(e)){s+=e;n+=1.0;}
-      vec3 q=texture2D(tex,uv+vec2(-px.x,-px.y)).rgb;if(!white(q)){s+=q;n+=1.0;}
-      vec3 r=texture2D(tex,uv+vec2(px.x,-px.y)).rgb;if(!white(r)){s+=r;n+=1.0;}
-      vec3 t=texture2D(tex,uv+vec2(-px.x,px.y)).rgb;if(!white(t)){s+=t;n+=1.0;}
-      vec3 u=texture2D(tex,uv+vec2(px.x,px.y)).rgb;if(!white(u)){s+=u;n+=1.0;}
-      if(n>0.0)c.rgb=mix(c.rgb,s/n,strength);
-    }
-    gl_FragColor=c;
-  }`;
-  function sh(type,src){const shd=gl.createShader(type);gl.shaderSource(shd,src);gl.compileShader(shd);return shd}
-  const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);
-  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){return null}
-  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  const pos=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
-  fastGL={gl,c,pr,tex,rr:gl.getUniformLocation(pr,'rr'),th:gl.getUniformLocation(pr,'th'),strength:gl.getUniformLocation(pr,'strength'),px:gl.getUniformLocation(pr,'px')};
-  return fastGL;
-}
-function drawWhiteRemovalGPU(rect){
-  const g=initFastGL(); if(!g)return false;
-  const {gl,c,pr,tex}=g;
-  gl.viewport(0,0,outputW,outputH);gl.useProgram(pr);
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,work);
-  gl.uniform1f(g.th,(+$('whiteThreshold').value||115)/255);
-  gl.uniform1f(g.strength,(+$('removeOpacity').value||100)/100);
-  gl.uniform2f(g.px,1/outputW,1/outputH);
-  const x=rect.x/outputW, y=rect.y/outputH, w=rect.w/outputW, h=rect.h/outputH;
-  gl.uniform4f(g.rr,x,1-(y+h),x+w,1-y);
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-  wctx.clearRect(0,0,outputW,outputH);
-  wctx.drawImage(c,0,0,outputW,outputH);
-  return true;
-}
 
 function exportNeedsFrameProcessing(){
   // Crop/trim are represented by sourceRect()/start-end below. Only run
@@ -1156,9 +1093,7 @@ function drawExportFrame(elapsedOverride){
       w:whiteRect.w/r.w*outputW,
       h:whiteRect.h/r.h*outputH
     };
-    // Use the export-grade inpainting routine here. The ultra-fast 4-neighbour
-    // version can leave the middle of thick white letters untouched because
-    // those pixels have no immediate non-white neighbour.
+    // Same natural-fill routine as the preview.
     removeWhiteFromCanvasExport(wctx,outputW,outputH,rectOnOutput);
   }
 

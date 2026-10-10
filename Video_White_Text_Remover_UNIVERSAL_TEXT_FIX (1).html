@@ -1350,61 +1350,59 @@ function makeFallbackMap(lat,lon){
   return fallback;
 }
 
-async function makeMap(lat,lon){
-  const z=17, tile=256, n=2**z;
-  const CW=1024, CH=640;
-  const t=tileXY(lat,lon,z), cx=Math.floor(t.x), cy=Math.floor(t.y);
-  const sources=[
-    {name:'© Esri',url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
-    {name:'© CARTO',url:(x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
-    {name:'© OpenStreetMap',url:(x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`}
+/* ===== CLASSIC MAP (same behaviour as the first version) =====
+   Searches the place, then draws a street map centred on it with a red pin.
+   Tries OpenStreetMap first (like the first version), then CARTO and Esri. */
+async function makeMap(la, lo){
+  const Z = 15;                 // 15 = first version's zoom. Try 16 or 17 for closer.
+  const CW = 1024, CH = 640, T = 256, n = 2 ** Z;
+  const t = tileXY(la, lo, Z), cx = Math.floor(t.x), cy = Math.floor(t.y);
+  const SOURCES = [
+    {name:'© OpenStreetMap', url:(x,y)=>`https://tile.openstreetmap.org/${Z}/${x}/${y}.png`},
+    {name:'© CARTO',         url:(x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${Z}/${x}/${y}.png`},
+    {name:'© Esri',          url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${Z}/${y}/${x}`}
   ];
-  for(const source of sources){
-    const c=document.createElement('canvas');c.width=CW;c.height=CH;
-    const cc=c.getContext('2d');
-    cc.fillStyle='#e8e8e8';cc.fillRect(0,0,CW,CH);
-    let loaded=0,centerOK=false;
-    const jobs=[];
-    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-      const tx=(((cx+dx)%n)+n)%n, ty=cy+dy;
-      if(ty<0||ty>=n)continue;
-      jobs.push(new Promise(resolve=>{
-        const im=new Image();im.crossOrigin='anonymous';
-        let fin=false;const done=()=>{if(!fin){fin=true;resolve();}};
-        im.onload=()=>{
+  for(const src of SOURCES){
+    const c = document.createElement('canvas'); c.width = CW; c.height = CH;
+    const cc = c.getContext('2d');
+    cc.fillStyle = '#e8e8e8'; cc.fillRect(0, 0, CW, CH);
+    let loaded = 0;
+    const jobs = [];
+    for(let dy = -2; dy <= 2; dy++) for(let dx = -2; dx <= 2; dx++){
+      const tx = (((cx + dx) % n) + n) % n, ty = cy + dy;
+      if(ty < 0 || ty >= n) continue;
+      jobs.push(new Promise(res => {
+        const im = new Image(); im.crossOrigin = 'anonymous';
+        let fin = false; const done = () => { if(!fin){ fin = true; res(); } };
+        im.onload = () => {
           try{
-            const px=CW/2+(dx-(t.x-cx))*tile, py=CH/2+(dy-(t.y-cy))*tile;
-            cc.drawImage(im,px,py,tile,tile);loaded++;
-            if(!dx&&!dy)centerOK=true;
+            cc.drawImage(im, CW/2 + (dx - (t.x - cx)) * T, CH/2 + (dy - (t.y - cy)) * T, T, T);
+            loaded++;
           }catch(e){}
           done();
         };
-        im.onerror=done;
-        im.src=source.url(tx,ty);
-        setTimeout(done,7000);
+        im.onerror = done;
+        setTimeout(done, 7000);
+        im.src = src.url(tx, ty);
       }));
     }
     await Promise.all(jobs);
-    if(centerOK&&loaded>=1){
-      // location pin
-      const mx=CW/2,my=CH/2;
+    if(loaded >= 12){                       // enough tiles = this server works
       cc.save();
-      cc.shadowColor='rgba(0,0,0,.35)';cc.shadowBlur=8;
-      cc.fillStyle='#e53935';cc.beginPath();cc.arc(mx,my,16,0,Math.PI*2);cc.fill();
-      cc.shadowBlur=0;
-      cc.strokeStyle='#fff';cc.lineWidth=5;cc.stroke();
-      cc.fillStyle='#fff';cc.beginPath();cc.arc(mx,my,5,0,Math.PI*2);cc.fill();
-      // attribution (bottom-right, small)
-      cc.font='13px Arial';cc.textAlign='right';
-      const tw=cc.measureText(source.name).width+14;
-      cc.fillStyle='rgba(255,255,255,.85)';cc.fillRect(CW-tw-4,CH-24,tw,20);
-      cc.fillStyle='#222';cc.fillText(source.name,CW-11,CH-9);
+      cc.shadowColor = 'rgba(0,0,0,.4)'; cc.shadowBlur = 10;
+      cc.fillStyle = '#e53935'; cc.beginPath(); cc.arc(CW/2, CH/2, 22, 0, Math.PI*2); cc.fill();
+      cc.shadowBlur = 0; cc.strokeStyle = '#fff'; cc.lineWidth = 6; cc.stroke();
+      cc.fillStyle = '#fff'; cc.beginPath(); cc.arc(CW/2, CH/2, 7, 0, Math.PI*2); cc.fill();
+      cc.font = '14px Arial'; cc.textAlign = 'right';
+      const w = cc.measureText(src.name).width + 14;
+      cc.fillStyle = 'rgba(255,255,255,.85)'; cc.fillRect(CW - w - 4, CH - 26, w, 20);
+      cc.fillStyle = '#222'; cc.fillText(src.name, CW - 11, CH - 11);
       cc.restore();
-      c.srcName=source.name;
+      c.srcName = src.name;
       return c;
     }
   }
-  return makeFallbackMap(lat,lon);
+  return makeFallbackMap(la, lo);           // all servers blocked
 }
 function readRunningCoords(){
   startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
@@ -2167,284 +2165,6 @@ function removeTextRectUltra(ctx,W,H,rect){
   }
   ctx.putImageData(img,x0,y0);
 }
-
-/* =====================================================================
-   MAP FIX — map is built from State + District/Town (pasted just before the LAST </script>)
-   - Finds the district/town, fits the whole district boundary in the map box
-   - Draws district outline + red pin + "District, State" caption on the map
-   - Tries 4 tile servers; if all are blocked it still draws the boundary
-   - Re-builds automatically when State / District / map size / zoom change
-   ===================================================================== */
-let mapGeo=null,mapBuildToken=0,mapTimer=null,findToken=0,findTimer=null;
-const tileCache=new Map();
-const TILE_SOURCES=[
- {name:'© CARTO',url:(z,x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
- {name:'© OpenStreetMap',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
- {name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
- {name:'© OSM France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`}
-];
-
-/* ---------- zoom slider (added to the Overlay card automatically) ---------- */
-(function(){
- const anchor=$('gDetails');if(!anchor||$('gZoom'))return;
- const top=document.createElement('div');top.className='sliderTop';
- top.innerHTML='<span>Map zoom (0 = fit whole district)</span><b id="gZoomVal">0</b>';
- const sl=document.createElement('input');
- sl.id='gZoom';sl.type='range';sl.min='-4';sl.max='5';sl.step='1';sl.value='0';
- anchor.after(top,sl);
- sl.addEventListener('input',()=>{$('gZoomVal').textContent=sl.value;scheduleMapRebuild();});
-})();
-
-/* ---------- geocoding: returns point + bounding box + district outline ---------- */
-async function geocodeAny(q,place,stateName){
- const tryFetch=async url=>{
-  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9000);
-  try{
-   const r=await fetch(url,{signal:ctl.signal,headers:{Accept:'application/json'}});
-   if(!r.ok)throw Error('HTTP '+r.status);
-   return await r.json();
-  }finally{clearTimeout(t)}
- };
- const nom=j=>{
-  const f=j&&j[0];if(!f)return null;
-  const bb=(f.boundingbox||[]).map(Number),g=f.geojson;
-  return {
-   lat:+f.lat,lon:+f.lon,
-   bbox:bb.length===4&&bb.every(isFinite)?bb:null,
-   poly:g&&(g.type==='Polygon'||g.type==='MultiPolygon')?g:null
-  };
- };
- const base={format:'json',limit:'1',countrycodes:'in',polygon_geojson:'1',polygon_threshold:'0.002'};
- const NOM='https://nominatim.openstreetmap.org/search?';
- const tries=[
-  async()=>nom(await tryFetch(NOM+new URLSearchParams({...base,q}))),
-  async()=>place&&stateName?nom(await tryFetch(NOM+new URLSearchParams({...base,county:place,state:stateName,country:'India'}))):null,
-  async()=>place&&stateName?nom(await tryFetch(NOM+new URLSearchParams({...base,city:place,state:stateName,country:'India'}))):null,
-  async()=>{
-   const j=await tryFetch('https://photon.komoot.io/api/?'+new URLSearchParams({q,limit:'1'}));
-   const f=j.features&&j.features[0];if(!f)return null;
-   const e=f.properties&&f.properties.extent;
-   return {lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],bbox:e&&e.length===4?[e[3],e[1],e[0],e[2]]:null,poly:null};
-  },
-  async()=>{
-   const j=await tryFetch('https://geocoding-api.open-meteo.com/v1/search?'+new URLSearchParams({name:place||stateName,count:'1',country_code:'IN'}));
-   const f=j.results&&j.results[0];
-   return f?{lat:f.latitude,lon:f.longitude,bbox:null,poly:null}:null;
-  }
- ];
- for(const t of tries){
-  try{const r=await t();if(r&&isFinite(r.lat)&&isFinite(r.lon))return r;}
-  catch(e){console.warn('geocoder failed',e)}
- }
- return null;
-}
-
-/* ---------- map rendering ---------- */
-function loadTile(src,z,x,y){
- const key=src.name+'|'+z+'|'+x+'|'+y;
- if(tileCache.has(key))return Promise.resolve(tileCache.get(key));
- return new Promise(res=>{
-  const im=new Image();im.crossOrigin='anonymous';let fin=false;
-  const done=v=>{
-   if(fin)return;fin=true;
-   if(v){if(tileCache.size>300)tileCache.clear();tileCache.set(key,v);}
-   res(v);
-  };
-  im.onload=()=>done(im);
-  im.onerror=()=>done(null);
-  setTimeout(()=>done(null),8000);
-  im.src=src.url(z,x,y);
- });
-}
-function fitZoom(g,cw,ch){
- let z=13; // town / point result: show some surroundings
- if(g.bbox){
-  const [s,n,w,e]=g.bbox;
-  if(Math.abs(n-s)>0.004||Math.abs(e-w)>0.004){
-   for(z=16;z>=5;z--){
-    const a=tileXY(n,w,z),b=tileXY(s,e,z);
-    if((b.x-a.x)*256<=cw*0.86&&(b.y-a.y)*256<=ch*0.86)break;
-   }
-  }
- }
- return z;
-}
-async function renderMap(cw,ch){
- const g=mapGeo;if(!g)return null;
- const adj=+($('gZoom')&&$('gZoom').value)||0;
- const z=clamp(fitZoom(g,cw,ch)+adj,3,18),n=2**z;
- const cLat=g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat,cLon=g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon;
- const c=tileXY(cLat,cLon,z);
- const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*256,y:ch/2+(p.y-c.y)*256};};
- const x0=Math.floor(c.x-cw/512),x1=Math.floor(c.x+cw/512),y0=Math.floor(c.y-ch/512),y1=Math.floor(c.y+ch/512);
- const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
- const cc=cv.getContext('2d');
- const pos=[];
- for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n)pos.push([tx,ty]);
- let used=null;
- for(const src of TILE_SOURCES){
-  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n)+n)%n,ty)));
-  const ok=imgs.filter(Boolean).length;
-  if(ok>=Math.max(1,Math.ceil(pos.length*.6))){
-   cc.fillStyle='#e8e8e8';cc.fillRect(0,0,cw,ch);
-   pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*256,ch/2+(ty-c.y)*256,256,256);});
-   used=src;break;
-  }
- }
- if(!used){ // tiles blocked: schematic background, boundary + pin still drawn
-  cc.fillStyle='#e9eef2';cc.fillRect(0,0,cw,ch);
-  cc.strokeStyle='#d3dbe1';cc.lineWidth=1;
-  for(let i=0;i<=cw;i+=48){cc.beginPath();cc.moveTo(i,0);cc.lineTo(i,ch);cc.stroke();}
-  for(let i=0;i<=ch;i+=48){cc.beginPath();cc.moveTo(0,i);cc.lineTo(cw,i);cc.stroke();}
-  cc.fillStyle='#8a1c14';cc.font=`bold ${Math.max(10,cw/26)}px Arial`;cc.textAlign='center';
-  cc.fillText('Map tiles blocked on this network',cw/2,Math.max(16,ch*.08));
- }
- // district / town outline
- if(g.poly){
-  const polys=g.poly.type==='Polygon'?[g.poly.coordinates]:g.poly.coordinates;
-  const sw=Math.max(2,cw/300);
-  cc.save();cc.lineJoin='round';cc.beginPath();
-  for(const rings of polys)for(const ring of rings){
-   ring.forEach(([lo,la],i)=>{const p=proj(la,lo);if(i)cc.lineTo(p.x,p.y);else cc.moveTo(p.x,p.y);});
-   cc.closePath();
-  }
-  cc.fillStyle='rgba(21,101,192,.10)';cc.fill('evenodd');
-  cc.strokeStyle='#fff';cc.lineWidth=sw*2.4;cc.stroke();
-  cc.strokeStyle='#1565c0';cc.lineWidth=sw;cc.stroke();
-  cc.restore();
- }
- // pin
- const pp=proj(g.lat,g.lon),pr=clamp(cw/42,8,18);
- cc.save();
- cc.shadowColor='rgba(0,0,0,.4)';cc.shadowBlur=pr*.5;
- cc.fillStyle='#e53935';cc.beginPath();cc.arc(pp.x,pp.y,pr,0,Math.PI*2);cc.fill();
- cc.shadowBlur=0;cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,pr*.28);cc.stroke();
- cc.fillStyle='#fff';cc.beginPath();cc.arc(pp.x,pp.y,pr*.34,0,Math.PI*2);cc.fill();
- cc.restore();
- cv.srcName=used?used.name:'no tiles';cv.isFallback=!used;
- return cv;
-}
-async function buildMapCanvas(){
- const r=sourceRect();
- let bw=(r.w||0)*state.mapW/100,bh=(r.h||0)*state.mapH/100;
- if(!(bw>20&&bh>20)){bw=420;bh=420;}
- let f=Math.max(1,420/Math.max(bw,bh));
- f=Math.min(f,1400/Math.max(bw,bh));
- return renderMap(Math.max(64,Math.round(bw*f)),Math.max(64,Math.round(bh*f)));
-}
-async function rebuildMap(force){
- if(userMapImg){mapImg=userMapImg;return;}
- if(!mapGeo)return;
- const tok=++mapBuildToken;
- const cv=await buildMapCanvas();
- if(tok!==mapBuildToken||!cv)return;
- mapImg=cv;
- drawMapPreview();drawGeoPreview();
-}
-function scheduleMapRebuild(){
- clearTimeout(mapTimer);
- mapTimer=setTimeout(()=>{rebuildMap().catch(e=>console.warn('map rebuild failed',e));},350);
-}
-async function makeMap(la,lo){ // kept for older code paths
- if(!mapGeo)mapGeo={lat:la,lon:lo,bbox:null,poly:null};
- return buildMapCanvas();
-}
-
-/* ---------- Find Location (State + District/Town) ---------- */
-async function findLocation(){
- const tok=++findToken;
- const place=$('gPlace').value.trim(),stateName=$('gState').value.trim();
- if(!place&&!stateName){$('gCoords').textContent='Enter a State and District / Town.';return;}
- const q=[place,stateName,'India'].filter(Boolean).join(', ');
- $('gCoords').textContent='Finding '+q+'…';
- let p=await geocodeAny(q,place,stateName);
- if(tok!==findToken)return;
- if(!p&&$('startLat').dataset.auto!=='1'){ // manual coordinates as last resort
-  const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
-  if(isFinite(sl)&&isFinite(so))p={lat:sl,lon:so,bbox:null,poly:null};
- }
- if(!p){
-  drawMapPreview('Location not found');
-  $('gCoords').textContent='Location not found (geocoder blocked or name not recognised). Check the State / District spelling, or type Start Latitude / Longitude and press Find Location again.';
-  return;
- }
- lat=p.lat;lon=p.lon;
- mapGeo={lat:p.lat,lon:p.lon,bbox:p.bbox,poly:p.poly};
- const sEl=$('startLat'),oEl=$('startLon');
- if(!sEl.value||sEl.dataset.auto==='1'){ // follow the new place, unless the user typed their own values
-  sEl.value=lat.toFixed(6);oEl.value=lon.toFixed(6);sEl.dataset.auto='1';oEl.dataset.auto='1';
-  ['endLat','endLon'].forEach(id=>{if($(id).dataset.auto!=='0')$(id).value='';});
- }
- gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
- $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
- try{await rebuildMap(true);}catch(e){console.warn('map failed',e);}
- if(tok!==findToken)return;
- if(!userMapImg&&(!mapImg||!mapImg.width))mapImg=makeFallbackMap(lat,lon);
- $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+
-  (mapImg&&mapImg.srcName||'placeholder')+(p.poly?' • district outline shown':'')+
-  (mapImg&&mapImg.isFallback?' (map tiles blocked — check internet / ad-blocker, then press Find Location again)':'');
- try{loadRealGPSRoute();}catch(e){}
- drawMapPreview();drawGeoPreview();
-}
-$('findLocation').onclick=findLocation;
-$('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';tileCache.clear();findLocation();};
-
-/* ---------- triggers ---------- */
-['gState','gPlace'].forEach(id=>$(id).addEventListener('input',()=>{
- clearTimeout(findTimer);
- findTimer=setTimeout(()=>{if($('geoSection').style.display!=='none')findLocation();},1300);
-}));
-['gMapW','mapH'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
-geo.addEventListener('pointerup',scheduleMapRebuild);
-['applyCrop','resetCrop'].forEach(id=>$(id).addEventListener('click',scheduleMapRebuild));
-['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.auto='0';}));
-
-/* ---------- caption "District, State" on the map (preview + export) ---------- */
-const _geoFrameBase=drawGeoFrame;
-drawGeoFrame=function(ctx,W,H,seconds){
- _geoFrameBase(ctx,W,H,seconds);
- if(!mapImg||!mapImg.width||mapImg.srcName==='uploaded image')return;
- const {mapX,mapY,mapW,mapH}=computeGeoLayout(W,H);
- const cs=Math.max(8,Math.min(mapW,mapH)*.075),bh=cs*1.55,mr=Math.max(6,Math.min(mapW,mapH)*.06);
- ctx.save();
- ctx.globalAlpha=clamp(state.gMapO/100,0,1);
- roundRectCorners(ctx,mapX,mapY,mapW,mapH,mr,mr,mr,mr);ctx.clip();
- ctx.fillStyle='rgba(0,0,0,.58)';ctx.fillRect(mapX,mapY+mapH-bh,mapW,bh);
- ctx.textBaseline='middle';
- const cy=mapY+mapH-bh/2,attr=mapImg.isFallback?'':(mapImg.srcName||'');
- let aw=0;
- if(attr){
-  ctx.font=`600 ${cs*.7}px Arial, sans-serif`;aw=ctx.measureText(attr).width;
-  ctx.fillStyle='rgba(255,255,255,.8)';ctx.textAlign='right';ctx.fillText(attr,mapX+mapW-cs*.4,cy);
- }
- ctx.font=`700 ${cs}px Arial, sans-serif`;ctx.textAlign='left';ctx.fillStyle='#fff';
- let cap=[$('gPlace').value.trim(),$('gState').value.trim()].filter(Boolean).join(', '),cut=false;
- const maxc=mapW-aw-cs*1.3;
- while(cap.length>3&&ctx.measureText(cap+(cut?'…':'')).width>maxc){cap=cap.slice(0,-1);cut=true;}
- ctx.fillText(cap+(cut?'…':''),mapX+cs*.5,cy);
- ctx.restore();
- if(ctx===gctx){ // redraw preview-only handles on top of the caption
-  ctx.save();
-  ctx.strokeStyle='rgba(255,255,255,.95)';ctx.lineWidth=Math.max(1,2*W/geo.width);
-  ctx.setLineDash([6,4]);ctx.strokeRect(mapX,mapY,mapW,mapH);ctx.setLineDash([]);
-  const hs=Math.max(10,14*W/geo.width);
-  ctx.fillStyle='rgba(255,255,255,.95)';ctx.fillRect(mapX+mapW-hs/2,mapY+mapH-hs/2,hs,hs);
-  ctx.restore();
- }
-};
-
-/* ---------- make sure the map is rebuilt right before every export ---------- */
-const _doExportBase=doExport;
-doExport=async function(){
- if(lat!=null&&lon!=null){
-  try{
-   const st=$('geoSection').style.display!=='none'?$('geoStatus'):$('exportStatus');
-   st.textContent='Preparing map…';
-   await rebuildMap(true);
-  }catch(e){console.warn(e);}
- }
- return _doExportBase();
-};
 </script>
 </body>
 </html>

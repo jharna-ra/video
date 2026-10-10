@@ -1980,61 +1980,45 @@ async function buildMapCanvas(){
 
 /* ------------------------ FIXED WHITE TEXT REMOVER v7 ------------------------ */
 function removeTextRectUltra(ctx,W,H,rect){
- if(!rect||rect.w<2||rect.h<2||W<2||H<2)return;
- const power=clamp(+$('removePower')?.value||0,0,8);
- const k=Math.max(.7,W/1080);
- const margin=Math.round((2+power*.35)*k);
- const rx0=Math.max(0,Math.floor(rect.x)-margin),ry0=Math.max(0,Math.floor(rect.y)-margin);
- const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+margin),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+margin);
- if(rx1<=rx0||ry1<=ry0)return;
- const thick=Math.max(2,Math.round((+$('textThick')?.value||7)*k));
- const passes=clamp(+$('inpaintPasses')?.value||5,1,14);
- const grow=Math.max(1,Math.round((1.5+passes*.25+power*.2)*k));
- const pad=Math.max(10,grow*3+thick);
- const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
- const w=x1-x0,h=y1-y0,N=w*h;if(w<2||h<2||N>16000000)return;
+ if(!rect||rect.w<2||rect.h<2)return;
+ const k=Math.max(.7,W/1080),power=clamp(+$('removePower')?.value||0,0,8);
+ const mg=Math.round((2+power*.4)*k);
+ const rx0=Math.max(0,Math.floor(rect.x)-mg),ry0=Math.max(0,Math.floor(rect.y)-mg);
+ const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+mg),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+mg);
+ if(rx1-rx0<2||ry1-ry0<2)return;
+ const T0=Math.max(70,(+$('whiteThreshold')?.value||200)-power*3);
+ const thick=Math.max(3,Math.round((+$('textThick')?.value||9)*k));
+ const grow=Math.max(2,Math.round(((+$('inpaintPasses')?.value||5)*.5+power*.3)*k));
+ const pad=Math.max(16,grow*4+thick*2),x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
+ const w=x1-x0,h=y1-y0,N=w*h;if(w<2||h<2)return;
  const img=ctx.getImageData(x0,y0,w,h),d=img.data;
- const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
- const area=Math.max(1,(ix1-ix0)*(iy1-iy0));
- const countInside=m=>{let n=0;for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++)n+=m[y*w+x];return n;};
- const clipToSelection=m=>{for(let y=0;y<h;y++){const gy=y+y0;if(gy<ry0||gy>=ry1){m.fill(0,y*w,(y+1)*w);continue;}for(let x=0;x<w;x++){const gx=x+x0;if(gx<rx0||gx>=rx1)m[y*w+x]=0;}}return m;};
- const slider=+$('whiteThreshold')?.value||200;
- // Two detector passes only: a high-confidence pass plus a lower threshold
- // for anti-aliased edges. Avoid repeatedly filtering the whole patch when no
- // letters are present, which made preview/export feel frozen.
- const t=clamp(slider-power*5,65,245);
- const a=detectWhite(d,w,h,t,ix0,iy0,ix1,iy1,0,thick);
- const b=detectWhite(d,w,h,Math.max(55,t-22),ix0,iy0,ix1,iy1,0,Math.max(2,Math.round(thick*.65)));
+ const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0,area=Math.max(1,(rx1-rx0)*(ry1-ry0));
+ const inRect=m=>{let c=0;for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++)c+=m[y*w+x];return c;};
+ const clipM=m=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)m[y*w+x]=0;}return m;};
  let mask=null;
- if(a||b){
-  const merged=new Uint8Array(N);
-  for(let p=0;p<N;p++)if((a&&a[p])||(b&&b[p]))merged[p]=1;
-  const inside=countInside(merged);
-  // Reject a mask that covers most of the selected area (usually background).
-  if(inside>0&&inside/area<=.20)mask=merged;
+ for(let i=0,t=T0;i<6;i++,t+=14){
+  const a=detectWhite(d,w,h,t,ix0,iy0,ix1,iy1,0,thick);
+  const b=detectWhite(d,w,h,t-20,ix0,iy0,ix1,iy1,0,Math.max(2,Math.round(thick*.6)));
+  if(!a&&!b)break;const m=new Uint8Array(N);
+  for(let p=0;p<N;p++)m[p]=(a&&a[p])||(b&&b[p])?1:0;
+  if(inRect(m)/area<=.12){mask=m;break;}
  }
- if($('showMask')?.checked&&!exporting){
-  if(mask)for(let p=0;p<N;p++)if(mask[p]){const j=p*4;d[j]=255;d[j+1]=0;d[j+2]=60;}
-  ctx.putImageData(img,x0,y0);return;
- }
+ if($('showMask')?.checked&&!exporting){if(mask)for(let p=0;p<N;p++)if(mask[p]){const j=p*4;d[j]=255;d[j+1]=0;d[j+2]=60;}ctx.putImageData(img,x0,y0);return;}
  if(!mask)return;
- const hole=clipToSelection(dilateMask(mask,w,h,grow));
- inpaintHole(d,w,h,hole,1);
- // One conservative follow-up pass removes residual bright anti-aliased pixels
- // only near the first mask, rather than searching the whole selection again.
- const near=dilateMask(mask,w,h,grow+3);
- const follow=detectWhite(d,w,h,Math.max(60,slider-power*5-18),ix0,iy0,ix1,iy1,0,Math.max(2,Math.round(thick*.65)));
- if(follow){const extra=new Uint8Array(N);let n=0;for(let p=0;p<N;p++)if(follow[p]&&near[p]){extra[p]=1;n++;}if(n)inpaintHole(d,w,h,clipToSelection(dilateMask(extra,w,h,Math.max(1,grow-1))),1);}
+ inpaintHole(d,w,h,clipM(dilateMask(mask,w,h,grow)),1);
+ const near=dilateMask(mask,w,h,grow+4);
+ for(let it=0;it<(power>=4?2:1);it++){
+  const r=detectWhite(d,w,h,T0+10,ix0,iy0,ix1,iy1,0,thick);if(!r)break;
+  const hr=new Uint8Array(N);let c=0;for(let p=0;p<N;p++)if(r[p]&&near[p]){hr[p]=1;c++;}
+  if(!c)break;inpaintHole(d,w,h,clipM(dilateMask(hr,w,h,Math.max(1,grow-1))),1);
+ }
  ctx.putImageData(img,x0,y0);
 }
 function applyAllTextRemoval(ctx2,W,H,r,exportMode=false){
- if(!r||!r.w||!r.h)return;
  const rects=[];if(whiteRect)rects.push(whiteRect);for(const q of extraRects)rects.push(q);
- for(const q of rects){
-  const rect={x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H};
-  removeTextRectUltra(ctx2,W,H,rect);
- }
+ for(const q of rects)removeTextRectUltra(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
 }
+
 </script>
 </body>
 </html>

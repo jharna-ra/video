@@ -530,9 +530,8 @@ function inpaintHole(d,w,h,hole,strength){
 
   for(let j=0;j<hn;j++){
     const p=idx[j],i=p*4;
-    const g=(Math.random()+Math.random()+Math.random()+Math.random()-2)*1.732*amp;
     for(let q=0;q<3;q++){
-      let v=fill[p*3+q]+g;v=v<0?0:v>255?255:v;
+      const v=fill[p*3+q];
       d[i+q]=d[i+q]*(1-strength)+v*strength;
     }
   }
@@ -1051,7 +1050,7 @@ function loadTile(src,z,x,y){
   };
   im.onload=()=>done(im);
   im.onerror=()=>done(null);
-  setTimeout(()=>done(null),8000);
+  setTimeout(()=>done(null),3500);
   im.src=src.url(z,x,y);
  });
 }
@@ -1915,141 +1914,126 @@ drawMapPreview();
 updateBoxCount();
 
 /* =====================================================================
-   FIX BLOCK v2 — paste right before the LAST </script> (after updateBoxCount();)
-   If you pasted the earlier "geotag_v3_fix.js", DELETE it first and use this one instead.
-   1) MAP: wide OpenStreetMap view like your reference (roads, river, green areas,
-      tiny labels, small red marker) centred on the typed district / town.
-   2) TEXT REMOVER: only thin white letters are replaced (no more blur).
+   FIX BLOCK v3 — corrected map tiling and white-letter detection
+   Replaces the prior appended FIX BLOCK completely.
    ===================================================================== */
 
 /* ---------------------------- MAP ---------------------------- */
 const MAP_SRC=[
- // Standard OpenStreetMap look (same as the reference). CARTO is not used (shows "API KEY REQUIRED").
  {name:'© OpenStreetMap contributors',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
- {name:'© OpenStreetMap contributors',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`},
+ {name:'© OpenStreetMap France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`},
  {name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`}
 ];
 
 async function renderMap(cw0,ch0){
- const g=mapGeo;if(!g)return null;
- const S=2,cw=cw0*S,ch=ch0*S,m0=Math.min(cw0,ch0),u=m0*S;
- const tu=clamp(m0*.8,180,320),TS=tu*S,z=17,n2=2**z;   // street level: ~1.25 tiles across the box
- const c=tileXY(g.lat,g.lon,z);
- const x0=Math.floor(c.x-cw/(2*TS)),x1=Math.floor(c.x+cw/(2*TS)),y0=Math.floor(c.y-ch/(2*TS)),y1=Math.floor(c.y+ch/(2*TS));
+ const g=mapGeo;if(!g||!Number.isFinite(+g.lat)||!Number.isFinite(+g.lon))return null;
+ // Render at 2x for crisp export. Each XYZ tile is 256 CSS px / 512 backing pixels.
+ const S=2,cw=Math.max(96,Math.round(cw0*S)),ch=Math.max(96,Math.round(ch0*S)),TS=256*S;
+ const z=clamp(+$('gZoom')?.value+14||14,10,16),n=2**z,c=tileXY(g.lat,g.lon,z);
+ const x0=Math.floor(c.x-cw/(2*TS)),x1=Math.floor(c.x+cw/(2*TS));
+ const y0=Math.floor(c.y-ch/(2*TS)),y1=Math.floor(c.y+ch/(2*TS));
  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
- const cc=cv.getContext('2d');
+ const cc=cv.getContext('2d');if(!cc)return null;
  cc.imageSmoothingEnabled=true;cc.imageSmoothingQuality='high';
- cc.fillStyle='#e0e0e0';cc.fillRect(0,0,cw,ch);
+ cc.fillStyle='#edf0f2';cc.fillRect(0,0,cw,ch);
  const pos=[];
- for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n2)pos.push([tx,ty]);
+ for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n)pos.push([tx,ty]);
  let used=null;
  for(const src of MAP_SRC){
-  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n2)+n2)%n2,ty)));
-  if(imgs.filter(Boolean).length<Math.max(1,Math.ceil(pos.length*.6)))continue;
+  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n)+n)%n,ty)));
+  const ok=imgs.filter(Boolean).length;
+  if(ok<Math.max(1,Math.ceil(pos.length*.6)))continue;
   pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*TS,ch/2+(ty-c.y)*TS,TS+1,TS+1);});
   used=src;break;
  }
- if(!used){ // never fake a map
+ if(used){
+  // Small red pin, centered exactly on the searched coordinates.
+  const px=cw/2,py=ch/2,r=Math.max(7,Math.min(18,Math.min(cw,ch)*.022));
+  cc.save();cc.shadowColor='rgba(0,0,0,.35)';cc.shadowBlur=r*.7;
+  cc.fillStyle='#e53935';cc.beginPath();cc.arc(px,py,r,0,Math.PI*2);cc.fill();
+  cc.shadowBlur=0;cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,r*.25);cc.stroke();
+  cc.fillStyle='#fff';cc.beginPath();cc.arc(px,py,r*.32,0,Math.PI*2);cc.fill();cc.restore();
+  const label='© OpenStreetMap contributors';
+  const fs=Math.max(12,Math.min(22,Math.min(cw,ch)*.026));
+  cc.font=`${fs}px Arial,sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
+  const tw=cc.measureText(label).width+fs;
+  cc.fillStyle='rgba(255,255,255,.86)';cc.fillRect(cw-tw-4,ch-fs*1.8,tw+4,fs*1.8);
+  cc.fillStyle='#222';cc.fillText(used===MAP_SRC[2]?'© Esri':'© OpenStreetMap contributors',cw-fs*.4,ch-fs*.45);
+ }else{
   cc.fillStyle='#f2f4f5';cc.fillRect(0,0,cw,ch);
   cc.fillStyle='#344054';cc.textAlign='center';cc.textBaseline='middle';
-  cc.font=`700 ${clamp(cw*.045,28,48)}px Arial, sans-serif`;
-  cc.fillText('Real map tiles could not load',cw/2,ch/2-24);
-  cc.font=`${clamp(cw*.026,20,28)}px Arial, sans-serif`;cc.fillStyle='#667085';
-  cc.fillText('Check internet / browser blocking, then press Reload map',cw/2,ch/2+30);
- }else{
-  // blue Leaflet-style marker, tip exactly on the location
-  const px=cw/2,py=ch/2,mh=u*.13,mw=mh*.61,hy=py-mh*.74;
-  cc.save();cc.shadowColor='rgba(0,0,0,.35)';cc.shadowBlur=u*.01;cc.shadowOffsetY=u*.004;
-  cc.beginPath();cc.moveTo(px,py);
-  cc.bezierCurveTo(px-mw*.15,py-mh*.35,px-mw*.5,py-mh*.55,px-mw*.5,hy);
-  cc.arc(px,hy,mw*.5,Math.PI,0);
-  cc.bezierCurveTo(px+mw*.5,py-mh*.55,px+mw*.15,py-mh*.35,px,py);cc.closePath();
-  cc.fillStyle='#2e86d0';cc.fill();cc.shadowColor='transparent';
-  cc.strokeStyle='#1b5e9b';cc.lineWidth=Math.max(2,u*.006);cc.stroke();
-  cc.fillStyle='#fff';cc.beginPath();cc.arc(px,hy,mw*.2,0,Math.PI*2);cc.fill();
-  cc.restore();
-  // Leaflet-style zoom buttons (top-left)
-  const bs=u*.085,bx=u*.03,by=u*.04;
-  cc.save();cc.textAlign='center';cc.textBaseline='middle';
-  [['+',0],['\u2212',1]].forEach(([t,i])=>{
-   const y=by+i*bs;
-   cc.fillStyle='#fff';cc.fillRect(bx,y,bs,bs);
-   cc.strokeStyle='rgba(0,0,0,.28)';cc.lineWidth=Math.max(2,u*.006);cc.strokeRect(bx,y,bs,bs);
-   cc.fillStyle='#222';cc.font=`700 ${bs*.7}px Arial, sans-serif`;cc.fillText(t,bx+bs/2,y+bs/2+bs*.03);
-  });
-  cc.restore();
-  // attribution, bottom-right
-  const t='Leaflet | \u00a9 OpenStreetMap contributors',fs=u*.03;
-  cc.font=`${fs}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
-  const tw=cc.measureText(t).width+fs*.9;
-  cc.fillStyle='rgba(255,255,255,.78)';cc.fillRect(cw-tw,ch-fs*1.6,tw,fs*1.6);
-  cc.fillStyle='#333';cc.fillText(t,cw-fs*.45,ch-fs*.5);
+  cc.font=`700 ${clamp(cw*.035,22,44)}px Arial,sans-serif`;
+  cc.fillText('Map tiles could not load',cw/2,ch/2-18);
+  cc.font=`${clamp(cw*.02,15,25)}px Arial,sans-serif`;cc.fillStyle='#667085';
+  cc.fillText('Check internet or tile-provider access, then reload map',cw/2,ch/2+24);
  }
- cv.srcName=used?used.name:'no tiles';cv.isFallback=!used;
- return cv;
+ cv.srcName=used?used.name:'no tiles';cv.isFallback=!used;return cv;
 }
 async function buildMapCanvas(){
  const r=sourceRect();
  let bw=(r.w||0)*state.mapW/100,bh=(r.h||0)*state.mapH/100;
  if(!(bw>20&&bh>20)){bw=520;bh=380;}
- const m=Math.max(bw,bh),f=Math.min(1100/m,Math.max(1,360/m));
- return renderMap(Math.max(96,Math.round(bw*f)),Math.max(96,Math.round(bh*f)));
+ // Bound backing size to prevent very large canvas allocations.
+ const f=Math.min(1.5,1100/Math.max(bw,bh));
+ return renderMap(Math.max(160,Math.round(bw*f)),Math.max(120,Math.round(bh*f)));
 }
 
-/* ------------------------ TEXT REMOVER ------------------------ */
+/* ------------------------ THIN WHITE TEXT REMOVER ------------------------ */
 function removeTextRectUltra(ctx,W,H,rect){
- if(!rect||rect.w<2||rect.h<2)return;
+ if(!rect||rect.w<2||rect.h<2||W<2||H<2)return;
+ const power=clamp(+$('removePower')?.value||0,0,8);
  const k=Math.max(.7,W/1080);
- const power=clamp(+($('removePower')&&$('removePower').value)||0,0,8);
- const mg=Math.round((2+power*.4)*k);
- const rx0=Math.max(0,Math.floor(rect.x)-mg),ry0=Math.max(0,Math.floor(rect.y)-mg);
- const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+mg),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+mg);
- if(rx1-rx0<2||ry1-ry0<2)return;
- const T0=Math.max(70,(+$('whiteThreshold').value||200)-power*3);
- const thick=Math.max(3,Math.round((+$('textThick').value||9)*k));
- const grow=Math.max(2,Math.round(((+$('inpaintPasses').value||5)*.5+power*.3)*k));
- const pad=Math.max(16,grow*4+thick*2);
+ const margin=Math.round((2+power*.35)*k);
+ const rx0=Math.max(0,Math.floor(rect.x)-margin),ry0=Math.max(0,Math.floor(rect.y)-margin);
+ const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+margin),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+margin);
+ if(rx1<=rx0||ry1<=ry0)return;
+ const thick=Math.max(2,Math.round((+$('textThick')?.value||7)*k));
+ const passes=clamp(+$('inpaintPasses')?.value||5,1,14);
+ const grow=Math.max(1,Math.round((1.5+passes*.25+power*.2)*k));
+ const pad=Math.max(10,grow*3+thick);
  const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
- const w=x1-x0,h=y1-y0,N=w*h;
+ const w=x1-x0,h=y1-y0,N=w*h;if(w<2||h<2||N>16000000)return;
  const img=ctx.getImageData(x0,y0,w,h),d=img.data;
- const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0,area=(rx1-rx0)*(ry1-ry0);
- const inRect=m=>{let c=0;for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++)c+=m[y*w+x];return c;};
- const clipM=m=>{for(let y=0;y<h;y++)for(let x=0;x<w;x++){const gx=x+x0,gy=y+y0;if(gx<rx0||gx>=rx1||gy<ry0||gy>=ry1)m[y*w+x]=0;}return m;};
-
+ const ix0=rx0-x0,iy0=ry0-y0,ix1=rx1-x0,iy1=ry1-y0;
+ const area=Math.max(1,(ix1-ix0)*(iy1-iy0));
+ const countInside=m=>{let n=0;for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++)n+=m[y*w+x];return n;};
+ const clipToSelection=m=>{for(let y=0;y<h;y++){const gy=y+y0;if(gy<ry0||gy>=ry1){m.fill(0,y*w,(y+1)*w);continue;}for(let x=0;x<w;x++){const gx=x+x0;if(gx<rx0||gx>=rx1)m[y*w+x]=0;}}return m;};
+ const slider=+$('whiteThreshold')?.value||200;
+ // Two detector passes only: a high-confidence pass plus a lower threshold
+ // for anti-aliased edges. Avoid repeatedly filtering the whole patch when no
+ // letters are present, which made preview/export feel frozen.
+ const t=clamp(slider-power*5,65,245);
+ const a=detectWhite(d,w,h,t,ix0,iy0,ix1,iy1,0,thick);
+ const b=detectWhite(d,w,h,Math.max(55,t-22),ix0,iy0,ix1,iy1,0,Math.max(2,Math.round(thick*.65)));
  let mask=null;
- for(let i=0,t=T0;i<6;i++,t+=14){
-  const a=detectWhite(d,w,h,t,ix0,iy0,ix1,iy1,0,thick);
-  const b=detectWhite(d,w,h,t-20,ix0,iy0,ix1,iy1,0,Math.max(2,Math.round(thick*.6)));
-  if(!a&&!b)break;
-  const m=new Uint8Array(N);
-  for(let p=0;p<N;p++)m[p]=(a&&a[p])||(b&&b[p])?1:0;
-  if(inRect(m)/area<=0.12){mask=m;break;}
+ if(a||b){
+  const merged=new Uint8Array(N);
+  for(let p=0;p<N;p++)if((a&&a[p])||(b&&b[p]))merged[p]=1;
+  const inside=countInside(merged);
+  // Reject a mask that covers most of the selected area (usually background).
+  if(inside>0&&inside/area<=.20)mask=merged;
  }
- if($('showMask').checked&&!exporting){
+ if($('showMask')?.checked&&!exporting){
   if(mask)for(let p=0;p<N;p++)if(mask[p]){const j=p*4;d[j]=255;d[j+1]=0;d[j+2]=60;}
   ctx.putImageData(img,x0,y0);return;
  }
  if(!mask)return;
-
- inpaintHole(d,w,h,clipM(dilateMask(mask,w,h,grow)),1);
-
- const near=dilateMask(mask,w,h,grow+4);
- for(let it=0;it<(power>=4?2:1);it++){
-  const r=detectWhite(d,w,h,T0+10,ix0,iy0,ix1,iy1,0,thick);
-  if(!r)break;
-  const hr=new Uint8Array(N);let c=0;
-  for(let p=0;p<N;p++)if(r[p]&&near[p]){hr[p]=1;c++;}
-  if(!c)break;
-  inpaintHole(d,w,h,clipM(dilateMask(hr,w,h,Math.max(1,grow-1))),1);
- }
+ const hole=clipToSelection(dilateMask(mask,w,h,grow));
+ inpaintHole(d,w,h,hole,1);
+ // One conservative follow-up pass removes residual bright anti-aliased pixels
+ // only near the first mask, rather than searching the whole selection again.
+ const near=dilateMask(mask,w,h,grow+3);
+ const follow=detectWhite(d,w,h,Math.max(60,slider-power*5-18),ix0,iy0,ix1,iy1,0,Math.max(2,Math.round(thick*.65)));
+ if(follow){const extra=new Uint8Array(N);let n=0;for(let p=0;p<N;p++)if(follow[p]&&near[p]){extra[p]=1;n++;}if(n)inpaintHole(d,w,h,clipToSelection(dilateMask(extra,w,h,Math.max(1,grow-1))),1);}
  ctx.putImageData(img,x0,y0);
 }
-
 function applyAllTextRemoval(ctx2,W,H,r,exportMode=false){
- const rects=[];
- if(whiteRect)rects.push(whiteRect);
- for(const q of extraRects)rects.push(q);
- for(const q of rects)removeTextRectUltra(ctx2,W,H,{x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H});
+ if(!r||!r.w||!r.h)return;
+ const rects=[];if(whiteRect)rects.push(whiteRect);for(const q of extraRects)rects.push(q);
+ for(const q of rects){
+  const rect={x:q.x/r.w*W,y:q.y/r.h*H,w:q.w/r.w*W,h:q.h/r.h*H};
+  removeTextRectUltra(ctx2,W,H,rect);
+ }
 }
 </script>
 </body>

@@ -171,8 +171,8 @@ input[type=range]{width:100%}
 <input id="inpaintPasses" type="range" min="1" max="14" value="5">
 <label>Max text stroke thickness <b id="textThickVal">9</b>px</label>
 <input id="textThick" type="range" min="2" max="30" value="9">
-<label>Removal power (higher = removes more leftover text) <b id="removePowerVal">3</b></label>
-<input id="removePower" type="range" min="0" max="5" value="3">
+<label>Removal power (higher = removes more leftover text) <b id="removePowerVal">5</b></label>
+<input id="removePower" type="range" min="0" max="8" value="5">
 <div class="small">Draw a box around each piece of text (as many as you like). The first box is red; extra boxes are numbered orange and are checked on every frame, so text that appears later is still removed. Only thin, pure-white strokes (letters) are changed — everything else in the box stays identical to the original video. Tick <b>Show detected text in red</b> to see which pixels will be removed: if red covers other things, raise the sensitivity number; if letters are not fully red, lower it (or raise Max text stroke thickness for bold text).</div>
 </div>
 
@@ -242,6 +242,9 @@ input[type=range]{width:100%}
         <div class="sliderTop"><span>Map height</span><b id="mapHVal">29%</b></div><input id="mapH" type="range" min="5" max="90" value="29">
         <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
         <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
+        <div class="sliderTop"><span>Map style</span><b></b></div>
+        <select id="gMapStyle"><option value="satlabel" selected>Satellite + Labels</option><option value="sat">Satellite</option><option value="street">Street (lanes)</option></select>
+        <div class="sliderTop"><span>Map zoom (0 = fit whole district)</span><b id="gZoomVal">0</b></div><input id="gZoom" type="range" min="-4" max="5" step="1" value="0">
       </div>
 
       <div class="card geoOptionCard">
@@ -850,54 +853,20 @@ function applyExtraBoxes(ctx2, W, H, r) {
 }
 
 function applyAllTextRemoval(ctx2, W, H, r, exportMode = false) {
-
-  // ============================================================
-  // BOX 1 — FIRST / RED BOX
-  // ============================================================
-  if (whiteRect) {
-
-    const rect = {
-      x: whiteRect.x / r.w * W,
-      y: whiteRect.y / r.h * H,
-      w: whiteRect.w / r.w * W,
-      h: whiteRect.h / r.h * H
-    };
-
-    if (exportMode) {
-      removeWhiteFromCanvasExport(
-        ctx2,
-        W,
-        H,
-        rect
-      );
-    } else {
-      removeWhiteFromCanvas(
-        ctx2,
-        W,
-        H,
-        rect
-      );
-    }
-  }
-
-  // ============================================================
-  // BOX 2, 3, 4... — ALWAYS WORK ON THE ALREADY-CLEANED CANVAS
-  // ============================================================
-  for (const q of extraRects) {
-
-    const rect = {
-      x: q.x / r.w * W,
-      y: q.y / r.h * H,
-      w: q.w / r.w * W,
-      h: q.h / r.h * H
-    };
-
-    removeTextRect(
-      ctx2,
-      W,
-      H,
-      rect
-    );
+  // Boxes are applied IN ORDER on the SAME canvas:
+  //   box 1 (red) is cleaned first, box 2 is then applied on top of box 1's result, box 3 on top of that...
+  // With high removal power the whole stack is run a second time, so anything the first
+  // round left behind (including text where boxes overlap) is removed too.
+  const rects = [];
+  if (whiteRect) rects.push(whiteRect);
+  for (const q of extraRects) rects.push(q);
+  if (!rects.length) return;
+  const toRect = q => ({ x: q.x / r.w * W, y: q.y / r.h * H, w: q.w / r.w * W, h: q.h / r.h * H });
+  const power = +($('removePower') ? $('removePower').value : 3) || 0;
+  const previewMask = $('showMask').checked && !exportMode;
+  const passes = previewMask ? 1 : (power >= 3 ? 2 : 1);
+  for (let pass = 0; pass < passes; pass++) {
+    for (const q of rects) removeTextRectUltra(ctx2, W, H, toRect(q), pass);
   }
 }
 
@@ -1282,52 +1251,6 @@ function drawMapPreview(msg){
   x.fillText(msg||'Map preview — press Find Location',W/2,H/2);
  }
 }
-async function geocodeAny(q,place){
- const tryFetch=async(url)=>{
-  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
-  try{const r=await fetch(url,{signal:ctl.signal,headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);return await r.json();}
-  finally{clearTimeout(t)}
- };
- const tries=[
-  async()=>{const j=await tryFetch('https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'}));return j.length?{lat:+j[0].lat,lon:+j[0].lon}:null},
-  async()=>{const j=await tryFetch('https://photon.komoot.io/api/?'+new URLSearchParams({q,limit:'1'}));const f=j.features&&j.features[0];return f?{lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}:null},
-  async()=>{const j=await tryFetch('https://geocoding-api.open-meteo.com/v1/search?'+new URLSearchParams({name:place,count:'1',country_code:'IN'}));const f=j.results&&j.results[0];return f?{lat:f.latitude,lon:f.longitude}:null}
- ];
- for(const t of tries){try{const r=await t();if(r&&isFinite(r.lat)&&isFinite(r.lon))return r;}catch(e){console.warn('geocoder failed',e)}}
- return null;
-}
-async function findLocation(){
- const place=$('gPlace').value.trim();
- const q=[place,$('gState').value.trim(),'India'].filter(Boolean).join(', ');
- if(!q){$('gCoords').textContent='Enter a district/town.';return}
- $('gCoords').textContent='Finding location…';
- let p=await geocodeAny(q,place);
- if(!p){
-  // Fallback: use coordinates typed in Start Latitude / Longitude
-  const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
-  if(isFinite(sl)&&isFinite(so))p={lat:sl,lon:so};
- }
- if(!p){
-  drawMapPreview('Location not found');
-  $('gCoords').textContent='Location not found (geocoder blocked or place name not recognised). Type Start Latitude / Longitude below and press Find Location again.';
-  return;
- }
- lat=p.lat;lon=p.lon;
- if(!$('startLat').value){$('startLat').value=lat.toFixed(6);$('startLon').value=lon.toFixed(6);}
- gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
- $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
- if(userMapImg){mapImg=userMapImg;}else{try{mapImg=await makeMap(lat,lon);}catch(mapErr){console.warn('makeMap failed',mapErr);mapImg=makeFallbackMap(lat,lon);}}
- if(!mapImg||!mapImg.width)mapImg=makeFallbackMap(lat,lon);
- state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
- state.mapW=+$('gMapW').value||26;state.mapH=+$('mapH').value||29;
- $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+(mapImg.srcName||'placeholder')+(mapImg.isFallback?' (real map tiles were blocked — check internet / ad-blocker, then press Find Location again)':'');
- try{loadRealGPSRoute();}catch(e){}
- drawMapPreview();
- if(mapImg.isFallback){drawMapPreviewNoCors();}
- drawGeoPreview();
-}
-$('findLocation').onclick=findLocation;
-
 function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
@@ -1350,60 +1273,266 @@ function makeFallbackMap(lat,lon){
   return fallback;
 }
 
-/* ===== CLASSIC MAP (same behaviour as the first version) =====
-   Searches the place, then draws a street map centred on it with a red pin.
-   Tries OpenStreetMap first (like the first version), then CARTO and Esri. */
-async function makeMap(la, lo){
-  const Z = 15;                 // 15 = first version's zoom. Try 16 or 17 for closer.
-  const CW = 1024, CH = 640, T = 256, n = 2 ** Z;
-  const t = tileXY(la, lo, Z), cx = Math.floor(t.x), cy = Math.floor(t.y);
-  const SOURCES = [
-    {name:'© OpenStreetMap', url:(x,y)=>`https://tile.openstreetmap.org/${Z}/${x}/${y}.png`},
-    {name:'© CARTO',         url:(x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${Z}/${x}/${y}.png`},
-    {name:'© Esri',          url:(x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${Z}/${y}/${x}`}
-  ];
-  for(const src of SOURCES){
-    const c = document.createElement('canvas'); c.width = CW; c.height = CH;
-    const cc = c.getContext('2d');
-    cc.fillStyle = '#e8e8e8'; cc.fillRect(0, 0, CW, CH);
-    let loaded = 0;
-    const jobs = [];
-    for(let dy = -2; dy <= 2; dy++) for(let dx = -2; dx <= 2; dx++){
-      const tx = (((cx + dx) % n) + n) % n, ty = cy + dy;
-      if(ty < 0 || ty >= n) continue;
-      jobs.push(new Promise(res => {
-        const im = new Image(); im.crossOrigin = 'anonymous';
-        let fin = false; const done = () => { if(!fin){ fin = true; res(); } };
-        im.onload = () => {
-          try{
-            cc.drawImage(im, CW/2 + (dx - (t.x - cx)) * T, CH/2 + (dy - (t.y - cy)) * T, T, T);
-            loaded++;
-          }catch(e){}
-          done();
-        };
-        im.onerror = done;
-        setTimeout(done, 7000);
-        im.src = src.url(tx, ty);
-      }));
-    }
-    await Promise.all(jobs);
-    if(loaded >= 12){                       // enough tiles = this server works
-      cc.save();
-      cc.shadowColor = 'rgba(0,0,0,.4)'; cc.shadowBlur = 10;
-      cc.fillStyle = '#e53935'; cc.beginPath(); cc.arc(CW/2, CH/2, 22, 0, Math.PI*2); cc.fill();
-      cc.shadowBlur = 0; cc.strokeStyle = '#fff'; cc.lineWidth = 6; cc.stroke();
-      cc.fillStyle = '#fff'; cc.beginPath(); cc.arc(CW/2, CH/2, 7, 0, Math.PI*2); cc.fill();
-      cc.font = '14px Arial'; cc.textAlign = 'right';
-      const w = cc.measureText(src.name).width + 14;
-      cc.fillStyle = 'rgba(255,255,255,.85)'; cc.fillRect(CW - w - 4, CH - 26, w, 20);
-      cc.fillStyle = '#222'; cc.fillText(src.name, CW - 11, CH - 11);
-      cc.restore();
-      c.srcName = src.name;
-      return c;
-    }
+/* =====================================================================
+   DISTRICT / STATE MAP
+   - Built from State + District/Town: finds the place, fits the whole district
+     boundary inside the map box, draws the boundary, a red pin and the
+     district name ON the map.
+   - Only 3 styles: Satellite, Satellite + Labels, Street (lanes).
+   - If tiles are blocked the map is still drawn (boundary + name) so it is never empty.
+   ===================================================================== */
+let mapGeo=null,mapBuildToken=0,mapTimer=null,findToken=0,findTimer=null;
+const tileCache=new Map();
+const T_IMG={name:'© Esri, Maxar',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`};
+const T_REF={name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${y}/${x}`};
+const T_STREETS=[
+ {name:'© CARTO © OpenStreetMap',url:(z,x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
+ {name:'© OpenStreetMap',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
+ {name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
+ {name:'© OSM France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`}
+];
+
+async function geocodeAny(q,place,stateName){
+ const tryFetch=async url=>{
+  const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9000);
+  try{
+   const r=await fetch(url,{signal:ctl.signal,headers:{Accept:'application/json'}});
+   if(!r.ok)throw Error('HTTP '+r.status);
+   return await r.json();
+  }finally{clearTimeout(t)}
+ };
+ const nom=j=>{
+  const f=j&&j[0];if(!f)return null;
+  const bb=(f.boundingbox||[]).map(Number),g=f.geojson;
+  return {
+   lat:+f.lat,lon:+f.lon,
+   bbox:bb.length===4&&bb.every(isFinite)?bb:null,
+   poly:g&&(g.type==='Polygon'||g.type==='MultiPolygon')?g:null
+  };
+ };
+ const base={format:'json',limit:'1',countrycodes:'in',polygon_geojson:'1',polygon_threshold:'0.002'};
+ const NOM='https://nominatim.openstreetmap.org/search?';
+ const tries=[
+  async()=>nom(await tryFetch(NOM+new URLSearchParams({...base,q}))),
+  async()=>place&&stateName?nom(await tryFetch(NOM+new URLSearchParams({...base,county:place,state:stateName,country:'India'}))):null,
+  async()=>place&&stateName?nom(await tryFetch(NOM+new URLSearchParams({...base,city:place,state:stateName,country:'India'}))):null,
+  async()=>{
+   const j=await tryFetch('https://photon.komoot.io/api/?'+new URLSearchParams({q,limit:'1'}));
+   const f=j.features&&j.features[0];if(!f)return null;
+   const e=f.properties&&f.properties.extent;
+   return {lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],bbox:e&&e.length===4?[e[3],e[1],e[0],e[2]]:null,poly:null};
+  },
+  async()=>{
+   const j=await tryFetch('https://geocoding-api.open-meteo.com/v1/search?'+new URLSearchParams({name:place||stateName,count:'1',country_code:'IN'}));
+   const f=j.results&&j.results[0];
+   return f?{lat:f.latitude,lon:f.longitude,bbox:null,poly:null}:null;
   }
-  return makeFallbackMap(la, lo);           // all servers blocked
+ ];
+ for(const t of tries){
+  try{const r=await t();if(r&&isFinite(r.lat)&&isFinite(r.lon))return r;}
+  catch(e){console.warn('geocoder failed',e)}
+ }
+ return null;
 }
+
+function loadTile(src,z,x,y){
+ const key=src.name+'|'+src.url(0,0,0).slice(8,40)+'|'+z+'|'+x+'|'+y;
+ if(tileCache.has(key))return Promise.resolve(tileCache.get(key));
+ return new Promise(res=>{
+  const im=new Image();im.crossOrigin='anonymous';let fin=false;
+  const done=v=>{
+   if(fin)return;fin=true;
+   if(v){if(tileCache.size>400)tileCache.clear();tileCache.set(key,v);}
+   res(v);
+  };
+  im.onload=()=>done(im);
+  im.onerror=()=>done(null);
+  setTimeout(()=>done(null),8000);
+  im.src=src.url(z,x,y);
+ });
+}
+function fitZoom(g,cw,ch){
+ let z=13; // a town / single point: show some surroundings
+ if(g.bbox){
+  const [s,n,w,e]=g.bbox;
+  if(Math.abs(n-s)>0.004||Math.abs(e-w)>0.004){
+   for(z=16;z>=5;z--){
+    const a=tileXY(n,w,z),b=tileXY(s,e,z);
+    if((b.x-a.x)*256<=cw*0.86&&(b.y-a.y)*256<=ch*0.86)break;
+   }
+  }
+ }
+ return z;
+}
+function mapHaloText(cc,text,x,y,size,weight){
+ cc.font=`${weight} ${size}px Arial, sans-serif`;
+ cc.textAlign='center';cc.textBaseline='alphabetic';cc.lineJoin='round';
+ cc.lineWidth=Math.max(3,size*.28);cc.strokeStyle='rgba(0,0,0,.85)';cc.strokeText(text,x,y);
+ cc.fillStyle='#fff';cc.fillText(text,x,y);
+}
+async function renderMap(cw,ch){
+ const g=mapGeo;if(!g)return null;
+ const style=($('gMapStyle')&&$('gMapStyle').value)||'satlabel';
+ const adj=+($('gZoom')&&$('gZoom').value)||0;
+ const wantSat=style!=='street';
+ const z=clamp(fitZoom(g,cw,ch)+adj,3,wantSat?17:18),n=2**z;
+ const cLat=g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat,cLon=g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon;
+ const c=tileXY(cLat,cLon,z);
+ const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*256,y:ch/2+(p.y-c.y)*256};};
+ const x0=Math.floor(c.x-cw/512),x1=Math.floor(c.x+cw/512),y0=Math.floor(c.y-ch/512),y1=Math.floor(c.y+ch/512);
+ const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
+ const cc=cv.getContext('2d');
+ cc.fillStyle=wantSat?'#1d2b1d':'#e8e8e8';cc.fillRect(0,0,cw,ch);
+ const pos=[];
+ for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n)pos.push([tx,ty]);
+ const paint=async src=>{
+  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n)+n)%n,ty)));
+  const ok=imgs.filter(Boolean).length;
+  if(ok<Math.max(1,Math.ceil(pos.length*.6)))return false;
+  pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*256,ch/2+(ty-c.y)*256,256,256);});
+  return true;
+ };
+ let used=null;
+ if(wantSat){
+  if(await paint(T_IMG)){used=T_IMG;if(style==='satlabel')await paint(T_REF);}
+ }
+ if(!used){
+  cc.fillStyle='#e8e8e8';cc.fillRect(0,0,cw,ch);
+  for(const s of T_STREETS){if(await paint(s)){used=s;break;}}
+ }
+ const onSat=used===T_IMG;
+ if(!used){ // every tile server blocked: plain background, boundary + name are still drawn
+  cc.fillStyle='#dfe7ee';cc.fillRect(0,0,cw,ch);
+  cc.strokeStyle='#c5d0da';cc.lineWidth=1;
+  for(let i=0;i<=cw;i+=48){cc.beginPath();cc.moveTo(i,0);cc.lineTo(i,ch);cc.stroke();}
+  for(let i=0;i<=ch;i+=48){cc.beginPath();cc.moveTo(0,i);cc.lineTo(cw,i);cc.stroke();}
+ }
+ // district / town boundary
+ if(g.poly){
+  const polys=g.poly.type==='Polygon'?[g.poly.coordinates]:g.poly.coordinates;
+  const sw=Math.max(2,cw/260);
+  cc.save();cc.lineJoin='round';cc.beginPath();
+  for(const rings of polys)for(const ring of rings){
+   ring.forEach(([lo,la],i)=>{const p=proj(la,lo);if(i)cc.lineTo(p.x,p.y);else cc.moveTo(p.x,p.y);});
+   cc.closePath();
+  }
+  cc.fillStyle=onSat?'rgba(255,212,0,.08)':'rgba(21,101,192,.10)';cc.fill('evenodd');
+  cc.strokeStyle='rgba(0,0,0,.65)';cc.lineWidth=sw*2.6;cc.stroke();
+  cc.strokeStyle=onSat?'#ffd400':'#1565c0';cc.lineWidth=sw*1.2;cc.stroke();
+  cc.restore();
+ }
+ // pin
+ const pp=proj(g.lat,g.lon),pr=clamp(cw/40,7,18);
+ cc.save();
+ cc.shadowColor='rgba(0,0,0,.5)';cc.shadowBlur=pr*.6;
+ cc.fillStyle='#e53935';cc.beginPath();cc.arc(pp.x,pp.y,pr,0,Math.PI*2);cc.fill();
+ cc.shadowBlur=0;cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,pr*.3);cc.stroke();
+ cc.fillStyle='#fff';cc.beginPath();cc.arc(pp.x,pp.y,pr*.34,0,Math.PI*2);cc.fill();
+ cc.restore();
+ // district name + state on the map
+ const place=($('gPlace').value||'').trim(),stateName=($('gState').value||'').trim();
+ if(place||stateName){
+  let fs=clamp(cw*.085,13,52);
+  cc.font=`800 ${fs}px Arial, sans-serif`;
+  while(place&&fs>10&&cc.measureText(place).width>cw*.92){fs-=1;cc.font=`800 ${fs}px Arial, sans-serif`;}
+  const ss=fs*.62;
+  const lx=clamp(pp.x,cw*.46*0+10,cw-10);
+  let placeY=pp.y-pr*1.7-(stateName?ss*1.25:0),stateY=pp.y-pr*1.7;
+  if(placeY-fs<2){placeY=pp.y+pr*1.7+fs;stateY=placeY+ss*1.3;}
+  const halfW=Math.max(place?cc.measureText(place).width:0,60)/2+6;
+  const cx2=clamp(lx,halfW,cw-halfW);
+  if(place)mapHaloText(cc,place,cx2,placeY,fs,800);
+  if(stateName)mapHaloText(cc,stateName,cx2,stateY,ss,700);
+ }
+ // attribution (small, bottom-right)
+ {
+  const t=used?used.name:'map tiles blocked',as=clamp(cw*.026,8,13);
+  cc.font=`600 ${as}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
+  const tw=cc.measureText(t).width+as;
+  cc.fillStyle='rgba(0,0,0,.55)';cc.fillRect(cw-tw-2,ch-as*1.7-2,tw,as*1.7);
+  cc.fillStyle='#fff';cc.fillText(t,cw-as*.5-2,ch-as*.6-2);
+ }
+ cv.srcName=used?((onSat?(style==='satlabel'?'Satellite + Labels':'Satellite'):'Street')+(wantSat&&!onSat?' (satellite blocked, using street)':'')):'no tiles';
+ cv.isFallback=!used;
+ return cv;
+}
+async function buildMapCanvas(){
+ const r=sourceRect();
+ let bw=(r.w||0)*state.mapW/100,bh=(r.h||0)*state.mapH/100;
+ if(!(bw>20&&bh>20)){bw=520;bh=380;}
+ const m=Math.max(bw,bh);
+ let f=Math.max(1,640/m);f=Math.min(f,1400/m);
+ return renderMap(Math.max(96,Math.round(bw*f)),Math.max(96,Math.round(bh*f)));
+}
+async function rebuildMap(){
+ if(userMapImg){mapImg=userMapImg;return;}
+ if(!mapGeo)return;
+ const tok=++mapBuildToken;
+ const cv=await buildMapCanvas();
+ if(tok!==mapBuildToken||!cv)return;
+ mapImg=cv;
+ drawMapPreview();drawGeoPreview();
+}
+function scheduleMapRebuild(){
+ clearTimeout(mapTimer);
+ mapTimer=setTimeout(()=>{rebuildMap().catch(e=>console.warn('map rebuild failed',e));},300);
+}
+async function makeMap(la,lo){ // used by the export path
+ if(!mapGeo)mapGeo={lat:la,lon:lo,bbox:null,poly:null};
+ return buildMapCanvas();
+}
+
+/* ---------- Find Location (State + District/Town) ---------- */
+async function findLocation(){
+ const tok=++findToken;
+ const place=$('gPlace').value.trim(),stateName=$('gState').value.trim();
+ if(!place&&!stateName){$('gCoords').textContent='Enter a State and District / Town.';return;}
+ const q=[place,stateName,'India'].filter(Boolean).join(', ');
+ $('gCoords').textContent='Finding '+q+'…';
+ let p=await geocodeAny(q,place,stateName);
+ if(tok!==findToken)return;
+ if(!p&&$('startLat').dataset.auto!=='1'){ // typed coordinates as last resort
+  const sl=parseFloat($('startLat').value),so=parseFloat($('startLon').value);
+  if(isFinite(sl)&&isFinite(so))p={lat:sl,lon:so,bbox:null,poly:null};
+ }
+ if(!p){
+  drawMapPreview('Location not found');
+  $('gCoords').textContent='Location not found (geocoder blocked or name not recognised). Check the State / District spelling, or type Start Latitude / Longitude and press Find Location again.';
+  return;
+ }
+ lat=p.lat;lon=p.lon;
+ mapGeo={lat:p.lat,lon:p.lon,bbox:p.bbox,poly:p.poly};
+ const sEl=$('startLat'),oEl=$('startLon');
+ if(!sEl.value||sEl.dataset.auto==='1'){ // follow the new place unless the user typed their own values
+  sEl.value=lat.toFixed(6);oEl.value=lon.toFixed(6);sEl.dataset.auto='1';oEl.dataset.auto='1';
+ }
+ gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
+ state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
+ state.mapW=+$('gMapW').value||26;state.mapH=+$('mapH').value||29;
+ $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
+ try{await rebuildMap();}catch(e){console.warn('map failed',e);}
+ if(tok!==findToken)return;
+ if(!userMapImg&&(!mapImg||!mapImg.width))mapImg=makeFallbackMap(lat,lon);
+ $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+
+  (mapImg&&mapImg.srcName||'placeholder')+(p.poly?' • district outline shown':'')+
+  (mapImg&&mapImg.isFallback?' (map tiles blocked — check internet / ad-blocker, then press Find Location again)':'');
+ try{loadRealGPSRoute();}catch(e){}
+ drawMapPreview();drawGeoPreview();
+}
+$('findLocation').onclick=findLocation;
+$('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';tileCache.clear();findLocation();};
+
+/* ---------- re-build triggers ---------- */
+['gState','gPlace'].forEach(id=>$(id).addEventListener('input',()=>{
+ clearTimeout(findTimer);
+ findTimer=setTimeout(()=>{if($('geoSection').style.display!=='none')findLocation();},1300);
+}));
+['gMapW','mapH','gMapStyle','gZoom'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
+$('gZoom').addEventListener('input',()=>{$('gZoomVal').textContent=$('gZoom').value;});
+geo.addEventListener('pointerup',scheduleMapRebuild);
+['applyCrop','resetCrop'].forEach(id=>$(id).addEventListener('click',scheduleMapRebuild));
+['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.auto='0';}));
+
 function readRunningCoords(){
   startLat=parseFloat($('startLat').value); startLon=parseFloat($('startLon').value);
   endLat=parseFloat($('endLat').value); endLon=parseFloat($('endLon').value);
@@ -2090,19 +2219,20 @@ updateBoxCount();
 function removeWhiteFromCanvas(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 function removeWhiteDetailedFromCanvasV3(c,W,H,r){removeTextRectUltra(c,W,H,r)}
 function removeWhiteFromCanvasExport(c,W,H,r){removeTextRectUltra(c,W,H,r)}
-function removeTextRectUltra(ctx,W,H,rect){
+function removeTextRectUltra(ctx,W,H,rect,pass){
   if(!rect)return;
   if(rect.w<2||rect.h<2)return;
   // Small safety margin so letters touching / just outside a tight box edge are still caught.
-  const mg=Math.round((2+Math.max(0,Math.min(5,+($('removePower')?$('removePower').value:3))))*Math.max(.7,W/1080));
+  const strong=(pass||0)>0;
+  const mg=Math.round((3+Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5))))*Math.max(.7,W/1080));
   const rx0=Math.max(0,Math.floor(rect.x)-mg),ry0=Math.max(0,Math.floor(rect.y)-mg);
   const rx1=Math.min(W,Math.ceil(rect.x+rect.w)+mg),ry1=Math.min(H,Math.ceil(rect.y+rect.h)+mg);
   if(rx1-rx0<2||ry1-ry0<2)return;
-  const power=Math.max(0,Math.min(5,+($('removePower')?$('removePower').value:3)));
-  const userT=Math.max(50,(+$('whiteThreshold').value||105)-power*6);   // power lowers the brightness bar
+  const power=Math.max(0,Math.min(8,+($('removePower')?$('removePower').value:5)));
+  const userT=Math.max(40,(+$('whiteThreshold').value||105)-power*7-(strong?18:0));   // power lowers the brightness bar
   const k=Math.max(.7,W/1080);
   const thick=Math.max(3,Math.round((+$('textThick').value||9)*k));
-  const grow=Math.max(4,Math.round(((+$('inpaintPasses').value||5)+power)*Math.max(.8,W/1080)));
+  const grow=Math.max(4,Math.round(((+$('inpaintPasses').value||5)+power+(strong?2:0))*Math.max(.8,W/1080)));
   const pad=Math.max(24,grow*5+thick*2);
   const x0=Math.max(0,rx0-pad),y0=Math.max(0,ry0-pad),x1=Math.min(W,rx1+pad),y1=Math.min(H,ry1+pad);
   const w=x1-x0,h=y1-y0,N=w*h;
@@ -2150,7 +2280,7 @@ function removeTextRectUltra(ctx,W,H,rect){
   inpaintHole(d,w,h,clip(dilateMask(mask,w,h,Math.max(3,Math.floor(grow*.75)))),1);
 
   // ---- Residual sweeps: look again at the CLEANED pixels and remove any white left behind ----
-  const sweeps=1+Math.min(3,power);
+  const sweeps=2+Math.min(5,power);
   for(let it=0;it<sweeps;it++){
     lum=lumOf();
     opened=sepFilter(sepFilter(lum,w,h,rad,false),w,h,rad,true);
@@ -2158,7 +2288,7 @@ function removeTextRectUltra(ctx,W,H,rect){
     for(let y=iy0;y<iy1;y++)for(let x=ix0;x<ix1;x++){
       const p=y*w+x,i=p*4,L=lum[p];
       const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);
-      if(mx-mn<=95&&L>=Math.max(60,userT-45)&&(L-opened[p])>=5){res[p]=1;c++;}
+      if(mx-mn<=100&&L>=Math.max(55,userT-45)&&(L-opened[p])>=4){res[p]=1;c++;}
     }
     if(!c)break;
     inpaintHole(d,w,h,clip(dilateMask(res,w,h,Math.max(2,Math.round(grow*.6)))),1);

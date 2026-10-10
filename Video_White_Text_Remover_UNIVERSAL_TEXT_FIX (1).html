@@ -242,11 +242,7 @@ input[type=range]{width:100%}
         <div class="sliderTop"><span>Map height</span><b id="mapHVal">38%</b></div><input id="mapH" type="range" min="5" max="90" value="38">
         <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
         <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
-        <div class="sliderTop"><span>Map style</span><b></b></div>
-        <select id="gMapStyle"><option value="satlabel" selected>Satellite + Labels</option><option value="sat">Satellite</option><option value="street">Street (lanes)</option></select>
-        <div class="sliderTop"><span>Map view</span><b></b></div>
-        <select id="gMapView"><option value="detail" selected>Detailed (street level at pin)</option><option value="district">Whole district</option></select>
-        <div class="sliderTop"><span>Map zoom (0 = default, + closer, − wider)</span><b id="gZoomVal">0</b></div><input id="gZoom" type="range" min="-4" max="5" step="1" value="0">
+        <div class="small">Map automatically fits the entered district/town and state. No map-style or zoom setting is needed.</div>
       </div>
 
       <div class="card geoOptionCard">
@@ -261,9 +257,9 @@ input[type=range]{width:100%}
       <div class="card">
         <h3>Location</h3>
         <div class="geoFields3">
-          <div><label>State</label><input id="gState" type="text" value="Jammu and Kashmir"></div>
-          <div><label>District / Town</label><input id="gPlace" type="text" value="Beerwah"></div>
-          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
+          <div><label>State</label><input id="gState" type="text" placeholder="Enter state"></div>
+          <div><label>District / Town</label><input id="gPlace" type="text" placeholder="Enter district or town"></div>
+          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" placeholder="Optional address shown on video"></div>
         </div>
         <button id="findLocation">📍 Find Location</button>
         <div id="gCoords" class="status">Enter a location and press Find Location.</div>
@@ -1076,14 +1072,12 @@ function mapHaloText(cc,text,x,y,size,weight){
 }
 async function renderMap(cw,ch){
  const g=mapGeo;if(!g)return null;
- const style=($('gMapStyle')&&$('gMapStyle').value)||'satlabel';
- const adj=+($('gZoom')&&$('gZoom').value)||0;
- const detail=(($('gMapView')&&$('gMapView').value)||'detail')==='detail';
- const wantSat=style!=='street';
- const baseZ=detail?16:fitZoom(g,cw,ch);
- const z=clamp(baseZ+adj,3,wantSat?17:18),n=2**z;
- const cLat=detail?g.lat:(g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat);
- const cLon=detail?g.lon:(g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon);
+ const wantSat=false;
+ // Automatically fit the returned district/town bounds; if bounds are unavailable, show a useful local street-level map.
+ const baseZ=g.bbox?fitZoom(g,cw,ch):13;
+ const z=clamp(baseZ,5,17),n=2**z;
+ const cLat=g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat;
+ const cLon=g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon;
  const c=tileXY(cLat,cLon,z);
  const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*256,y:ch/2+(p.y-c.y)*256};};
  const x0=Math.floor(c.x-cw/512),x1=Math.floor(c.x+cw/512),y0=Math.floor(c.y-ch/512),y1=Math.floor(c.y+ch/512);
@@ -1100,19 +1094,20 @@ async function renderMap(cw,ch){
   return true;
  };
  let used=null;
- if(wantSat){
-  if(await paint(T_IMG)){used=T_IMG;if(style==='satlabel')await paint(T_REF);}
- }
- if(!used){
-  cc.fillStyle='#e8e8e8';cc.fillRect(0,0,cw,ch);
-  for(const s of T_STREETS){if(await paint(s)){used=s;break;}}
- }
+ // Use a street map by default so the map is predictable and location labels remain readable.
+ for(const source of T_STREETS){if(await paint(source)){used=source;break;}}
  const onSat=used===T_IMG;
  if(!used){
-  cc.fillStyle='#dfe7ee';cc.fillRect(0,0,cw,ch);
-  cc.strokeStyle='#c5d0da';cc.lineWidth=1;
-  for(let i=0;i<=cw;i+=48){cc.beginPath();cc.moveTo(i,0);cc.lineTo(i,ch);cc.stroke();}
-  for(let i=0;i<=ch;i+=48){cc.beginPath();cc.moveTo(0,i);cc.lineTo(cw,i);cc.stroke();}
+  cc.fillStyle='#e8edf0';cc.fillRect(0,0,cw,ch);
+  // A visible labelled fallback is shown if all online tile servers are unavailable.
+  cc.fillStyle='#d8e7d0';cc.beginPath();cc.ellipse(cw*.22,ch*.72,cw*.34,ch*.30,-.25,0,Math.PI*2);cc.fill();
+  cc.fillStyle='#d2e2c8';cc.beginPath();cc.ellipse(cw*.82,ch*.22,cw*.30,ch*.22,.3,0,Math.PI*2);cc.fill();
+  cc.strokeStyle='#fff';cc.lineWidth=Math.max(5,cw*.018);
+  [[-.1,.78,.45,.32],[.12,.05,.70,.94],[.52,.0,.84,.9],[0,.48,1,.57]].forEach(a=>{cc.beginPath();cc.moveTo(cw*a[0],ch*a[1]);cc.lineTo(cw*a[2],ch*a[3]);cc.stroke();});
+  cc.strokeStyle='#c7b89b';cc.lineWidth=Math.max(2,cw*.006);cc.beginPath();cc.moveTo(0,ch*.48);cc.bezierCurveTo(cw*.3,ch*.62,cw*.62,ch*.35,cw,ch*.57);cc.stroke();
+  cc.fillStyle='#263746';cc.textAlign='center';cc.font=`700 ${clamp(cw*.055,14,28)}px Arial`;
+  cc.fillText([($('gPlace')?.value||'District / Town').trim(),($('gState')?.value||'State').trim()].filter(Boolean).join(', '),cw/2,ch*.16);
+  cc.font=`${clamp(cw*.025,10,14)}px Arial`;cc.fillStyle='#5a6874';cc.fillText('Online map tiles unavailable — showing location fallback',cw/2,ch*.94);
  }
  if(g.poly){
   const polys=g.poly.type==='Polygon'?[g.poly.coordinates]:g.poly.coordinates;
@@ -1155,7 +1150,7 @@ async function renderMap(cw,ch){
   cc.fillStyle='rgba(0,0,0,.55)';cc.fillRect(cw-tw-2,ch-as*1.7-2,tw,as*1.7);
   cc.fillStyle='#fff';cc.fillText(t,cw-as*.5-2,ch-as*.6-2);
  }
- cv.srcName=used?((onSat?(style==='satlabel'?'Satellite + Labels':'Satellite'):'Street')+(wantSat&&!onSat?' (satellite blocked, using street)':'')):'no tiles';
+ cv.srcName=used?used.name:'no tiles';
  cv.isFallback=!used;
  return cv;
 }
@@ -1211,7 +1206,7 @@ async function findLocation(){
  }
  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
  state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
- state.mapW=+$('gMapW').value||26;state.mapH=+$('mapH').value||29;
+ state.mapW=+$('gMapW').value||40;state.mapH=+$('mapH').value||38;
  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
  try{await rebuildMap();}catch(e){console.warn('map failed',e);}
  if(tok!==findToken)return;
@@ -1230,10 +1225,7 @@ $('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';tileCache.cle
  clearTimeout(findTimer);
  findTimer=setTimeout(()=>{if($('geoSection').style.display!=='none')findLocation();},1300);
 }));
-['gMapW','mapH','gMapStyle','gZoom','gMapView'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
-$('gMapStyle').addEventListener('change',scheduleMapRebuild);
-$('gMapView').addEventListener('change',scheduleMapRebuild);
-$('gZoom').addEventListener('input',()=>{$('gZoomVal').textContent=$('gZoom').value;});
+['gMapW','mapH'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
 geo.addEventListener('pointerup',scheduleMapRebuild);
 ['applyCrop','resetCrop'].forEach(id=>$(id).addEventListener('click',scheduleMapRebuild));
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.auto='0';}));

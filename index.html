@@ -69,7 +69,7 @@ input[type=range]{width:100%}
 #geoSection button{padding:7px 9px;margin-top:3px;}
 #geoSection .runningBox{border-top:1px solid #263440;margin-top:10px;padding-top:10px;}
 #geoSection .runningBox h3{margin-bottom:6px;}
-#geoSection #mapPreview{width:100%;max-width:640px;height:auto;aspect-ratio:8/3;margin-top:8px;display:block;border-radius:10px;}
+#geoSection #mapPreview{width:100%;max-width:900px;height:auto;aspect-ratio:16/7;margin-top:8px;display:block;border-radius:10px;}
 #geoSection .geoActions{border-top:1px solid #263440;margin-top:14px;padding-top:10px;}
 #geoSection .geoActions button{margin-right:4px;}
 #geoSection #geoSeek{margin-top:8px}
@@ -220,7 +220,7 @@ input[type=range]{width:100%}
           <h2>GeoTag Preview</h2>
           <div id="geoCounter" class="badge">Video not ready</div>
         </div>
-        <div class="geoPreviewHint">Drag the map on the preview to move it. Drag its bottom-right corner to resize it.</div>
+        <div class="geoPreviewHint">Larger, clearer map by default. Drag the map to move it; drag its bottom-right corner to resize.</div>
       </div>
       <div class="stage"><canvas id="geoCanvas"></canvas></div>
       <div class="row3">
@@ -238,15 +238,11 @@ input[type=range]{width:100%}
         <div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
         <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
         <div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">26%</b></div><input id="gMapW" type="range" min="5" max="90" value="26">
-        <div class="sliderTop"><span>Map height</span><b id="mapHVal">29%</b></div><input id="mapH" type="range" min="5" max="90" value="29">
+        <div class="sliderTop"><span>Map width</span><b id="gMapWVal">40%</b></div><input id="gMapW" type="range" min="5" max="90" value="40">
+        <div class="sliderTop"><span>Map height</span><b id="mapHVal">38%</b></div><input id="mapH" type="range" min="5" max="90" value="38">
         <div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
         <div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
-        <div class="sliderTop"><span>Map style</span><b></b></div>
-        <select id="gMapStyle"><option value="satlabel" selected>Satellite + Labels</option><option value="sat">Satellite</option><option value="street">Street (lanes)</option></select>
-        <div class="sliderTop"><span>Map view</span><b></b></div>
-        <select id="gMapView"><option value="detail" selected>Detailed (street level at pin)</option><option value="district">Whole district</option></select>
-        <div class="sliderTop"><span>Map zoom (0 = default, + closer, − wider)</span><b id="gZoomVal">0</b></div><input id="gZoom" type="range" min="-4" max="5" step="1" value="0">
+        <div class="small">Real street-map tiles automatically fit the entered district/town and state. No map-style or zoom setting is needed.</div>
       </div>
 
       <div class="card geoOptionCard">
@@ -261,9 +257,9 @@ input[type=range]{width:100%}
       <div class="card">
         <h3>Location</h3>
         <div class="geoFields3">
-          <div><label>State</label><input id="gState" type="text" value="Jammu and Kashmir"></div>
-          <div><label>District / Town</label><input id="gPlace" type="text" value="Beerwah"></div>
-          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" value="Sbi Complex, Beerwah, 193411, Jammu and Kashmir, India"></div>
+          <div><label>State</label><input id="gState" type="text" placeholder="Enter state"></div>
+          <div><label>District / Town</label><input id="gPlace" type="text" placeholder="Enter district or town"></div>
+          <div><label>Address / Location — printed on video</label><input id="gAddress" type="text" placeholder="Optional address shown on video"></div>
         </div>
         <button id="findLocation">📍 Find Location</button>
         <div id="gCoords" class="status">Enter a location and press Find Location.</div>
@@ -328,7 +324,7 @@ let outputW=0, outputH=0, exporting=false;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:26,gTitle:100,gDetails:100,mapX:1.5,mapY:68,mapW:26,mapH:29,mapMoved:false,
+ gOpacity:85,gMapO:100,gHeight:35,gMapW:40,gTitle:100,gDetails:100,mapX:1.5,mapY:58,mapW:40,mapH:38,mapMoved:false,
  logoX:90,logoY:50,logoSize:70
 };
 
@@ -950,7 +946,7 @@ $('mapUpload').onchange=e=>{
 };
 function drawMapPreview(msg){
  const c=$('mapPreview');if(!c)return;
- const W=c.width=640,H=c.height=240,x=c.getContext('2d');
+ const W=c.width=960,H=c.height=420,x=c.getContext('2d');
  x.fillStyle='#d7dde1';x.fillRect(0,0,W,H);
  if(mapImg&&mapImg.width){
   const sc=Math.max(W/mapImg.width,H/mapImg.height),dw=mapImg.width*sc,dh=mapImg.height*sc;
@@ -990,8 +986,9 @@ const tileCache=new Map();
 const T_IMG={name:'© Esri, Maxar',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`};
 const T_REF={name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${y}/${x}`};
 const T_STREETS=[
+ // Prefer genuine OpenStreetMap street tiles; fall back to other real tile providers only if unavailable.
+ {name:'© OpenStreetMap contributors',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
  {name:'© CARTO © OpenStreetMap',url:(z,x,y)=>`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`},
- {name:'© OpenStreetMap',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
  {name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`},
  {name:'© OSM France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`}
 ];
@@ -1076,14 +1073,12 @@ function mapHaloText(cc,text,x,y,size,weight){
 }
 async function renderMap(cw,ch){
  const g=mapGeo;if(!g)return null;
- const style=($('gMapStyle')&&$('gMapStyle').value)||'satlabel';
- const adj=+($('gZoom')&&$('gZoom').value)||0;
- const detail=(($('gMapView')&&$('gMapView').value)||'detail')==='detail';
- const wantSat=style!=='street';
- const baseZ=detail?16:fitZoom(g,cw,ch);
- const z=clamp(baseZ+adj,3,wantSat?17:18),n=2**z;
- const cLat=detail?g.lat:(g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat);
- const cLon=detail?g.lon:(g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon);
+ const wantSat=true;
+ // Use real satellite imagery without place/road labels, automatically fitted to the selected district/town.
+ const baseZ=g.bbox?fitZoom(g,cw,ch):13;
+ const z=clamp(baseZ,5,17),n=2**z;
+ const cLat=g.bbox?(g.bbox[0]+g.bbox[1])/2:g.lat;
+ const cLon=g.bbox?(g.bbox[2]+g.bbox[3])/2:g.lon;
  const c=tileXY(cLat,cLon,z);
  const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*256,y:ch/2+(p.y-c.y)*256};};
  const x0=Math.floor(c.x-cw/512),x1=Math.floor(c.x+cw/512),y0=Math.floor(c.y-ch/512),y1=Math.floor(c.y+ch/512);
@@ -1100,19 +1095,17 @@ async function renderMap(cw,ch){
   return true;
  };
  let used=null;
- if(wantSat){
-  if(await paint(T_IMG)){used=T_IMG;if(style==='satlabel')await paint(T_REF);}
- }
- if(!used){
-  cc.fillStyle='#e8e8e8';cc.fillRect(0,0,cw,ch);
-  for(const s of T_STREETS){if(await paint(s)){used=s;break;}}
- }
+ // Satellite imagery has no street/place-name labels, while still showing real terrain, buildings and roads.
+ if(await paint(T_IMG)) used=T_IMG;
  const onSat=used===T_IMG;
  if(!used){
-  cc.fillStyle='#dfe7ee';cc.fillRect(0,0,cw,ch);
-  cc.strokeStyle='#c5d0da';cc.lineWidth=1;
-  for(let i=0;i<=cw;i+=48){cc.beginPath();cc.moveTo(i,0);cc.lineTo(i,ch);cc.stroke();}
-  for(let i=0;i<=ch;i+=48){cc.beginPath();cc.moveTo(0,i);cc.lineTo(cw,i);cc.stroke();}
+  // Never draw a pretend map. If real satellite tiles are blocked, show a clear loading error instead.
+  cc.fillStyle='#f2f4f5';cc.fillRect(0,0,cw,ch);
+  cc.fillStyle='#344054';cc.textAlign='center';cc.textBaseline='middle';
+  cc.font=`700 ${clamp(cw*.045,14,24)}px Arial, sans-serif`;
+  cc.fillText('Real map tiles could not load',cw/2,ch/2-12);
+  cc.font=`${clamp(cw*.026,10,14)}px Arial, sans-serif`;
+  cc.fillStyle='#667085';cc.fillText('Check internet / browser blocking, then press Reload map',cw/2,ch/2+18);
  }
  if(g.poly){
   const polys=g.poly.type==='Polygon'?[g.poly.coordinates]:g.poly.coordinates;
@@ -1134,28 +1127,14 @@ async function renderMap(cw,ch){
  cc.shadowBlur=0;cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,pr*.3);cc.stroke();
  cc.fillStyle='#fff';cc.beginPath();cc.arc(pp.x,pp.y,pr*.34,0,Math.PI*2);cc.fill();
  cc.restore();
- const place=($('gPlace').value||'').trim(),stateName=($('gState').value||'').trim();
- if(place||stateName){
-  let fs=clamp(cw*.085,13,52);
-  cc.font=`800 ${fs}px Arial, sans-serif`;
-  while(place&&fs>10&&cc.measureText(place).width>cw*.92){fs-=1;cc.font=`800 ${fs}px Arial, sans-serif`;}
-  const ss=fs*.62;
-  const lx=clamp(pp.x,10,cw-10);
-  let placeY=pp.y-pr*1.7-(stateName?ss*1.25:0),stateY=pp.y-pr*1.7;
-  if(placeY-fs<2){placeY=pp.y+pr*1.7+fs;stateY=placeY+ss*1.3;}
-  const halfW=Math.max(place?cc.measureText(place).width:0,60)/2+6;
-  const cx2=clamp(lx,halfW,cw-halfW);
-  if(place)mapHaloText(cc,place,cx2,placeY,fs,800);
-  if(stateName)mapHaloText(cc,stateName,cx2,stateY,ss,700);
- }
  {
-  const t=used?used.name:'map tiles blocked',as=clamp(cw*.026,8,13);
+  const t=used?'© Esri, Maxar':'Real map tiles could not load',as=clamp(cw*.026,8,13);
   cc.font=`600 ${as}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
   const tw=cc.measureText(t).width+as;
   cc.fillStyle='rgba(0,0,0,.55)';cc.fillRect(cw-tw-2,ch-as*1.7-2,tw,as*1.7);
   cc.fillStyle='#fff';cc.fillText(t,cw-as*.5-2,ch-as*.6-2);
  }
- cv.srcName=used?((onSat?(style==='satlabel'?'Satellite + Labels':'Satellite'):'Street')+(wantSat&&!onSat?' (satellite blocked, using street)':'')):'no tiles';
+ cv.srcName=used?used.name:'no tiles';
  cv.isFallback=!used;
  return cv;
 }
@@ -1211,14 +1190,14 @@ async function findLocation(){
  }
  gpsRouteKey='';gpsRoute=[];gpsRouteDistances=[];gpsRouteTotal=0;
  state.mapMoved=false;state.mapX=0;state.mapY=100-state.gHeight;
- state.mapW=+$('gMapW').value||26;state.mapH=+$('mapH').value||29;
+ state.mapW=+$('gMapW').value||40;state.mapH=+$('mapH').value||38;
  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  — loading map…`;
  try{await rebuildMap();}catch(e){console.warn('map failed',e);}
  if(tok!==findToken)return;
- if(!userMapImg&&(!mapImg||!mapImg.width))mapImg=makeFallbackMap(lat,lon);
+
  $('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°  • Map: `+
-  (mapImg&&mapImg.srcName||'placeholder')+(p.poly?' • district outline shown':'')+
-  (mapImg&&mapImg.isFallback?' (map tiles blocked — check internet / ad-blocker, then press Find Location again)':'');
+  (mapImg&&mapImg.srcName||'waiting for real map tiles')+(p.poly?' • district outline shown':'')+
+  (mapImg&&mapImg.isFallback?' (real map tiles blocked — check internet / browser extensions, then press Reload map)':'');
  try{loadRealGPSRoute();}catch(e){}
  drawMapPreview();drawGeoPreview();
 }
@@ -1230,10 +1209,7 @@ $('retryMap').onclick=()=>{userMapImg=null;$('mapUpload').value='';tileCache.cle
  clearTimeout(findTimer);
  findTimer=setTimeout(()=>{if($('geoSection').style.display!=='none')findLocation();},1300);
 }));
-['gMapW','mapH','gMapStyle','gZoom','gMapView'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
-$('gMapStyle').addEventListener('change',scheduleMapRebuild);
-$('gMapView').addEventListener('change',scheduleMapRebuild);
-$('gZoom').addEventListener('input',()=>{$('gZoomVal').textContent=$('gZoom').value;});
+['gMapW','mapH'].forEach(id=>$(id).addEventListener('input',scheduleMapRebuild));
 geo.addEventListener('pointerup',scheduleMapRebuild);
 ['applyCrop','resetCrop'].forEach(id=>$(id).addEventListener('click',scheduleMapRebuild));
 ['startLat','startLon','endLat','endLon'].forEach(id=>$(id).addEventListener('input',()=>{$(id).dataset.auto='0';}));

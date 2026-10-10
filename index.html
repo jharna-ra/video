@@ -1915,7 +1915,7 @@ drawMapPreview();
 updateBoxCount();
 
 /* =====================================================================
-   FIX BLOCK — real crisp map + thin white-letter removal
+   FIX BLOCK v2 — wide OSM street map + thin white-letter removal
    ===================================================================== */
 
 /* ---------------------------- MAP ---------------------------- */
@@ -1929,48 +1929,34 @@ const MAP_SRC=[
 
 async function renderMap(cw0,ch0){
  const g=mapGeo;if(!g)return null;
- const S=2,cw=cw0*S,ch=ch0*S,TS=256*S;
- const fz=fitZoom(g,cw0,ch0);
- const z=clamp(Math.max(fz,11),11,16),n=2**z;
- const useBox=!!(g.bbox&&z===fz);
- const cLat=useBox?(g.bbox[0]+g.bbox[1])/2:g.lat,cLon=useBox?(g.bbox[2]+g.bbox[3])/2:g.lon;
- const c=tileXY(cLat,cLon,z);
+ const S=2,cw=cw0*S,ch=ch0*S;
+ const tu=clamp(Math.min(cw0,ch0)/2.2,100,180),TS=tu*S;
+ let z=13;
+ if(g.bbox){
+  const [south,north,west,east]=g.bbox;z=11;
+  for(let zz=13;zz>=11;zz--){
+   const a=tileXY(north,west,zz),b=tileXY(south,east,zz);
+   if((b.x-a.x)*tu<=cw0*.9&&(b.y-a.y)*tu<=ch0*.9){z=zz;break;}
+  }
+ }
+ const n2=2**z,c=tileXY(g.lat,g.lon,z);
  const proj=(la,lo)=>{const p=tileXY(la,lo,z);return {x:cw/2+(p.x-c.x)*TS,y:ch/2+(p.y-c.y)*TS};};
  const x0=Math.floor(c.x-cw/(2*TS)),x1=Math.floor(c.x+cw/(2*TS)),y0=Math.floor(c.y-ch/(2*TS)),y1=Math.floor(c.y+ch/(2*TS));
  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
  const cc=cv.getContext('2d');cc.imageSmoothingEnabled=true;cc.imageSmoothingQuality='high';
- cc.fillStyle='#e9e6df';cc.fillRect(0,0,cw,ch);
- const pos=[];
- for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n)pos.push([tx,ty]);
+ cc.fillStyle='#e8e6e1';cc.fillRect(0,0,cw,ch);
+ const pos=[];for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n2)pos.push([tx,ty]);
  let used=null;
  for(const src of MAP_SRC){
-  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n)+n)%n,ty)));
+  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(src,z,((tx%n2)+n2)%n2,ty)));
   if(imgs.filter(Boolean).length<Math.max(1,Math.ceil(pos.length*.6)))continue;
-  pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*TS,ch/2+(ty-c.y)*TS,TS+1,TS+1);});
-  used=src;break;
+  pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*TS,ch/2+(ty-c.y)*TS,TS+1,TS+1);});used=src;break;
  }
- if(!used){
-  cc.fillStyle='#f2f4f5';cc.fillRect(0,0,cw,ch);
-  cc.fillStyle='#344054';cc.textAlign='center';cc.textBaseline='middle';
-  cc.font=`700 ${clamp(cw*.045,28,48)}px Arial, sans-serif`;
-  cc.fillText('Real map tiles could not load',cw/2,ch/2-24);
-  cc.font=`${clamp(cw*.026,20,28)}px Arial, sans-serif`;cc.fillStyle='#667085';
-  cc.fillText('Check internet / browser blocking, then reload the map',cw/2,ch/2+30);
+ if(!used){cc.fillStyle='#f2f4f5';cc.fillRect(0,0,cw,ch);cc.fillStyle='#344054';cc.textAlign='center';cc.textBaseline='middle';cc.font=`700 ${clamp(cw*.045,28,48)}px Arial, sans-serif`;cc.fillText('Real map tiles could not load',cw/2,ch/2-24);cc.font=`${clamp(cw*.026,20,28)}px Arial, sans-serif`;cc.fillStyle='#667085';cc.fillText('Check internet / browser blocking, then press Reload map',cw/2,ch/2+30);
+ }else{
+  const p=proj(g.lat,g.lon),r=clamp(cw0/60,3,6)*S;cc.fillStyle='#e53935';cc.beginPath();cc.arc(p.x,p.y,r,0,Math.PI*2);cc.fill();cc.strokeStyle='rgba(255,255,255,.95)';cc.lineWidth=Math.max(1.5,r*.35);cc.stroke();
+  const t=used.name,fs=Math.max(7,Math.min(cw0,ch0)/38)*S;cc.font=`${fs}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';const tw=cc.measureText(t).width+fs*.8;cc.fillStyle='rgba(255,255,255,.7)';cc.fillRect(cw-tw,ch-fs*1.5,tw,fs*1.5);cc.fillStyle='#333';cc.fillText(t,cw-fs*.4,ch-fs*.45);
  }
- if(g.poly){
-  const polys=g.poly.type==='Polygon'?[g.poly.coordinates]:g.poly.coordinates;
-  const sw=Math.max(3,cw/240);cc.save();cc.lineJoin='round';cc.beginPath();
-  for(const rings of polys)for(const ring of rings){
-   ring.forEach(([lo,la],i)=>{const p=proj(la,lo);if(i)cc.lineTo(p.x,p.y);else cc.moveTo(p.x,p.y);});cc.closePath();
-  }
-  cc.fillStyle='rgba(229,57,53,.06)';cc.fill('evenodd');
-  cc.strokeStyle='rgba(255,255,255,.9)';cc.lineWidth=sw*2.4;cc.stroke();
-  cc.strokeStyle='#d32f2f';cc.lineWidth=sw;cc.setLineDash([sw*3,sw*1.8]);cc.stroke();cc.restore();
- }
- {const p=proj(g.lat,g.lon),r=clamp(cw/34,14,34);cc.save();cc.translate(p.x,p.y);
-  cc.shadowColor='rgba(0,0,0,.45)';cc.shadowBlur=r*.5;cc.shadowOffsetY=r*.15;cc.fillStyle='#e53935';cc.beginPath();
-  cc.arc(0,-r*1.55,r,Math.PI*.8,Math.PI*.2,false);cc.lineTo(0,0);cc.closePath();cc.fill();
-  cc.shadowColor='transparent';cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,r*.16);cc.stroke();cc.fillStyle='#fff';cc.beginPath();cc.arc(0,-r*1.55,r*.38,0,Math.PI*2);cc.fill();cc.restore();}
  cv.srcName=used?used.name:'no tiles';cv.isFallback=!used;return cv;
 }
 async function buildMapCanvas(){

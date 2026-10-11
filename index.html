@@ -1155,7 +1155,7 @@ async function playbackToEmit(start,end,emit,sess){
   if(!video.requestVideoFrameCallback)throw new Error('requestVideoFrameCallback not supported');
   const length=end-start;
   video.pause();await seekVideo(start);
-  const wasMuted=video.muted;video.muted=true;video.playbackRate=1;
+  const wasMuted=video.muted;video.muted=true;video.playbackRate=0.5;
   try{
     await new Promise((resolve,reject)=>{
       let finished=false,busy=false,lastEl=-1,lastAdv=performance.now(),tries=0,timer=null;

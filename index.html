@@ -113,6 +113,7 @@ input[type=range]{width:100%}
 
 <div class="section">
 <h3>Export</h3>
+<label class="checkLine"><input id="editIncludeGeo" type="checkbox" checked> Include GeoTag stamp in this video (set it up in the GeoTag tab first)</label>
 <button id="renderVideo" disabled>⚡ Render MP4 (with all edits)</button>
 <button id="downloadVideo" disabled>⬇ Download Video</button>
 <button id="goGeo" class="secondary" disabled>Continue to GeoTag →</button>
@@ -745,6 +746,26 @@ function fitGeoText(ctx,titleText,address,coordSample,maxW,availH,cap){
  return lo;
 }
 
+/* ===== live GPS-style jitter: last digits wander randomly (e.g. +5, -4, +7, -2 ...) ===== */
+const JIT_TICK=0.5;      // seconds between coordinate changes
+const JIT_MAX=60;        // max drift from the real point, in 0.000001° units (~7 m)
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+let jitCache={key:'',a:[0],b:[0],ra:null,rb:null};
+function jitStep(r,prev){
+ const m=1+Math.floor(r()*9), sg=r()<0.5?-1:1;
+ let v=prev+sg*m; if(Math.abs(v)>JIT_MAX)v=prev-sg*m; return v;
+}
+function jitterAt(sec){
+ if(lat==null||lon==null)return [0,0];
+ const key=lat+','+lon;
+ if(jitCache.key!==key)jitCache={key,a:[0],b:[0],ra:mulberry32(Math.round(lat*1e6)^0x9e37),rb:mulberry32(Math.round(lon*1e6)^0x7f4a)};
+ const n=Math.min(20000,Math.floor(Math.max(0,sec)/JIT_TICK));
+ while(jitCache.a.length<=n){
+  jitCache.a.push(jitStep(jitCache.ra,jitCache.a[jitCache.a.length-1]));
+  jitCache.b.push(jitStep(jitCache.rb,jitCache.b[jitCache.b.length-1]));
+ }
+ return [jitCache.a[n],jitCache.b[n]];
+}
 function drawGeoFrame(baseCtx,W,H,seconds){
  const L=computeGeoLayout(W,H);
  const {stampH,stampY,mapW,mapH,mapX,mapY}=L;
@@ -776,7 +797,8 @@ function drawGeoFrame(baseCtx,W,H,seconds){
  const maxW=Math.max(80,logoCX-logoSize/2-gap-textX);
  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
  const address=$('gAddress').value.trim();
- const coordText=`Lat ${lat==null?'—':lat.toFixed(6)}°  Long ${lon==null?'—':lon.toFixed(6)}°`;
+ const jt=jitterAt(seconds);
+ const coordText=`Lat ${lat==null?'—':(lat+jt[0]*1e-6).toFixed(6)}°  Long ${lon==null?'—':(lon+jt[1]*1e-6).toFixed(6)}°`;
  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
  const u=fitGeoText(baseCtx,titleText,address,'Lat 00.000000°  Long 000.000000°',maxW,stampH*.88,W*.032);
  const T=u*1.57*state.gTitle/100,D=u*state.gDetails/100;
@@ -1468,7 +1490,7 @@ document.addEventListener('input',e=>{
  if(['geoSeek','trimRange','videoFile'].includes(t.id))return;
  if(t.closest&&t.closest('#editSection,#geoSection'))markDirty();
 });
-['applyCrop','resetCrop','removeWhite','clearWhite','setStart','setEnd','mapReset','mapMakeSquare','findLocation','mapSquare'].forEach(id=>$(id).addEventListener('click',markDirty));
+['editIncludeGeo','applyCrop','resetCrop','removeWhite','clearWhite','setStart','setEnd','mapReset','mapMakeSquare','findLocation','mapSquare'].forEach(id=>$(id).addEventListener('click',markDirty));
 document.querySelectorAll('.quickTrim').forEach(b=>b.addEventListener('click',markDirty));
 $('timelineCanvas').addEventListener('pointerdown',markDirty);
 geo.addEventListener('pointerdown',markDirty);
@@ -1500,10 +1522,12 @@ $('renderVideo').onclick=async()=>{
  $('renderVideo').disabled=true;$('downloadVideo').disabled=true;editBlob=null;
  const ui=makeUI($('exportStatus'),$('exportFill')),t0=performance.now();
  try{
-  editBlob=await runExport(ui,false);
+  const withGeo=$('editIncludeGeo').checked&&lat!=null&&lon!=null;
+  if($('editIncludeGeo').checked&&!withGeo)alert('GeoTag is ticked but no location is set yet. Go to the GeoTag tab, press Find Location, then render again. Rendering WITHOUT GeoTag now.');
+  editBlob=await runExport(ui,withGeo);
   ui.progress(1);
   const kind=editBlob.type.includes('mp4')?'MP4':'WebM';
-  ui.status('Done in '+secs(t0)+' s — '+kind+' with your trim / crop / white-text removal applied. Press Download Video.');
+  ui.status('Done in '+secs(t0)+' s — '+kind+' with trim / crop / white-text removal'+(withGeo?' AND GeoTag':' (no GeoTag)')+'. Press Download Video.');
   $('downloadVideo').disabled=false;
  }catch(err){
   console.error(err);ui.status('Render failed: '+(err.message||err));

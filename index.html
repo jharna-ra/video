@@ -390,6 +390,7 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
      if(isWhite(d,i,t)) mask[p]=1;
    }
  }
+ thinOnly(d,W2,H2,mask,W);
  // Expand the mask by a few pixels so faint anti-aliased text edges are removed too.
  const expanded=new Uint8Array(mask);
  for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
@@ -466,6 +467,7 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
       if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
     }
   }
+  thinOnly(d,rw,rh,mask,W);
   // Dilate 2px to catch anti-aliased text edges.
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
     const p=y*rw+x;
@@ -959,7 +961,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
  let cur=stampY+Math.max(2,(stampH-blockH)/2);
  baseCtx.save();
  baseCtx.fillStyle='#fff';baseCtx.textAlign='left';baseCtx.textBaseline='alphabetic';
- baseCtx.shadowColor='rgba(0,0,0,.35)';baseCtx.shadowBlur=Math.max(1,stampH*.01);
+ baseCtx.shadowColor='rgba(0,0,0,.75)';baseCtx.shadowBlur=Math.max(2,stampH*.03);baseCtx.shadowOffsetY=Math.max(1,stampH*.006);
  baseCtx.font=tFont;
  tl.forEach((line,i)=>baseCtx.fillText(line,textX,cur+T*.95+i*T*1.15));
  cur+=tl.length*T*1.15+D*.35;
@@ -1514,17 +1516,33 @@ geo.addEventListener('pointerdown',markDirty);
 /* ===== text-only detection =====
    Text = THIN bright strokes (white top-hat) that stay at the SAME place in many frames.
    Big bright areas (floor, white clothes) are not thin, and moving objects do not stay put, so they are ignored. */
-function rankFilter(src,w,h,r,isMax){
- const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
- for(let y=0;y<h;y++){const row=y*w;for(let x=0;x<w;x++){
-  let v=isMax?0:255;const a=Math.max(0,x-r),b=Math.min(w-1,x+r);
-  for(let i=a;i<=b;i++){const t=src[row+i];if(isMax?t>v:t<v)v=t}
-  tmp[row+x]=v}}
- for(let y=0;y<h;y++){const a=Math.max(0,y-r),b=Math.min(h-1,y+r);for(let x=0;x<w;x++){
-  let v=isMax?0:255;
-  for(let j=a;j<=b;j++){const t=tmp[j*w+x];if(isMax?t>v:t<v)v=t}
-  out[y*w+x]=v}}
+function rankFilter(src,w,h,r,isMax){   // sliding min/max, same result as a box filter but fast (cost does not grow with r)
+ const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h),dq=new Int32Array(Math.max(w,h)+1);
+ const pass=(a,b,len,lines,stepA,stepL)=>{
+  for(let l=0;l<lines;l++){
+   const base=l*stepL;let head=0,tail=0,nxt=0;
+   for(let i=0;i<len;i++){
+    const hi=Math.min(len-1,i+r);
+    while(nxt<=hi){
+     const v=a[base+nxt*stepA];
+     while(tail>head){const u=a[base+dq[tail-1]*stepA];if(isMax?u<=v:u>=v)tail--;else break}
+     dq[tail++]=nxt;nxt++;
+    }
+    while(dq[head]<i-r)head++;
+    b[base+i*stepA]=a[base+dq[head]*stepA];
+   }
+  }
+ };
+ pass(src,tmp,w,h,1,w);pass(tmp,out,h,w,w,1);
  return out;
+}
+/* Keep only THIN bright strokes (text). Big bright areas such as a white shirt or sleeve are not thin, so they are left alone. */
+function thinOnly(d,w,h,mask,W){
+ const n=w*h,L=new Uint8Array(n);
+ for(let p=0,q=0;p<n;p++,q+=4)L[p]=(d[q]*77+d[q+1]*150+d[q+2]*29)>>8;
+ const r=Math.max(4,Math.min(12,Math.round(W/150)));
+ const op=rankFilter(rankFilter(L,w,h,r,false),w,h,r,true);
+ for(let p=0;p<n;p++)if(mask[p]&&L[p]-op[p]<12)mask[p]=0;
 }
 function accumulateTextFrame(d,w,h,r,minLum,minContrast,cnt,weak){
  const n=w*h,L=new Uint8Array(n);

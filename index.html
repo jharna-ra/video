@@ -21,10 +21,9 @@ button.secondary{background:#293643}button.danger{background:#b63b3b}button:disa
 .sliderTop{display:flex;justify-content:space-between;font-size:12px;color:#cbd4dc}.sliderTop b{color:#6fb1ff}
 input[type=range]{width:100%}
 .status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
-.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;touch-action:none}
-#viewCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none;-webkit-user-drag:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+#viewCanvas{max-width:100%;max-height:72vh;display:block}
 #selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
-.whiteBoxMarker{position:absolute;border:2px solid #2ecc71;background:rgba(46,204,113,.14);pointer-events:none;box-sizing:border-box}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
 .galleryTimeline{margin-top:14px;background:#0b1117;border:1px solid #2a3947;border-radius:10px;padding:10px;overflow:hidden}
@@ -45,26 +44,9 @@ input[type=range]{width:100%}
 #mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px}
 #logoCanvas{display:none}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
-@media(max-width:640px){
-  .wrap{padding:10px}
-  header{padding:12px 14px}
-  header h1{font-size:17px}
-  header p{font-size:12px}
-  .card{padding:10px}
-  .row,.row3{grid-template-columns:1fr}
-  button{width:100%;margin:5px 0 0;padding:12px;font-size:14px}
-  .row button,.row3 button{width:100%}
-  .tabs{flex-wrap:wrap}
-  .tabs button{flex:1 1 45%}
-  input[type=range]{height:28px}
-  .stage{min-height:220px}
-  #viewCanvas{max-height:50vh}
-  .queue{gap:5px}
-  #timelineWrap{padding:8px 30px 9px}
-  .timelineArrow{width:26px;height:36px;top:50px;font-size:20px;line-height:32px}
-}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
 </head>
 <body>
 <header>
@@ -113,18 +95,15 @@ input[type=range]{width:100%}
 <div class="section">
 <h3>White Text Removal</h3>
 <button id="removeMode" class="secondary">Select White Text Area</button>
-<button id="undoWhite" class="secondary" disabled>Undo Last Box</button>
-<button id="clearWhite" class="secondary">Clear All Boxes</button>
-<div class="small" id="whiteBoxCount">0 boxes added.</div>
-<label>White detection sensitivity <b id="whiteVal">115</b></label>
-<input id="whiteThreshold" type="range" min="80" max="245" value="115">
+<button id="removeWhite" disabled>Remove White Text</button>
+<button id="clearWhite" class="secondary">Clear Selection</button>
+<label>White detection sensitivity <b id="whiteVal">165</b></label>
+<input id="whiteThreshold" type="range" min="110" max="245" value="165">
 <label>Removal strength <b id="removeOpacityVal">100%</b></label>
 <input id="removeOpacity" type="range" min="50" max="100" value="100">
-<label>Anti-alias pixel sensitivity <b id="inpaintPassVal">25</b></label>
-<input id="inpaintPasses" type="range" min="5" max="40" value="25">
-<div class="small">Every pixel is judged on its own color: clearly-white pixels are always removed; fainter blended pixels are only removed if they actually touch a detected white pixel (real anti-aliased edge), not just "nearby" — no blind radius/halo involved. This slider sets how faint a touching pixel can be and still count. Also pulls in any dark outline/shadow stroke directly hugging the letters, so the whole glyph disappears, not just its white fill. Lower the sensitivity number above if text is still visible.</div>
-<label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-top:12px"><input id="forceFullBox" type="checkbox" style="width:auto"> Maximum strength for next box</label>
-<div class="small">If text is still visible even at full strength, it usually means those pixels aren't being classified as "white" — a common case is reflective/light text printed directly on a strongly colored background (like a number on a yellow safety vest), since the detector deliberately avoids erasing saturated colors so it doesn't eat holes in vests/signage. Tick this BEFORE drawing a box to skip color detection completely for that box and erase everything inside it, guaranteed — regardless of color. This is set per box: leave it off for boxes over plain backgrounds (so removal stays clean and precise), and turn it on only for stubborn boxes like text-on-colored-background.</div>
+<label>Strong inpaint passes <b id="inpaintPassVal">5</b></label>
+<input id="inpaintPasses" type="range" min="1" max="8" value="5">
+<div class="small">Strong mode detects bright/white text including anti-aliased edges, expands the mask, and repeatedly fills the selected text area from surrounding pixels on every video frame.</div>
 </div>
 
 <div class="section">
@@ -140,7 +119,6 @@ input[type=range]{width:100%}
 <div class="stage" id="stage">
 <canvas id="viewCanvas"></canvas>
 <div id="selection"></div>
-<div id="whiteBoxesOverlay"></div>
 </div>
 <div class="row">
 <button id="playBtn" disabled>▶ Play</button>
@@ -237,7 +215,7 @@ const geo=$('geoCanvas'), gctx=geo.getContext('2d');
 const stage=$('stage'), selBox=$('selection');
 
 let file=null, videoURL=null, duration=0, playing=false;
-let crop=null, cropMode=false, whiteRects=[], removeMode=false, selecting=false, sx=0, sy=0;
+let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false, sx=0, sy=0;
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
@@ -263,8 +241,6 @@ function resizePreview(){
  view.width=Math.max(1,Math.round(video.videoWidth*s));
  view.height=Math.max(1,Math.round(video.videoHeight*s));
  drawPreview();
- renderWhiteBoxMarkers();
- updateSelectionBox();
 }
 function sourceRect(){
  const W=video.videoWidth,H=video.videoHeight;
@@ -279,291 +255,81 @@ function drawBase(ctx2,W,H){
 function isWhite(data,i,t){
  const r=data[i],g=data[i+1],b=data[i+2];
  const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
- // Neutral check keeps this from flagging saturated bright colors (yellow
- // vests, orange signage) while still catching real white/light-gray text,
- // including the slightly off-white/gray tint video compression adds.
- const neutral=(mx-mn)<=95;
+ const neutral=(mx-mn)<=105;
  const brightness=(r+g+b)/3;
- // Video compression shifts color balance a little differently block by
- // block, so the same solid white character can land just inside the
- // neutral tolerance on one macroblock and just outside it on the next —
- // that's what turns a clean letter into a patchy, partly-erased one. A
- // pixel this unambiguously bright is treated as white regardless, without
- // loosening the general neutral tolerance (which is what keeps this from
- // eating into colored vests/signage).
- const veryBright=mx>=232 && (mx-mn)<=150;
- return veryBright || (neutral && (mx>=t || brightness>=t-15));
+ return neutral && (mx>=t || brightness>=t);
 }
-// Coherent wavefront fill: every masked pixel is resolved exactly once, from
-// real pixels either untouched or already resolved one ring closer to the
-// mask's edge. Unlike copying the single nearest real pixel from up to 60px
-// away in each direction (which, over a textured background like brickwork,
-// grabs mismatched far-apart samples and produces an ugly plaid/checkerboard
-// pattern), this blends only the immediate neighbours at each step — so the
-// result stays smooth and coherent, without ever re-averaging the same
-// pixels over and over (which is what causes an out-of-focus BLUR). This is
-// the sweet spot between the two failure modes: not blurry, not plaid.
-function inpaintMaskRegion(d,W2,H2,mask,strength){
- const N=W2*H2;
- const know=new Uint8Array(N);
- const R=new Float32Array(N),G=new Float32Array(N),B=new Float32Array(N);
- for(let p=0;p<N;p++){ if(!mask[p]){know[p]=1;const i=p*4;R[p]=d[i];G[p]=d[i+1];B[p]=d[i+2];} }
- let frontier=[];
- for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-   const p=y*W2+x; if(!mask[p]||know[p])continue;
-   let touches=false;
-   for(let dy=-1;dy<=1&&!touches;dy++) for(let dx=-1;dx<=1;dx++){
-     if(!dx&&!dy)continue;
-     const xx=x+dx,yy=y+dy; if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
-     if(know[yy*W2+xx]){touches=true;break}
-   }
-   if(touches)frontier.push(p);
- }
- let guard=0;
- while(frontier.length && guard++<6000){
-   const resolved=frontier;
-   for(let fi=0;fi<resolved.length;fi++){
-     const p=resolved[fi],x=p%W2,y=(p/W2)|0;
-     let sr=0,sg=0,sb=0,sw=0;
-     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-       if(!dx&&!dy)continue;
-       const xx=x+dx,yy=y+dy; if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
-       const q=yy*W2+xx;
-       if(know[q]){const w=(dx&&dy)?0.7:1;sr+=R[q]*w;sg+=G[q]*w;sb+=B[q]*w;sw+=w}
-     }
-     if(sw){R[p]=sr/sw;G[p]=sg/sw;B[p]=sb/sw}
-   }
-   for(const p of resolved)know[p]=1;
-   const next=[],nextIn=new Uint8Array(N);
-   for(const p of resolved){
-     const x=p%W2,y=(p/W2)|0;
-     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-       if(!dx&&!dy)continue;
-       const xx=x+dx,yy=y+dy; if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
-       const q=yy*W2+xx;
-       if(mask[q]&&!know[q]&&!nextIn[q]){next.push(q);nextIn[q]=1}
-     }
-   }
-   frontier=next;
- }
- const out=new Uint8ClampedArray(d.length);
- for(let p=0;p<N;p++){
-   const i=p*4;
-   if(mask[p]){
-     const a=strength;
-     out[i]=d[i]*(1-a)+R[p]*a; out[i+1]=d[i+1]*(1-a)+G[p]*a; out[i+2]=d[i+2]*(1-a)+B[p]*a; out[i+3]=d[i+3];
-   }else{ out[i]=d[i];out[i+1]=d[i+1];out[i+2]=d[i+2];out[i+3]=d[i+3]; }
- }
- return out;
-}
-// "Clone stamp" style fill: instead of averaging surrounding pixels into a
-// flat patch (which erases real texture — grain, grass, dirt clumps), this
-// copies real image content from elsewhere in the frame and blends it in
-// with a feathered edge so there's no hard seam.
-// Two tiers:
-// 1) Same-size donor flush against one side of the box (best case — the
-//    donor is guaranteed to be entirely outside the box along that axis
-//    because the shift is at least the box's own width/height).
-// 2) If the box is too large relative to the frame for any same-size donor
-//    to fit cleanly (this was the actual bug: a naive "clamp into bounds"
-//    fallback could pick a donor that overlapped the box itself, meaning it
-//    was partly cloning the original text right back onto the fill), find
-//    the largest clear square anywhere in the frame and tile it across the
-//    box, mirroring alternating tiles so a small swatch doesn't look like an
-//    obvious repeating grid at any size box.
-// Returns true if a fill was applied, false only in the practically
-// impossible case where no clear pixels exist anywhere in the frame.
-function textureCloneFill(ctx2,W,H,rect,excludeRects){
- const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
- const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
- const w=x1-x0,h=y1-y0;
- if(w<2||h<2)return true;
-
- const overlapsExcluded=(dx0,dy0,dx1,dy1)=>{
-  if(!excludeRects)return false;
-  for(const ex of excludeRects) if(dx0<ex.x+ex.w&&dx1>ex.x&&dy0<ex.y+ex.h&&dy1>ex.y) return true;
-  return false;
- };
- const overlapsTarget=(dx0,dy0,dx1,dy1)=>dx0<x1&&dx1>x0&&dy0<y1&&dy1>y0;
- const gap=Math.max(4,Math.round(Math.min(w,h)*0.08));
-
- // Tier 1: same-size donor, flush against a side — this shift is at least
- // the box's own dimension, so by construction it can never overlap the box.
- let donor=null;
- for(const c of [{x:x0,y:y1+gap},{x:x0,y:y0-h-gap},{x:x1+gap,y:y0},{x:x0-w-gap,y:y0}]){
-  const dx1=c.x+w,dy1=c.y+h;
-  if(c.x<0||c.y<0||dx1>W||dy1>H)continue;
-  if(overlapsExcluded(c.x,c.y,dx1,dy1))continue;
-  donor={x:c.x,y:c.y,w,h};
-  break;
- }
-
- // Tier 2: box too big for a same-size donor anywhere — search for a
- // smaller clear square (shrinking down to 14px) around the box and in the
- // frame corners/edges, verified to not overlap the box or an earlier fixed
- // box, then tile it.
- if(!donor){
-  for(const size of [Math.round(Math.min(w,h)*0.6),Math.round(Math.min(w,h)*0.35),96,56,28,14]){
-   if(size<10)continue;
-   const g=Math.max(3,Math.round(size*0.15));
-   const spots=[
-    {x:x0,y:y1+g},{x:x0,y:y0-size-g},{x:x1+g,y:y0},{x:x0-size-g,y:y0},
-    {x:0,y:0},{x:W-size,y:0},{x:0,y:H-size},{x:W-size,y:H-size},
-    {x:Math.round((W-size)/2),y:0},{x:0,y:Math.round((H-size)/2)},
-    {x:W-size,y:Math.round((H-size)/2)},{x:Math.round((W-size)/2),y:H-size}
-   ];
-   let found=null;
-   for(const s of spots){
-    const dx1=s.x+size,dy1=s.y+size;
-    if(s.x<0||s.y<0||dx1>W||dy1>H)continue;
-    if(overlapsTarget(s.x,s.y,dx1,dy1))continue;
-    if(overlapsExcluded(s.x,s.y,dx1,dy1))continue;
-    found={x:s.x,y:s.y};break;
-   }
-   if(found){donor={x:found.x,y:found.y,w:size,h:size};break}
-  }
- }
- if(!donor)return false;
-
- const donorData=ctx2.getImageData(donor.x,donor.y,donor.w,donor.h).data;
- const targetData=ctx2.getImageData(x0,y0,w,h).data;
- const feather=Math.max(6,Math.round(Math.min(w,h)*0.12));
- const out=new Uint8ClampedArray(targetData.length);
- const dw=donor.w,dh=donor.h;
- for(let yy=0;yy<h;yy++){
-  for(let xx=0;xx<w;xx++){
-   const i=(yy*w+xx)*4;
-   // Map into the donor swatch, tiling it across the whole box. Mirror
-   // alternating tiles horizontally/vertically so repetition isn't obvious.
-   const tileCol=(xx/dw)|0, tileRow=(yy/dh)|0;
-   let sx=xx%dw, sy=yy%dh;
-   if(tileCol&1) sx=dw-1-sx;
-   if(tileRow&1) sy=dh-1-sy;
-   const si=(sy*dw+sx)*4;
-   const edgeDist=Math.min(xx,w-1-xx,yy,h-1-yy);
-   const a=edgeDist<feather?edgeDist/feather:1; // 0 at the rim (keep original) -> 1 at the center (full donor texture)
-   out[i]=Math.round(targetData[i]*(1-a)+donorData[si]*a);
-   out[i+1]=Math.round(targetData[i+1]*(1-a)+donorData[si+1]*a);
-   out[i+2]=Math.round(targetData[i+2]*(1-a)+donorData[si+2]*a);
-   out[i+3]=255;
-  }
- }
- ctx2.putImageData(new ImageData(out,w,h),x0,y0);
- return true;
-}
-// Only the exact text pixels (evaluated one at a time on their own color
-// value, not a blanket radius) plus any faint blended edge pixel that's
-// actually touching one, and any dark outline/shadow stroke hugging the
-// letters, are ever touched. Every other pixel is copied through completely
-// unchanged, so nothing outside the letters is affected.
-function removeWhiteFromCanvas(ctx2,W,H,rect,excludeRects,forceFullBox){
+function removeWhiteFromCanvas(ctx2,W,H,rect){
  if(!rect)return;
  const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
  const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
  if(x1<=x0||y1<=y0)return;
- if(forceFullBox){
-   // Maximum strength now uses texture cloning instead of flat averaging —
-   // guarantees complete erasure like before, but keeps real texture
-   // (dirt/grass/brick grain) instead of leaving a smooth flat patch.
-   const cloned=textureCloneFill(ctx2,W,H,{x:x0,y:y0,w:x1-x0,h:y1-y0},excludeRects);
-   if(!cloned){
-     // No clear pixels anywhere in the whole frame to borrow texture from
-     // (essentially never happens in practice) — guaranteed flat fallback
-     // so the text is still fully gone either way.
-     const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
-     const d=img.data,W2=x1-x0,H2=y1-y0;
-     let sr=0,sg=0,sb=0,n=W2*H2;
-     for(let p=0;p<n;p++){const i=p*4;sr+=d[i];sg+=d[i+1];sb+=d[i+2];}
-     const out=new Uint8ClampedArray(d.length);
-     for(let p=0;p<n;p++){const i=p*4;out[i]=sr/n;out[i+1]=sg/n;out[i+2]=sb/n;out[i+3]=255;}
-     ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
-   }
-   return;
- }
  const img=ctx2.getImageData(x0,y0,x1-x0,y1-y0);
  const d=img.data,t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
  const W2=x1-x0,H2=y1-y0,N=W2*H2;
- // Any pixel already finalized by an EARLIER box is frozen — it's excluded
- // from detection here even if it still reads as bright, so drawing box 2
- // can never re-touch or re-shift what box 1 already produced. Only the
- // genuinely new part of this box's rectangle gets processed.
- const frozen=new Uint8Array(N);
- if(excludeRects&&excludeRects.length){
-   for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
-     const gx=x0+x, gy=y0+y;
-     for(const ex of excludeRects){
-       if(gx>=ex.x&&gx<ex.x+ex.w&&gy>=ex.y&&gy<ex.y+ex.h){frozen[y*W2+x]=1;break}
-     }
-   }
- }
- // Two-tier (hysteresis) detection instead of a fixed-radius halo:
- // - "strong": clearly passes the white/text threshold on its own.
- // - "weak": a softer bar (anti-aliased edge pixels sit here — real, but
- //   too faint to pass the strong test on their own).
- // A weak pixel only ends up in the final mask if it's actually touching a
- // strong pixel — i.e. every included pixel is justified by its own color
- // value plus real adjacency to detected text, not by "it's within N px of
- // something". This is the standard technique for catching anti-aliased
- // edges without guessing a blanket margin.
- // "forceFullBox" is now passed in per-box (captured when that box was
- // drawn), not read from a single global checkbox — so different boxes can
- // use different removal modes.
- let expanded;
- {
- const weakOffset=clamp(+$('inpaintPasses').value||25,5,40);
- const strong=new Uint8Array(N), weak=new Uint8Array(N);
+ const mask=new Uint8Array(N);
+ // Detect white text plus anti-aliased gray/white edge pixels.
  for(let y=0;y<H2;y++){
    for(let x=0;x<W2;x++){
      const p=y*W2+x,i=p*4;
-     if(frozen[p])continue;
-     if(isWhite(d,i,t)) strong[p]=1;
-     else if(isWhite(d,i,Math.max(90,t-weakOffset))) weak[p]=1;
+     if(isWhite(d,i,t)) mask[p]=1;
    }
  }
- const mask=new Uint8Array(strong);
- let frontier=[]; for(let p=0;p<N;p++) if(strong[p]) frontier.push(p);
- let guard=0;
- // Capped at 3 rings on purpose: this should only pick up the couple of
- // faint pixels right at a letter's blended edge. Letting it run unbounded
- // (or basing "weak" on too loose a color test) lets it leak across any
- // large mid-tone area it's connected to — vest, wall, whatever — and
- // swallow the entire box, which is exactly the blotchy patch this fixes.
- while(frontier.length && guard++<3){
-   const next=[];
-   for(const p of frontier){
-     const x=p%W2,y=(p/W2)|0;
-     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-       if(!dx&&!dy)continue;
-       const xx=x+dx,yy=y+dy; if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
-       const q=yy*W2+xx;
-       if(frozen[q])continue;
-       if(weak[q]&&!mask[q]){mask[q]=1;next.push(q)}
+ // Expand the mask by a few pixels so faint anti-aliased text edges are removed too.
+ const expanded=new Uint8Array(mask);
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x; if(mask[p]){
+     for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+       const xx=x+dx,yy=y+dy; if(xx>=0&&xx<W2&&yy>=0&&yy<H2) expanded[yy*W2+xx]=1;
      }
    }
-   frontier=next;
  }
- // Dark outline/drop-shadow stroke: a dark pixel is only pulled in if it's
- // directly touching (1px) an already-detected text pixel — again judged
- // pixel-by-pixel on its own brightness, not a geometric radius.
- const withOutline=new Uint8Array(mask);
- let seeds=[]; for(let p=0;p<N;p++) if(mask[p]) seeds.push(p);
- for(let iter=0;iter<3;iter++){
-   const next=[];
-   for(const p of seeds){
-     const x=p%W2,y=(p/W2)|0;
-     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-       if(!dx&&!dy)continue;
-       const xx=x+dx,yy=y+dy; if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
-       const q=yy*W2+xx; if(withOutline[q]||frozen[q])continue;
-       const j=q*4,br=(d[j]+d[j+1]+d[j+2])/3;
-       if(br<=75){withOutline[q]=1;next.push(q)}
+ let cur=new Uint8ClampedArray(d);
+ const passes=Math.max(1,+$('inpaintPasses').value||5);
+ // Iterative boundary inpainting: each pass grows real surrounding pixels into the mask.
+ for(let pass=0;pass<passes;pass++){
+   const next=new Uint8ClampedArray(cur);
+   let changed=false;
+   for(let y=0;y<H2;y++){
+     for(let x=0;x<W2;x++){
+       const p=y*W2+x; if(!expanded[p]) continue;
+       let sr=0,sg=0,sb=0,sw=0;
+       for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++){
+         if(dx===0&&dy===0)continue;
+         const xx=x+dx,yy=y+dy;
+         if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
+         const q=yy*W2+xx;
+         // Prefer pixels outside the original/expanded text mask; after each pass newly filled pixels can help.
+         if(expanded[q] && pass<passes-1) continue;
+         const dist=Math.sqrt(dx*dx+dy*dy);
+         const w=1/(dist+0.5);
+         const j=q*4; sr+=cur[j]*w;sg+=cur[j+1]*w;sb+=cur[j+2]*w;sw+=w;
+       }
+       if(sw){
+         const i=p*4,a=strength;
+         next[i]=cur[i]*(1-a)+(sr/sw)*a;
+         next[i+1]=cur[i+1]*(1-a)+(sg/sw)*a;
+         next[i+2]=cur[i+2]*(1-a)+(sb/sw)*a;
+         changed=true;
+       }
      }
    }
-   if(!next.length)break; seeds=next;
+   cur=next; if(!changed)break;
  }
- expanded=withOutline;
+ // Final smoothing/coverage pass over the detected mask, using a larger neighborhood for strong removal.
+ const out=new Uint8ClampedArray(cur);
+ for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
+   const p=y*W2+x;if(!expanded[p])continue;
+   let sr=0,sg=0,sb=0,sw=0;
+   for(let dy=-6;dy<=6;dy++) for(let dx=-6;dx<=6;dx++){
+     if(dx===0&&dy===0)continue;
+     const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
+     const q=yy*W2+xx;if(expanded[q])continue;
+     const dist=Math.sqrt(dx*dx+dy*dy),w=1/(dist+1);
+     const j=q*4;sr+=cur[j]*w;sg+=cur[j+1]*w;sb+=cur[j+2]*w;sw+=w;
+   }
+   if(sw){const i=p*4;out[i]=cur[i]*(1-strength)+(sr/sw)*strength;out[i+1]=cur[i+1]*(1-strength)+(sg/sw)*strength;out[i+2]=cur[i+2]*(1-strength)+(sb/sw)*strength;}
  }
- const out=inpaintMaskRegion(d,W2,H2,expanded,strength);
  ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
 }
 function drawPreview(){
@@ -573,45 +339,26 @@ function drawPreview(){
  view.width=Math.round(r.w*s);view.height=Math.round(r.h*s);
  vctx.clearRect(0,0,view.width,view.height);
  vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
- // Every box the user has drawn gets removed, in order — and each box
- // permanently excludes the pixels of every box drawn before it, so adding
- // box 2 can never re-touch or re-shift what box 1 already produced.
- const scaled=whiteRects.map(wr=>({
-   x:wr.x/r.w*view.width, y:wr.y/r.h*view.height, w:wr.w/r.w*view.width, h:wr.h/r.h*view.height, force:wr.force
- }));
- scaled.forEach((sr,i)=>removeWhiteFromCanvas(vctx,view.width,view.height,sr,scaled.slice(0,i),sr.force));
+ if(whiteRect){
+   const wr=whiteRect;
+   const sx2=wr.x/r.w,sy2=wr.y/r.h,sw=wr.w/r.w,sh=wr.h/r.h;
+   const temp=document.createElement('canvas');temp.width=view.width;temp.height=view.height;
+   const tc=temp.getContext('2d',{willReadFrequently:true});
+   tc.drawImage(video,r.x,r.y,r.w,r.h,0,0,view.width,view.height);
+   removeWhiteFromCanvas(tc,view.width,view.height,{x:sx2*view.width,y:sy2*view.height,w:sw*view.width,h:sh*view.height});
+   vctx.clearRect(0,0,view.width,view.height);vctx.drawImage(temp,0,0);
+ }
 }
 function updateSelectionBox(){
- // Only used for the crop box now — completed white-text boxes are drawn by
- // renderWhiteBoxMarkers() instead, since there can be more than one.
- if(!crop){selBox.style.display='none';return}
+ if(!selecting && !whiteRect && !crop)return;
  const r=sourceRect();
  const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- const q=crop;
+ let q=whiteRect||crop;
+ if(!q){selBox.style.display='none';return}
  const x=C.left-R.left+q.x/r.w*C.width;
  const y=C.top-R.top+q.y/r.h*C.height;
  const w=q.w/r.w*C.width,h=q.h/r.h*C.height;
  selBox.style.left=x+'px';selBox.style.top=y+'px';selBox.style.width=w+'px';selBox.style.height=h+'px';selBox.style.display='block';
-}
-function renderWhiteBoxMarkers(){
- const box=$('whiteBoxesOverlay');
- box.innerHTML='';
- if(!video.videoWidth)return;
- const r=sourceRect();
- const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- for(const q of whiteRects){
-   const m=document.createElement('div');
-   m.className='whiteBoxMarker';
-   if(q.force){m.style.borderColor='#ff9d1f';m.style.background='rgba(255,157,31,.16)'}
-   m.style.left=(C.left-R.left+q.x/r.w*C.width)+'px';
-   m.style.top=(C.top-R.top+q.y/r.h*C.height)+'px';
-   m.style.width=(q.w/r.w*C.width)+'px';
-   m.style.height=(q.h/r.h*C.height)+'px';
-   box.appendChild(m);
- }
- const forceCount=whiteRects.filter(q=>q.force).length;
- $('whiteBoxCount').textContent=whiteRects.length+' box'+(whiteRects.length===1?'':'es')+' added'+(forceCount?' ('+forceCount+' orange = maximum strength)':'')+'.';
- $('undoWhite').disabled=whiteRects.length===0;
 }
 function pointerPos(e){
  const R=view.getBoundingClientRect(),r=sourceRect();
@@ -634,27 +381,10 @@ view.addEventListener('pointermove',e=>{
 view.addEventListener('pointerup',e=>{
  if(!selecting)return;selecting=false;
  const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
- selBox.style.display='none';
  if(q.w<5||q.h<5){return}
  if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
- // Each drawn box is ADDED to the list, not replacing the previous one — so
- // you can keep drawing as many white-text boxes as you need and every one
- // of them gets removed on every frame. Each box also remembers whether
- // "Maximum strength" was checked at the moment it was drawn, so different
- // boxes can use different removal modes (e.g. force-erase a number on a
- // colored vest, but keep normal detection for a plain background box).
- if(removeMode){
-   const force=$('forceFullBox').checked;
-   whiteRects.push({...q,force});
-   setStatus('White text box '+whiteRects.length+' added'+(force?' (maximum strength)':'')+'. Draw another box, or export when done.');
- }
+ if(removeMode){whiteRect={...q};$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
  updateSelectionBox();
- renderWhiteBoxMarkers();
- // The removal only actually shows once the canvas is redrawn — without
- // this, the frame on screen stays the untouched original until the next
- // scrub/play, which looks exactly like "the text didn't get removed" even
- // though it's already working under the hood.
- drawPreview();drawGeoPreview();
 });
 
 function timelineFmt(sec){
@@ -728,19 +458,6 @@ function drawTimeline(){
   $('timelineCurrentLabel').textContent=timelineFmt(cur);
   $('timelineEndLabel').textContent=timelineFmt(end);
 }
-function roundRectCorners(ctx,x,y,w,h,tl,tr,br,bl){
-  ctx.beginPath();
-  ctx.moveTo(x+tl,y);
-  ctx.lineTo(x+w-tr,y);
-  ctx.arcTo(x+w,y,x+w,y+tr,tr);
-  ctx.lineTo(x+w,y+h-br);
-  ctx.arcTo(x+w,y+h,x+w-br,y+h,br);
-  ctx.lineTo(x+bl,y+h);
-  ctx.arcTo(x,y+h,x,y+h-bl,bl);
-  ctx.lineTo(x,y+tl);
-  ctx.arcTo(x,y,x+tl,y,tl);
-  ctx.closePath();
-}
 function roundRect(ctx,x,y,w,h,r){
   ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
 }
@@ -803,39 +520,18 @@ $('videoFile').addEventListener('change',()=>{
  file=$('videoFile').files[0]; if(!file)return;
  if(videoURL)URL.revokeObjectURL(videoURL); videoURL=URL.createObjectURL(file); video.src=videoURL;
  $('fileName').textContent=file.name; $('downloadVideo').disabled=true; exportBlob=null;
- crop=null; whiteRects=[]; renderWhiteBoxMarkers();
 });
 video.addEventListener('loadedmetadata',()=>{
  duration=video.duration||0;
  $('durationBadge').textContent=fmt(duration)+' s';
  $('trimStart').value='0';$('trimEnd').value=fmt(duration);
  $('trimRange').max=duration; $('trimRange').value=0;
- resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext','downloadVideo'].forEach(x=>$(x).disabled=false);
+ resizePreview(); ['playBtn','pauseBtn','frameBack','frameNext'].forEach(x=>$(x).disabled=false);
  $('goGeo').disabled=false; setStatus('Video loaded. Set trim, crop, and white-text area.');
  buildTimeline();
 });
-// loadedmetadata only guarantees dimensions are known — the browser hasn't
-// necessarily decoded an actual displayable frame yet, so the very first
-// drawPreview() call above can paint a blank canvas. Redraw once real frame
-// data is actually available (covers browsers that fire loadeddata/canplay
-// at slightly different points), so the preview never gets stuck blank.
-['loadeddata','canplay','seeked'].forEach(ev=>video.addEventListener(ev,()=>{ drawPreview(); drawGeoPreview(); }));
-video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
-// timeupdate only fires a handful of times per second — far slower than the
-// video's actual frame rate — so during playback the canvas was sitting on
-// a stale frame most of the time, which is what made the (already-removed)
-// text appear to flicker back into view. This drives the redraw off every
-// real displayed video frame instead, so removal stays applied continuously
-// while playing, not just when timeupdate happens to fire.
-function livePlaybackLoop(now,metadata){
- if(!playing)return;
- drawPreview();
- if($('geoSection').style.display!=='none')drawGeoPreview();
- if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();return}
- if(typeof video.requestVideoFrameCallback==='function')video.requestVideoFrameCallback(livePlaybackLoop);
- else requestAnimationFrame(livePlaybackLoop);
-}
-video.addEventListener('play',()=>{playing=true;livePlaybackLoop();});
+video.addEventListener('timeupdate',()=>{ $('trimRange').value=video.currentTime; drawPreview(); drawTimeline(); if(video.currentTime>=(+$('trimEnd').value||duration)){video.pause();} });
+video.addEventListener('play',()=>{playing=true;});
 video.addEventListener('pause',()=>{playing=false;});
 $('trimRange').addEventListener('input',()=>{video.currentTime=+$('trimRange').value;drawTimeline()});
 $('trimStart').addEventListener('input',()=>{let v=clamp(+$('trimStart').value||0,0,duration);let e=+$('trimEnd').value||duration;if(v>=e)v=Math.max(0,e-.1);$('trimStart').value=fmt(v);if(video.currentTime<v)video.currentTime=v;drawTimeline()});
@@ -848,14 +544,13 @@ $('frameBack').onclick=()=>{video.pause();video.currentTime=Math.max(0,video.cur
 $('frameNext').onclick=()=>{video.pause();video.currentTime=Math.min(duration,video.currentTime+1/30)}
 $('cropMode').onclick=()=>{cropMode=!cropMode;removeMode=false;$('cropMode').textContent='Crop: '+(cropMode?'ON':'OFF');$('removeMode').textContent='Select White Text Area';setStatus(cropMode?'Drag the rectangular crop area you want to KEEP.':'Crop mode off.')}
 $('removeMode').onclick=()=>{removeMode=!removeMode;cropMode=false;$('removeMode').textContent=removeMode?'Selecting White Text…':'Select White Text Area';$('cropMode').textContent='Crop: OFF';setStatus(removeMode?'Drag a rectangle around the white text.':'White-text selection mode off.')}
-$('applyCrop').onclick=()=>{if(!crop)return;const old=sourceRect();crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRects=[];resizePreview();setStatus('Crop applied. Any white-text boxes were cleared since they were positioned relative to the old crop — redraw them now.')}
-$('resetCrop').onclick=()=>{crop=null;whiteRects=[];$('applyCrop').disabled=true;resizePreview();setStatus('Crop reset.')}
-$('undoWhite').onclick=()=>{whiteRects.pop();renderWhiteBoxMarkers();drawPreview();drawGeoPreview();setStatus('Last white-text box removed. '+whiteRects.length+' remaining.')}
-$('clearWhite').onclick=()=>{whiteRects=[];renderWhiteBoxMarkers();drawPreview();drawGeoPreview();setStatus('All white-text boxes cleared.')}
+$('applyCrop').onclick=()=>{if(!crop)return;const old=sourceRect();crop={x:crop.x,y:crop.y,w:crop.w,h:crop.h};whiteRect=null;$('removeWhite').disabled=true;resizePreview();setStatus('Crop applied.')}
+$('resetCrop').onclick=()=>{crop=null;whiteRect=null;$('applyCrop').disabled=true;$('removeWhite').disabled=true;resizePreview();setStatus('Crop reset.')}
+$('removeWhite').onclick=()=>{if(!whiteRect)return;setStatus('White-text removal will be applied to every frame during export.');drawPreview()}
+$('clearWhite').onclick=()=>{whiteRect=null;$('removeWhite').disabled=true;updateSelectionBox();drawPreview();setStatus('White-text area cleared.')}
 $('whiteThreshold').oninput=()=>{$('whiteVal').textContent=$('whiteThreshold').value;drawPreview()}
 $('removeOpacity').oninput=()=>{$('removeOpacityVal').textContent=$('removeOpacity').value+'%';drawPreview()}
 $('inpaintPasses').oninput=()=>{$('inpaintPassVal').textContent=$('inpaintPasses').value;drawPreview()}
-$('forceFullBox').onchange=()=>{setStatus($('forceFullBox').checked?'Maximum strength armed — the NEXT box you draw will erase everything inside it, regardless of color.':'Maximum strength off — the next box you draw will use normal color detection.')}
 
 function formatDate(v){if(!v)return 'Date';const p=v.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:v}
 function parseStartTime(v){if(!v)return 0;const p=v.split(':').map(Number);return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0)}
@@ -942,7 +637,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   const mapOpacity=clamp(state.gMapO/100,0,1);
   const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
   const margin=Math.max(3,Math.round(H*.012));
-  const x=margin, y=H-stampH;
+  const x=margin, y=H-stampH-margin;
   const stampW=W-margin*2;
   const radius=Math.max(18,Math.round(stampH*.14));
   const pad=Math.max(5,Math.round(stampH*.022));
@@ -951,14 +646,13 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   // Main rounded dark translucent stamp.
   baseCtx.globalAlpha=stampOpacity;
   baseCtx.fillStyle='rgba(0,0,0,.76)';
-  roundRectCorners(baseCtx,x,y,stampW,stampH,radius,radius,0,0);
+  roundRect(baseCtx,x,y,stampW,stampH,radius);
   baseCtx.fill();
 
-  // Map: flush against the left, top, and bottom edges of the stamp —
-  // no bottom margin, so no empty strip shows below the map tile.
-  const mapX=x;
-  const mapY=y;
-  const mapH=stampH;
+  // Map: no artificial grey border/padding. It fills the left portion of the stamp.
+  const mapX=x+pad;
+  const mapY=y+pad;
+  const mapH=Math.max(30,stampH-pad*2);
 
   // Camera badge is reserved on the far right.
   const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
@@ -981,10 +675,8 @@ function drawGeoFrame(baseCtx,W,H,seconds){
   if(mapImg){
     baseCtx.save();
     baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Clip to the map rectangle, rounding only the left corners to match
-    // the stamp's own rounded corners (the right edge is interior, so it
-    // stays square). No inset — the map runs flush top-to-bottom.
-    roundRectCorners(baseCtx,mapX,mapY,mapW,mapH,radius,0,0,0);
+    // Clip exactly to the map rectangle so no grey canvas margin is visible.
+    roundRect(baseCtx,mapX,mapY,mapW,mapH,Math.max(3,Math.min(8,stampH*.018)));
     baseCtx.clip();
     baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
     baseCtx.restore();
@@ -1030,12 +722,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
 }
 
 function prepareOutput(){
- const r=sourceRect();
- // H.264 (and YUV 4:2:0 in general) requires even width/height — an odd
- // dimension here can make the encoder silently produce a corrupt file
- // that looks fine in the app but won't open anywhere else.
- outputW=Math.max(2,Math.round(r.w/2)*2);
- outputH=Math.max(2,Math.round(r.h/2)*2);
+ const r=sourceRect();outputW=Math.max(2,Math.round(r.w));outputH=Math.max(2,Math.round(r.h));
  work.width=outputW;work.height=outputH;
 }
 // Fast video-only white-text removal.
@@ -1192,28 +879,20 @@ function drawVideoFastGPU(r){
   const {gl,c,pr,tex}=g; gl.viewport(0,0,outputW,outputH);gl.useProgram(pr);
   gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
   gl.uniform1f(g.th,(+$('whiteThreshold').value||165)/255);gl.uniform1f(g.strength,(+$('removeOpacity').value||100)/100);gl.uniform2f(g.px,1/outputW,1/outputH);
-  if(whiteRects.length){const wr=whiteRects[0];const sx=outputW/r.w,sy=outputH/r.h;const x=wr.x*sx/outputW,y=1-(wr.y+wr.h)*sy/outputH,w=wr.w*sx/outputW,h=wr.h*sy/outputH;gl.uniform4f(g.rr,x,y,x+w,y+h)}else gl.uniform4f(g.rr,0,0,0,0);
+  if(whiteRect){const sx=outputW/r.w,sy=outputH/r.h;const x=whiteRect.x*sx/outputW,y=1-(whiteRect.y+whiteRect.h)*sy/outputH,w=whiteRect.w*sx/outputW,h=whiteRect.h*sy/outputH;gl.uniform4f(g.rr,x,y,x+w,y+h)}else gl.uniform4f(g.rr,0,0,0,0);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return c;
 }
 
 function drawExportFrame(elapsedOverride){
   const r=sourceRect();
   wctx.clearRect(0,0,outputW,outputH);
-  // Draw the plain frame, then run the real directional-search inpaint (the
-  // same quality-focused CPU algorithm used elsewhere) over the selected
-  // white-text region. The previous GPU shader here only blended each
-  // masked pixel with its immediate 1px neighbours, which barely erases
-  // anything thicker than a hairline of text — this is the actual fix for
-  // "white text removal isn't working" in exported video.
   wctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
-  const scaledRects=whiteRects.map(wr=>({
-    x:wr.x/r.w*outputW,
-    y:wr.y/r.h*outputH,
-    w:wr.w/r.w*outputW,
-    h:wr.h/r.h*outputH,
-    force:wr.force
-  }));
-  scaledRects.forEach((sr,i)=>removeWhiteFromCanvas(wctx,outputW,outputH,sr,scaledRects.slice(0,i),sr.force));
+  if(whiteRect){
+    const sx=outputW/r.w, sy=outputH/r.h;
+    removeWhiteFromCanvasExport(wctx,outputW,outputH,{
+      x:whiteRect.x*sx, y:whiteRect.y*sy, w:whiteRect.w*sx, h:whiteRect.h*sy
+    });
+  }
   if(lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
     drawGeoFrame(wctx,outputW,outputH,elapsed);
@@ -1245,22 +924,13 @@ function seekVideo(target){
 
 async function pickVideoCodec(width,height,fps){
   const candidates=['avc1.640033','avc1.4d4033','avc1.42e01f'];
-  // Prefer a hardware-accelerated encoder wherever possible — software H.264
-  // encoding can be many times slower, especially at higher resolutions,
-  // which is the main cause of exports feeling slow.
-  for(const codec of candidates){
-    try{
-      const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps,hardwareAcceleration:'prefer-hardware'});
-      if(support&&support.supported)return {codec,hardwareAcceleration:'prefer-hardware'};
-    }catch(e){}
-  }
   for(const codec of candidates){
     try{
       const support=await VideoEncoder.isConfigSupported({codec,width,height,bitrate:12_000_000,framerate:fps});
-      if(support&&support.supported)return {codec,hardwareAcceleration:'no-preference'};
+      if(support&&support.supported)return codec;
     }catch(e){}
   }
-  return {codec:'avc1.42e01f',hardwareAcceleration:'no-preference'};
+  return 'avc1.42e01f';
 }
 
 // Frame-accurate export: every frame is drawn, then encoded with an exact
@@ -1278,24 +948,18 @@ async function exportVideoFrameAccurate(){
   prepareOutput();
   video.pause();
 
-  // Best-effort audio: decode the original file's audio track, then slice
-  // out just [start,end] later. decodeAudioData can't partially-decode a
-  // byte range, so this always reads the whole source file — but we kick it
-  // off immediately and let it run in the BACKGROUND while codec setup and
-  // the (much longer) frame-rendering loop below proceed, instead of making
-  // the whole export wait on it up front. We only block on it right before
-  // it's actually needed for muxer/audio-track setup.
-  const audioPromise=(async()=>{
-    try{
-      const arr=await file.arrayBuffer();
-      const actx=new (window.AudioContext||window.webkitAudioContext)();
-      return await actx.decodeAudioData(arr);
-    }catch(e){console.warn('No usable audio track for export',e);return null}
-  })();
-
-  const {codec,hardwareAcceleration}=await pickVideoCodec(outputW,outputH,fps);
-  const audioBuffer=await audioPromise;
+  // Best-effort audio: decode the original file's audio track fully, then
+  // we'll slice out just [start,end] below. If this fails (e.g. no audio
+  // track), export continues silently rather than failing.
+  let audioBuffer=null;
+  try{
+    const arr=await file.arrayBuffer();
+    const actx=new (window.AudioContext||window.webkitAudioContext)();
+    audioBuffer=await actx.decodeAudioData(arr);
+  }catch(e){console.warn('No usable audio track for export',e)}
   const hasAudio=!!audioBuffer;
+
+  const codec=await pickVideoCodec(outputW,outputH,fps);
   const muxer=new Mp4Muxer.Muxer({
     target:new Mp4Muxer.ArrayBufferTarget(),
     fastStart:'in-memory',
@@ -1303,12 +967,11 @@ async function exportVideoFrameAccurate(){
     audio:hasAudio?{codec:'aac',numberOfChannels:audioBuffer.numberOfChannels,sampleRate:audioBuffer.sampleRate}:undefined,
   });
 
-  let encoderFailed=null;
   const videoEncoder=new VideoEncoder({
     output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
-    error:e=>{console.error('video encoder error',e);encoderFailed=e}
+    error:e=>console.error('video encoder error',e)
   });
-  videoEncoder.configure({codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps,hardwareAcceleration});
+  videoEncoder.configure({codec,width:outputW,height:outputH,bitrate:12_000_000,framerate:fps});
 
   $('exportStatus').textContent='Rendering video… 0%';
 
@@ -1317,7 +980,6 @@ async function exportVideoFrameAccurate(){
   video.muted=true; // we mux audio separately below; muting avoids audio glitches at fast playback
   video.playbackRate=1;
 
-  const hasRVFC=typeof video.requestVideoFrameCallback==='function';
   let frameIndex=0;
   await new Promise((resolve,reject)=>{
     let finished=false;
@@ -1325,10 +987,6 @@ async function exportVideoFrameAccurate(){
       if(finished)return; finished=true;
       try{video.pause()}catch(e){}
       resolve();
-    };
-    const scheduleNext=()=>{
-      if(hasRVFC)video.requestVideoFrameCallback(onFrame);
-      else requestAnimationFrame(()=>onFrame(performance.now(),null));
     };
     const onFrame=(now,metadata)=>{
       if(finished)return;
@@ -1340,10 +998,10 @@ async function exportVideoFrameAccurate(){
       vf.close();
       frameIndex++;
       if(frameIndex%5===0)$('exportStatus').textContent='Rendering video… '+Math.min(99,Math.round(elapsed/length*100))+'%';
-      scheduleNext();
+      video.requestVideoFrameCallback(onFrame);
     };
     video.addEventListener('ended',finish,{once:true});
-    scheduleNext();
+    video.requestVideoFrameCallback(onFrame);
     video.play().catch(reject);
   });
 
@@ -1351,7 +1009,6 @@ async function exportVideoFrameAccurate(){
   video.muted=wasMuted;
   await videoEncoder.flush();
   videoEncoder.close();
-  if(encoderFailed)throw new Error('Video encoder failed: '+(encoderFailed.message||encoderFailed));
 
   if(hasAudio){
     const sr=audioBuffer.sampleRate, ch=audioBuffer.numberOfChannels;
@@ -1469,7 +1126,7 @@ async function exportVideo(){
   let mime='';
   for(const m of ['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']){if(MediaRecorder.isTypeSupported(m)){mime=m;break}}
   if(!mime)throw new Error('This Chrome cannot record video.');
-  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(10000000,Math.max(5000000,outputW*outputH*5)),audioBitsPerSecond:128000});
+  const rec=new MediaRecorder(canvasStream,{mimeType:mime,videoBitsPerSecond:Math.min(24000000,Math.max(6000000,outputW*outputH*6)),audioBitsPerSecond:128000});
   const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
   const done=new Promise(resolve=>rec.onstop=()=>resolve(new Blob(chunks,{type:mime})));
   let stopped=false,frameId=null,raf=0;
@@ -1494,52 +1151,74 @@ async function exportVideo(){
   $('exportStatus').textContent='Rendered at normal speed — Download is ready.';
   $('downloadVideo').disabled=false;
 }
-// Picks the best available export path so the downloaded file actually
-// plays everywhere. WebCodecs + mp4-muxer produces a real, standards
-// compliant .mp4 (plays in Windows Media Player, VLC, phones, WhatsApp,
-// etc). If the browser doesn't support WebCodecs (e.g. Firefox, older
-// Safari), we fall back to MediaRecorder, which may only be able to
-// produce .webm on some browsers — .webm needs VLC or a browser to open,
-// since Windows Media Player cannot play it.
-async function doExport(){
-  const hasWebCodecs=typeof window.VideoEncoder!=='undefined' && typeof window.AudioEncoder!=='undefined' && typeof window.Mp4Muxer!=='undefined';
-  if(hasWebCodecs){
-    try{
-      await exportVideoFrameAccurate();
-      return;
-    }catch(err){
-      console.warn('Frame-accurate MP4 export failed, falling back to recorder export.',err);
-    }
-  }
-  await exportVideo();
-  if(exportBlob && exportBlob.type.includes('webm')){
-    const statusEl = ($('geoSection').style.display!=='none') ? $('geoStatus') : $('exportStatus');
-    const reason = (typeof window.isSecureContext!=='undefined' && !window.isSecureContext)
-      ? ' Reason: this page isn\'t served over HTTPS or localhost, so Chrome disables the MP4 encoder (WebCodecs) — deploy this file to a host like Vercel, or run it via a local server, to get real MP4 output.'
-      : ' This browser could not produce MP4 here — open the file in Chrome or VLC (Windows Media Player cannot play WebM).';
-    statusEl.textContent += reason;
-  }
+// ---------- ffmpeg.wasm: reliable, universally-playable MP4 output ----------
+let ffmpegInstance=null, ffmpegLoading=null;
+async function getFFmpeg(onLog){
+ if(ffmpegInstance)return ffmpegInstance;
+ if(!ffmpegLoading){
+  ffmpegLoading=(async()=>{
+   const {FFmpeg}=window.FFmpegWASM;
+   const ff=new FFmpeg();
+   if(onLog)ff.on('log',({message})=>onLog(message));
+   await ff.load({
+    coreURL:'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+    wasmURL:'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+   });
+   ffmpegInstance=ff;
+   return ff;
+  })();
+ }
+ return ffmpegLoading;
+}
+// Transcodes any recorded blob (webm/mp4) into a clean H.264/AAC MP4 via ffmpeg.wasm,
+// which fixes container/codec quirks from MediaRecorder and guarantees the file
+// downloads and plays everywhere (phones, WhatsApp, editors, etc).
+// Only re-encodes when actually needed (webm from browsers without native MP4
+// recording support). If the recorder already produced MP4/H.264, we hand that
+// back untouched — re-encoding an already-compressed video degrades quality
+// (visible pixelation/blockiness) and costs a lot of time for no benefit.
+async function transcodeToMp4(blob,statusEl){
+ if(blob.type.includes('mp4')){
+  if(statusEl)statusEl.textContent='MP4 ready.';
+  return blob;
+ }
+ try{
+  if(statusEl)statusEl.textContent='Loading MP4 converter (one-time, needed for this browser)…';
+  const ff=await getFFmpeg(msg=>{if(statusEl)statusEl.textContent='Converting to MP4… '+msg});
+  await ff.writeFile('in.webm',new Uint8Array(await blob.arrayBuffer()));
+  if(statusEl)statusEl.textContent='Converting to MP4… this can take a moment';
+  // crf 16 + preset fast keeps quality visually close to the source instead
+  // of introducing a second lossy pass of noticeable compression artifacts
+  await ff.exec(['-i','in.webm','-c:v','libx264','-preset','fast','-crf','16','-pix_fmt','yuv420p','-movflags','+faststart','-c:a','aac','-b:a','192k','out.mp4']);
+  const data=await ff.readFile('out.mp4');
+  await ff.deleteFile('in.webm').catch(()=>{});
+  await ff.deleteFile('out.mp4').catch(()=>{});
+  return new Blob([data.buffer],{type:'video/mp4'});
+ }catch(err){
+  console.error('ffmpeg transcode failed, falling back to original file:',err);
+  if(statusEl)statusEl.textContent='MP4 encoder unavailable — downloading original file instead.';
+  return blob;
+ }
+}
+function triggerDownload(blob,filenameBase){
+ const a=document.createElement('a');
+ const url=URL.createObjectURL(blob);
+ a.href=url;
+ const ext=blob.type.includes('mp4')?'mp4':'webm';
+ a.download=filenameBase+'.'+ext;
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),3000);
 }
 $('downloadVideo').onclick=async()=>{
- if(!file)return;
+ if(!exportBlob||!file)return;
  $('downloadVideo').disabled=true;
+ const base=file.name.replace(/\.[^.]+$/,'')+'_edited';
  const prevStatus=$('exportStatus').textContent;
- try{
-   // Renders the current trim + crop + white-text-removal (and geotag, if a
-   // location has already been found on the GeoTag tab) straight to a
-   // downloadable file, without requiring the user to visit the GeoTag tab.
-   await doExport();
- }catch(err){
-   console.error(err);
-   $('exportStatus').textContent='Export failed: '+(err.message||err);
-   $('downloadVideo').disabled=false;
-   return;
- }
- if(!exportBlob){$('exportStatus').textContent=prevStatus;$('downloadVideo').disabled=false;return}
- const a=document.createElement('a');a.href=URL.createObjectURL(exportBlob);
- const base=file.name.replace(/\.[^.]+$/,'');
- const tag=(lat!=null&&lon!=null)?'_geotag':'_edited';
- const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+tag+'.'+ext; a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+ const mp4=await transcodeToMp4(exportBlob,$('exportStatus'));
+ triggerDownload(mp4,base);
+ $('exportStatus').textContent='Download ready ('+(mp4.type.includes('mp4')?'MP4':'WebM')+').';
  $('downloadVideo').disabled=false;
 }
 $('goGeo').onclick=()=>{$('editSection').style.display='none';$('geoSection').style.display='block';$('tabGeo').disabled=false;$('tabGeo').classList.add('active');$('tabEdit').classList.remove('active');$('geoCounter').textContent=file?file.name:'Video';drawGeoPreview()}
@@ -1554,9 +1233,24 @@ function drawGeoPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
  gctx.clearRect(0,0,geo.width,geo.height);gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,geo.width,geo.height);
- const scaledG=whiteRects.map(wr=>({x:wr.x/r.w*geo.width,y:wr.y/r.h*geo.height,w:wr.w/r.w*geo.width,h:wr.h/r.h*geo.height,force:wr.force}));
- scaledG.forEach((sr,i)=>removeWhiteFromCanvas(gctx,geo.width,geo.height,sr,scaledG.slice(0,i),sr.force));
+ if(whiteRect)removeWhiteFromCanvas(gctx,geo.width,geo.height,{x:whiteRect.x/r.w*geo.width,y:whiteRect.y/r.h*geo.height,w:whiteRect.w/r.w*geo.width,h:whiteRect.h/r.h*geo.height});
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,geo.width,geo.height,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
+}
+let exporting=false;
+// Prefer the frame-accurate WebCodecs pipeline (correct speed, no dropped
+// frames, no realtime-capture stutter). Only falls back to the real-time
+// screen-capture method on browsers without WebCodecs support (e.g. Safari).
+async function runExport(){
+ exporting=true;
+ try{
+  if(window.VideoEncoder && window.AudioEncoder && window.Mp4Muxer){
+   try{ await exportVideoFrameAccurate(); return; }
+   catch(err){ console.warn('Frame-accurate export failed, falling back to realtime capture:',err); }
+  }
+  await exportVideo();
+ }finally{
+  exporting=false;
+ }
 }
 $('exportGeo').onclick=async()=>{
  if(lat==null||lon==null){$('geoStatus').textContent='Find a location first.';return}
@@ -1564,7 +1258,7 @@ $('exportGeo').onclick=async()=>{
  $('downloadGeo').disabled=true;
  $('geoStatus').textContent='Rendering GeoTagged Video…';
  try{
-   await doExport();
+   await runExport();
    if(exportBlob){
      $('downloadGeo').disabled=false;
      $('geoStatus').textContent='GeoTagged video rendered successfully. Download button is ready.';
@@ -1578,21 +1272,18 @@ $('exportGeo').onclick=async()=>{
    $('exportGeo').disabled=false;
  }
 }
-$('downloadGeo').onclick=()=>{
+$('downloadGeo').onclick=async()=>{
  if(!exportBlob||!file)return;
- const a=document.createElement('a');
- const url=URL.createObjectURL(exportBlob);
- a.href=url;
- const base=file.name.replace(/\.[^.]+$/,'');
- const ext=exportBlob.type.includes('mp4')?'mp4':'webm'; a.download=base+'_geotag.'+ext;
- document.body.appendChild(a);
- a.click();
- a.remove();
- setTimeout(()=>URL.revokeObjectURL(url),3000);
+ $('downloadGeo').disabled=true;
+ const base=file.name.replace(/\.[^.]+$/,'')+'_geotag';
+ const mp4=await transcodeToMp4(exportBlob,$('geoStatus'));
+ triggerDownload(mp4,base);
+ $('geoStatus').textContent='GeoTagged video ready ('+(mp4.type.includes('mp4')?'MP4':'WebM')+').';
+ $('downloadGeo').disabled=false;
 };
 
 video.addEventListener('seeked',()=>{drawPreview();drawGeoPreview()});
-setInterval(()=>{if(video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
+setInterval(()=>{if(!exporting&&video.videoWidth){drawPreview();drawTimeline();if($('geoSection').style.display!=='none')drawGeoPreview()}},250);
 </script>
 </body>
 </html>

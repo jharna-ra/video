@@ -23,6 +23,7 @@ input[type=range]{width:100%}
 .status{padding:9px;background:#0d151d;border-radius:8px;color:#aebbc6;line-height:1.4;margin-top:10px}
 .stage{background:#05090d;border-radius:10px;min-height:480px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
 #viewCanvas{max-width:100%;max-height:72vh;display:block}
+#selection.crop{border:2px solid #fff;background:transparent;box-shadow:0 0 0 9999px rgba(0,0,0,.55)}#selection .h{position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;background:#fff;border:3px solid #1976e8;border-radius:50%;display:none}#selection.crop .h{display:block}
 #selection{position:absolute;border:2px solid #ff3b30;background:rgba(255,59,48,.10);display:none;pointer-events:none}
 #trimBar{height:8px;background:#263440;border-radius:5px;position:relative;margin:10px 0}
 #trimRange{width:100%}
@@ -518,10 +519,10 @@ function drawPreview(){
  if(whiteRect)removeWhiteFromCanvas(vctx,pw,ph,{x:whiteRect.x/r.w*pw,y:whiteRect.y/r.h*ph,w:whiteRect.w/r.w*pw,h:whiteRect.h/r.h*ph});
 }
 function updateSelectionBox(){
- if(!selecting && !whiteRect && !crop)return;
+ if(!selecting && !whiteRect && !cropDraft){selBox.style.display='none';return}
  const r=sourceRect();
  const R=stage.getBoundingClientRect(),C=view.getBoundingClientRect();
- let q=whiteRect||crop;
+ const isCrop=cropMode&&cropDraft;let q=isCrop?cropDraft:whiteRect;selBox.classList.toggle('crop',!!isCrop);
  if(!q){selBox.style.display='none';return}
  const x=C.left-R.left+q.x/r.w*C.width;
  const y=C.top-R.top+q.y/r.h*C.height;
@@ -533,7 +534,7 @@ function pointerPos(e){
  return {x:clamp((e.clientX-R.left)/R.width*r.w,0,r.w),y:clamp((e.clientY-R.top)/R.height*r.h,0,r.h)}
 }
 view.addEventListener('pointerdown',e=>{
- if(!cropMode&&!removeMode)return;
+ if(!removeMode)return;
  selecting=true;view.setPointerCapture(e.pointerId);
  const p=pointerPos(e);sx=p.x;sy=p.y;selBox.style.display='block';
 });
@@ -550,7 +551,6 @@ view.addEventListener('pointerup',e=>{
  if(!selecting)return;selecting=false;
  const p=pointerPos(e),q={x:Math.min(sx,p.x),y:Math.min(sy,p.y),w:Math.abs(p.x-sx),h:Math.abs(p.y-sy)};
  if(q.w<5||q.h<5){return}
- if(cropMode){crop={...q};$('applyCrop').disabled=false;setStatus('Crop area selected. Click Apply Crop.')}
  if(removeMode){whiteRect={...q};$('removeWhite').disabled=false;setStatus('White text area selected. Click Remove White Text.')}
  updateSelectionBox();
 });
@@ -884,9 +884,9 @@ function fitGeoText(ctx,titleText,address,coordSample,maxW,availH,cap){
  const ok=u=>{
   const T=u*R,D=u;
   const tl=wrapAll(ctx,titleText,maxW,`700 ${T}px Arial, sans-serif`);
-  const al=wrapAll(ctx,address,maxW,`700 ${D}px Arial, sans-serif`);
+  const al=wrapAll(ctx,address,maxW,`400 ${D}px Arial, sans-serif`);
   if(tl.length>2||al.length>2||tl.over||al.over)return false;
-  ctx.font=`700 ${D}px Arial, sans-serif`;
+  ctx.font=`400 ${D}px Arial, sans-serif`;
   if(ctx.measureText(coordSample).width>maxW)return false;
   return tl.length*T*1.15+D*.35+(al.length+2)*D*1.42+D*.3<=availH;
  };
@@ -952,7 +952,7 @@ function drawGeoFrame(baseCtx,W,H,seconds){
  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
  const u=fitGeoText(baseCtx,titleText,address,'Lat 00.000000°  Long 000.000000°',maxW,stampH*.88,W*.032);
  const T=u*1.57*state.gTitle/100,D=u*state.gDetails/100;
- const tFont=`700 ${T}px Arial, sans-serif`,dFont=`700 ${D}px Arial, sans-serif`;
+ const tFont=`700 ${T}px Arial, sans-serif`,dFont=`400 ${D}px Arial, sans-serif`;
  const tl=wrapAll(baseCtx,titleText,maxW,tFont);
  const al=wrapAll(baseCtx,address,maxW,dFont);
  const blockH=tl.length*T*1.15+D*.35+(al.length+2)*D*1.42+D*.3;
@@ -1681,6 +1681,62 @@ $('downloadGeo').onclick=async()=>{
 video.addEventListener('seeked',()=>{if(exporting)return;drawPreview();if(geoVisible())drawGeoPreview();syncGeoSeek()});
 // repaint while paused (e.g. after slider changes); playback is handled by previewTick above
 setInterval(()=>{if(!exporting&&video.videoWidth&&video.paused){drawPreview();drawTimeline();if(geoVisible())drawGeoPreview()}},400);
+
+/* ===== gallery-style crop: drag the edges / corners of the box (drag inside to move it) ===== */
+let cropDraft=null,cropDrag=null;
+(()=>{
+ const pts=[[0,0],[50,0],[100,0],[0,50],[100,50],[0,100],[50,100],[100,100]];
+ pts.forEach(([x,y])=>{const h=document.createElement('div');h.className='h';h.style.left=x+'%';h.style.top=y+'%';selBox.appendChild(h)});
+})();
+function cropHit(e){
+ const r=sourceRect(),C=view.getBoundingClientRect(),d=cropDraft,T=24;
+ const x0=C.left+d.x/r.w*C.width,x1=C.left+(d.x+d.w)/r.w*C.width,y0=C.top+d.y/r.h*C.height,y1=C.top+(d.y+d.h)/r.h*C.height;
+ const px=e.clientX,py=e.clientY,inY=py>y0-T&&py<y1+T,inX=px>x0-T&&px<x1+T;
+ let m='';
+ if(inX&&Math.abs(py-y0)<T)m+='t';else if(inX&&Math.abs(py-y1)<T)m+='b';
+ if(inY&&Math.abs(px-x0)<T)m+='l';else if(inY&&Math.abs(px-x1)<T)m+='r';
+ if(!m&&px>x0&&px<x1&&py>y0&&py<y1)m='move';
+ return m;
+}
+view.addEventListener('pointerdown',e=>{
+ if(!cropMode||!cropDraft)return;
+ const m=cropHit(e);if(!m)return;
+ view.setPointerCapture(e.pointerId);
+ cropDrag={m,s:pointerPos(e),o:{...cropDraft}};e.preventDefault();
+});
+view.addEventListener('pointermove',e=>{
+ if(!cropDrag)return;
+ const r=sourceRect(),p=pointerPos(e),o=cropDrag.o,m=cropDrag.m,dx=p.x-cropDrag.s.x,dy=p.y-cropDrag.s.y,MIN=20;
+ let x0=o.x,y0=o.y,x1=o.x+o.w,y1=o.y+o.h;
+ if(m==='move'){const w=o.w,h=o.h;x0=clamp(o.x+dx,0,r.w-w);y0=clamp(o.y+dy,0,r.h-h);x1=x0+w;y1=y0+h}
+ else{
+  if(m.includes('l'))x0=clamp(o.x+dx,0,x1-MIN);
+  if(m.includes('r'))x1=clamp(o.x+o.w+dx,x0+MIN,r.w);
+  if(m.includes('t'))y0=clamp(o.y+dy,0,y1-MIN);
+  if(m.includes('b'))y1=clamp(o.y+o.h+dy,y0+MIN,r.h);
+ }
+ cropDraft={x:x0,y:y0,w:x1-x0,h:y1-y0};updateSelectionBox();
+});
+['pointerup','pointercancel'].forEach(t=>view.addEventListener(t,()=>{cropDrag=null}));
+function fullDraft(){const r=sourceRect();return {x:0,y:0,w:r.w,h:r.h}}
+function syncModes(){
+ view.style.touchAction=(cropMode||removeMode)?'none':'';
+ if(cropMode&&!cropDraft){cropDraft=fullDraft();setStatus('Drag the edges or corners to crop. Drag inside to move the box. Then press Apply Crop.')}
+ if(!cropMode)cropDraft=null;
+ $('applyCrop').disabled=!(cropMode&&cropDraft);
+ updateSelectionBox();
+}
+$('cropMode').addEventListener('click',syncModes);
+$('removeMode').addEventListener('click',syncModes);
+$('resetCrop').addEventListener('click',()=>{cropDraft=cropMode?fullDraft():null;$('applyCrop').disabled=!cropMode;updateSelectionBox()});
+$('applyCrop').onclick=()=>{
+ if(!cropDraft)return;
+ const r=sourceRect(),d=cropDraft;
+ crop={x:Math.round(r.x+d.x),y:Math.round(r.y+d.y),w:Math.round(d.w),h:Math.round(d.h)};
+ whiteRect=null;$('removeWhite').disabled=true;
+ cropMode=false;cropDraft=null;$('cropMode').textContent='Crop: OFF';$('applyCrop').disabled=true;
+ view.style.touchAction='';resizePreview();updateSelectionBox();setStatus('Crop applied. Press Crop: ON again to crop further, or Reset Crop to undo.');
+};
 </script>
 </body>
 </html>

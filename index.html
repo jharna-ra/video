@@ -55,7 +55,7 @@ input[type=range]{width:100%}
 </head>
 <body>
 <header>
-<h1>Video White Text Remover + GeoTag</h1>
+<h1>Video White Text Remover + GeoTag <span class="badge">build: text-removal v3</span></h1>
 <p>Trim + gallery-style crop + remove selected white text from every frame + editable GeoTag overlay.</p>
 </header>
 
@@ -1605,6 +1605,34 @@ document.querySelectorAll('.quickTrim').forEach(b=>b.addEventListener('click',ma
 $('timelineCanvas').addEventListener('pointerdown',markDirty);
 geo.addEventListener('pointerdown',markDirty);
 
+
+/* ===== text-only detection =====
+   Text = THIN bright strokes (white top-hat) that stay at the SAME place in many frames.
+   Big bright areas (floor, white clothes) are not thin, and moving objects do not stay put, so they are ignored. */
+function rankFilter(src,w,h,r,isMax){
+ const tmp=new Uint8Array(w*h),out=new Uint8Array(w*h);
+ for(let y=0;y<h;y++){const row=y*w;for(let x=0;x<w;x++){
+  let v=isMax?0:255;const a=Math.max(0,x-r),b=Math.min(w-1,x+r);
+  for(let i=a;i<=b;i++){const t=src[row+i];if(isMax?t>v:t<v)v=t}
+  tmp[row+x]=v}}
+ for(let y=0;y<h;y++){const a=Math.max(0,y-r),b=Math.min(h-1,y+r);for(let x=0;x<w;x++){
+  let v=isMax?0:255;
+  for(let j=a;j<=b;j++){const t=tmp[j*w+x];if(isMax?t>v:t<v)v=t}
+  out[y*w+x]=v}}
+ return out;
+}
+function accumulateTextFrame(d,w,h,r,minLum,minContrast,cnt){
+ const n=w*h,L=new Uint8Array(n);
+ for(let p=0,q=0;p<n;p++,q+=4)L[p]=(d[q]*77+d[q+1]*150+d[q+2]*29)>>8;
+ const opened=rankFilter(rankFilter(L,w,h,r,false),w,h,r,true);   // removes thin bright strokes, keeps big areas
+ for(let p=0;p<n;p++)if(L[p]>=minLum&&L[p]-opened[p]>=minContrast)cnt[p]++;
+}
+function finalizeTextMask(cnt,samples){
+ const need=Math.max(1,Math.ceil(0.15*samples)),out=new Uint8Array(cnt.length);
+ for(let p=0;p<cnt.length;p++)if(cnt[p]>=need)out[p]=1;
+ return out;
+}
+
 /* ===== scan the whole trimmed video once so the text is removed from EVERY frame ===== */
 function maskKey(){
  return JSON.stringify([whiteRect,crop,+$('whiteThreshold').value,+$('trimStart').value,+$('trimEnd').value,file&&file.name]);
@@ -1621,19 +1649,18 @@ async function scanWhiteMask(ui){
   const cv=document.createElement('canvas');cv.width=w;cv.height=h;
   const c=cv.getContext('2d',{willReadFrequently:true});
   const {s,e}=trimRangeNow();
-  const n=clamp(Math.ceil((e-s)/0.3),4,80);
-  const th=Math.max(90,(+$('whiteThreshold').value||165)-20);   // slightly lower: also catches faint / fading text
-  const acc=new Uint8Array(w*h);
+  const n=clamp(Math.ceil((e-s)/0.3),4,48);
+  const minLum=Math.max(100,(+$('whiteThreshold').value||165)-30);        // text must be fairly bright...
+  const rad=clamp(Math.round(video.videoWidth/256),3,10);                 // ...and thinner than this window (scales with video size)
+  const cnt=new Uint16Array(w*h);
   for(let i=0;i<n;i++){
    await seekVideo(s+(e-s)*i/(n-1));
    c.drawImage(video,rx,ry,whiteRect.w,whiteRect.h,0,0,w,h);
-   const d=c.getImageData(0,0,w,h).data;
-   for(let p=0,q=0;p<w*h;p++,q+=4){
-    const rr=d[q],gg=d[q+1],bb=d[q+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
-    if((mx-mn)<=115&&(mx>=th||(rr+gg+bb)/3>=th))acc[p]=1;
-   }
+   accumulateTextFrame(c.getImageData(0,0,w,h).data,w,h,rad,minLum,26,cnt);
    if(ui){ui.progress((i+1)/n);ui.status('Scanning the whole video for the text… '+Math.round((i+1)/n*100)+'%')}
+   await sleep(0);
   }
+  const acc=finalizeTextMask(cnt,n);
   staticMask={key,w,h,data:acc};
   if(ui){ui.progress(0);ui.status('Text found across the whole video — it will be removed from every frame.')}
  }catch(err){console.warn('mask scan failed',err);staticMask=null}

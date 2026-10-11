@@ -301,6 +301,17 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
      if(isWhite(d,i,t)) mask[p]=1;
    }
  }
+ // Whole-video mask: also remove pixels where the text appears in other frames (faint / fading / changing digits).
+ const sm=(staticMask&&staticMask.key===maskKey())?staticMask:null;
+ if(sm){
+   for(let y=0;y<H2;y++){
+     const my=Math.min(sm.h-1,Math.max(0,Math.floor((y0+y+0.5-rect.y)/rect.h*sm.h)));
+     for(let x=0;x<W2;x++){
+       const mx=Math.min(sm.w-1,Math.max(0,Math.floor((x0+x+0.5-rect.x)/rect.w*sm.w)));
+       if(sm.data[my*sm.w+mx])mask[y*W2+x]=1;
+     }
+   }
+ }
  // Expand the mask by a few pixels so faint anti-aliased text edges are removed too.
  const expanded=new Uint8Array(mask);
  for(let y=0;y<H2;y++) for(let x=0;x<W2;x++){
@@ -358,6 +369,93 @@ function removeWhiteFromCanvas(ctx2,W,H,rect){
  }
  ctx2.putImageData(new ImageData(out,W2,H2),x0,y0);
 }
+
+/* ===================== TEXT REMOVAL (same look as the strong remover, but fast on every frame) =====================
+   Edge pixels get the distance-weighted average of the clean pixels around them (window +/-6 px, weight 1/(d+1)),
+   exactly like the strong remover's final pass. Thick text is then filled from the outside in ("onion peeling"),
+   so no white is left inside big letters. The neighbour tables are built once per selection and re-used for
+   every frame, so rendering stays fast. */
+const fillPlanCache=new Map();
+function buildFillPlan(exp,W2,H2){
+ const N=W2*H2,dist=new Int16Array(N).fill(-1);
+ const queue=new Int32Array(N);let qh=0,qt=0;
+ for(let p=0;p<N;p++)if(!exp[p]){dist[p]=0;queue[qt++]=p}
+ while(qh<qt){
+  const p=queue[qh++],x=p%W2,y=(p-x)/W2,nd=dist[p]+1;
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+   if(!dx&&!dy)continue;
+   const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=W2||yy>=H2)continue;
+   const q=yy*W2+xx;
+   if(exp[q]&&dist[q]<0){dist[q]=nd;queue[qt++]=q}
+  }
+ }
+ const order=[];
+ for(let i=0;i<qt;i++){const p=queue[i];if(dist[p]>0)order.push(p)}   // BFS order = outside-in
+ const R=order.length>120000?3:6;
+ const off=new Int32Array(order.length+1),idx=[],wt=[];
+ for(let k=0;k<order.length;k++){
+  const p=order[k],x=p%W2,y=(p-x)/W2,dp=dist[p];
+  const start=idx.length;let sw=0;
+  for(let dy=-R;dy<=R;dy++){
+   const yy=y+dy;if(yy<0||yy>=H2)continue;
+   for(let dx=-R;dx<=R;dx++){
+    if(!dx&&!dy)continue;
+    const xx=x+dx;if(xx<0||xx>=W2)continue;
+    const q=yy*W2+xx,dq=dist[q];
+    if(dq===0||(dq>0&&dq<dp)){const w=1/(Math.sqrt(dx*dx+dy*dy)+1);idx.push(q*4);wt.push(w);sw+=w}
+   }
+  }
+  for(let j=start;j<idx.length;j++)wt[j]/=sw;
+  off[k]=start;
+ }
+ off[order.length]=idx.length;
+ return {count:order.length,order:Int32Array.from(order),off,idx:Int32Array.from(idx),wt:Float32Array.from(wt)};
+}
+function removeWhiteText(ctx2,W,H,rect){
+ if(!rect)return;
+ const x0=Math.max(0,Math.floor(rect.x)),y0=Math.max(0,Math.floor(rect.y));
+ const x1=Math.min(W,Math.ceil(rect.x+rect.w)),y1=Math.min(H,Math.ceil(rect.y+rect.h));
+ const rw=x1-x0,rh=y1-y0;
+ if(rw<2||rh<2)return;
+ const img=ctx2.getImageData(x0,y0,rw,rh),d=img.data;
+ const t=+$('whiteThreshold').value,strength=+$('removeOpacity').value/100;
+ const sm=(staticMask&&staticMask.key===maskKey())?staticMask:null;
+ let plan=null,key=null;
+ const grow=clamp(Math.round((+$('inpaintPasses').value||5)*0.4),1,4);   // slider: how far the removal spreads around the text (default = 2 px)
+ if(sm){key=maskKey()+'|'+x0+','+y0+','+rw+','+rh+'|'+grow;plan=fillPlanCache.get(key)}
+ if(!plan){
+  const N=rw*rh,mask=new Uint8Array(N),exp=new Uint8Array(N);
+  if(sm){   // text pixels from the whole-video scan (same for every frame)
+   for(let y=0;y<rh;y++){
+    const my=Math.min(sm.h-1,Math.max(0,Math.floor((y0+y+0.5-rect.y)/rect.h*sm.h)));
+    for(let x=0;x<rw;x++){
+     const mx=Math.min(sm.w-1,Math.max(0,Math.floor((x0+x+0.5-rect.x)/rect.w*sm.w)));
+     if(sm.data[my*sm.w+mx])mask[y*rw+x]=1;
+    }
+   }
+  }else{    // no scan yet: detect on this frame only
+   for(let p=0;p<N;p++)if(isWhite(d,p*4,t))mask[p]=1;
+  }
+  for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){   // grow to cover anti-aliased edges
+   if(!mask[y*rw+x])continue;
+   for(let dy=-grow;dy<=grow;dy++)for(let dx=-grow;dx<=grow;dx++){
+    const xx=x+dx,yy=y+dy;if(xx>=0&&xx<rw&&yy>=0&&yy<rh)exp[yy*rw+xx]=1;
+   }
+  }
+  plan=buildFillPlan(exp,rw,rh);
+  if(key){if(fillPlanCache.size>6)fillPlanCache.clear();fillPlanCache.set(key,plan)}
+ }
+ if(!plan.count)return;
+ const {order,off,idx,wt}=plan;
+ for(let k=0;k<plan.count;k++){
+  let r=0,g=0,b=0;
+  for(let j=off[k],e=off[k+1];j<e;j++){const q=idx[j],w=wt[j];r+=d[q]*w;g+=d[q+1]*w;b+=d[q+2]*w}
+  const i=order[k]*4;
+  d[i]=d[i]*(1-strength)+r*strength;d[i+1]=d[i+1]*(1-strength)+g*strength;d[i+2]=d[i+2]*(1-strength)+b*strength;
+ }
+ ctx2.putImageData(img,x0,y0);
+}
+
 function drawPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();
@@ -366,7 +464,7 @@ function drawPreview(){
  if(view.width!==pw)view.width=pw;
  if(view.height!==ph)view.height=ph;
  vctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,pw,ph);
- if(whiteRect)removeWhiteFromCanvasExport(vctx,pw,ph,{x:whiteRect.x/r.w*pw,y:whiteRect.y/r.h*ph,w:whiteRect.w/r.w*pw,h:whiteRect.h/r.h*ph});
+ if(whiteRect)removeWhiteText(vctx,pw,ph,{x:whiteRect.x/r.w*pw,y:whiteRect.y/r.h*ph,w:whiteRect.w/r.w*pw,h:whiteRect.h/r.h*ph});
 }
 function updateSelectionBox(){
  if(!selecting && !whiteRect && !crop)return;
@@ -1026,7 +1124,7 @@ function drawExportFrame(elapsedOverride,srcOverride){
   wctx.drawImage(srcEl,r.x,r.y,r.w,r.h,0,0,outputW,outputH);
   if(whiteRect){
     const sx=outputW/r.w, sy=outputH/r.h;
-    removeWhiteFromCanvasExport(wctx,outputW,outputH,{x:whiteRect.x*sx,y:whiteRect.y*sy,w:whiteRect.w*sx,h:whiteRect.h*sy});
+    removeWhiteText(wctx,outputW,outputH,{x:whiteRect.x*sx,y:whiteRect.y*sy,w:whiteRect.w*sx,h:whiteRect.h*sy});
   }
   if(exportGeo&&lat!=null&&lon!=null){
     const elapsed=elapsedOverride!=null?elapsedOverride:Math.max(0,video.currentTime-(+$('trimStart').value||0));
@@ -1447,7 +1545,7 @@ function drawGeoPreview(){
  if(geo.width!==gw)geo.width=gw;
  if(geo.height!==gh)geo.height=gh;
  gctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,gw,gh);
- if(whiteRect)removeWhiteFromCanvasExport(gctx,gw,gh,{x:whiteRect.x/r.w*gw,y:whiteRect.y/r.h*gh,w:whiteRect.w/r.w*gw,h:whiteRect.h/r.h*gh});
+ if(whiteRect)removeWhiteText(gctx,gw,gh,{x:whiteRect.x/r.w*gw,y:whiteRect.y/r.h*gh,w:whiteRect.w/r.w*gw,h:whiteRect.h/r.h*gh});
  if(lat!=null&&lon!=null)drawGeoFrame(gctx,gw,gh,Math.max(0,video.currentTime-(+$('trimStart').value||0)));
 }
 

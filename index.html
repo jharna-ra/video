@@ -242,6 +242,7 @@ let crop=null, cropMode=false, whiteRect=null, removeMode=false, selecting=false
 let lat=null, lon=null, mapImg=null, exportBlob=null, renderLoop=false;
 let outputW=0, outputH=0;
 let exporting=false, exportGeo=false;
+let staticMask=null;   // union of every pixel where white text appears anywhere in the trimmed video
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
@@ -876,6 +877,17 @@ function removeWhiteFromCanvasExport(ctx2,W,H,rect){
       if(neutral && (mx>=threshold || bright>=threshold)) mask[p]=1;
     }
   }
+  // Whole-video mask: remove text pixels even in frames where the text is faint / fading / not yet detectable.
+  const sm=(staticMask&&staticMask.key===maskKey())?staticMask:null;
+  if(sm){
+    for(let y=0;y<rh;y++){
+      const my=Math.min(sm.h-1,Math.max(0,Math.floor((y0+y+0.5-rect.y)/rect.h*sm.h)));
+      for(let x=0;x<rw;x++){
+        const mx=Math.min(sm.w-1,Math.max(0,Math.floor((x0+x+0.5-rect.x)/rect.w*sm.w)));
+        if(sm.data[my*sm.w+mx])mask[y*rw+x]=1;
+      }
+    }
+  }
   // Dilate to catch anti-aliased text edges (radius follows the "inpaint passes" slider).
   const dil=clamp(Math.round((+$('inpaintPasses').value||5)*0.4),1,4);
   for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
@@ -1495,6 +1507,51 @@ document.querySelectorAll('.quickTrim').forEach(b=>b.addEventListener('click',ma
 $('timelineCanvas').addEventListener('pointerdown',markDirty);
 geo.addEventListener('pointerdown',markDirty);
 
+/* ===== scan the whole trimmed video once so the text is removed from EVERY frame ===== */
+function maskKey(){
+ return JSON.stringify([whiteRect,crop,+$('whiteThreshold').value,+$('trimStart').value,+$('trimEnd').value,file&&file.name]);
+}
+async function scanWhiteMask(ui){
+ if(!whiteRect||!duration||!video.videoWidth){staticMask=null;return}
+ const key=maskKey();
+ if(staticMask&&staticMask.key===key)return;
+ const prevExporting=exporting,saved=video.currentTime;
+ exporting=true;video.pause();
+ try{
+  const r=sourceRect(),rx=r.x+whiteRect.x,ry=r.y+whiteRect.y;
+  const w=Math.max(2,Math.round(whiteRect.w)),h=Math.max(2,Math.round(whiteRect.h));
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const c=cv.getContext('2d',{willReadFrequently:true});
+  const {s,e}=trimRangeNow();
+  const n=clamp(Math.ceil((e-s)/0.3),4,80);
+  const th=Math.max(90,(+$('whiteThreshold').value||165)-20);   // slightly lower: also catches faint / fading text
+  const acc=new Uint8Array(w*h);
+  for(let i=0;i<n;i++){
+   await seekVideo(s+(e-s)*i/(n-1));
+   c.drawImage(video,rx,ry,whiteRect.w,whiteRect.h,0,0,w,h);
+   const d=c.getImageData(0,0,w,h).data;
+   for(let p=0,q=0;p<w*h;p++,q+=4){
+    const rr=d[q],gg=d[q+1],bb=d[q+2],mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
+    if((mx-mn)<=115&&(mx>=th||(rr+gg+bb)/3>=th))acc[p]=1;
+   }
+   if(ui){ui.progress((i+1)/n);ui.status('Scanning the whole video for the text… '+Math.round((i+1)/n*100)+'%')}
+  }
+  staticMask={key,w,h,data:acc};
+  if(ui){ui.progress(0);ui.status('Text found across the whole video — it will be removed from every frame.')}
+ }catch(err){console.warn('mask scan failed',err);staticMask=null}
+ finally{
+  exporting=prevExporting;
+  try{video.currentTime=saved}catch(e){}
+ }
+}
+$('removeWhite').onclick=async()=>{
+ if(!whiteRect)return;
+ await scanWhiteMask(makeUI($('exportStatus'),$('exportFill')));
+ drawPreview();
+};
+view.addEventListener('pointerup',()=>{if(removeMode&&whiteRect)setTimeout(()=>scanWhiteMask(makeUI($('exportStatus'),$('exportFill'))),60)});
+$('whiteThreshold').addEventListener('change',()=>{if(whiteRect)scanWhiteMask(makeUI($('exportStatus'),$('exportFill')))});
+
 async function runExport(ui,includeGeo){
  exporting=true;exportGeo=includeGeo;
  const wasMuted=video.muted;
@@ -1503,6 +1560,7 @@ async function runExport(ui,includeGeo){
  const end=clamp(+$('trimEnd').value||duration,start+0.05,duration);
  try{
   if(includeGeo&&mapGeo){try{await rebuildMap()}catch(e){console.warn(e)}}
+  if(whiteRect){await scanWhiteMask(ui)}
   let blob=null;
   if(window.VideoEncoder&&window.VideoFrame&&window.Mp4Muxer){
    try{blob=await exportMP4(ui,start,end)}

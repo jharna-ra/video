@@ -43,6 +43,9 @@ input[type=range]{width:100%}
 .badge{display:inline-block;padding:4px 7px;border-radius:6px;background:#24313d;color:#9fb0be;font-size:11px}
 #mapPreview{width:100%;height:130px;object-fit:cover;background:#d7dde1;border-radius:8px;margin-top:8px}
 #logoCanvas{display:none}
+#geoCanvas{max-width:100%;max-height:72vh;display:block;touch-action:none}
+.checkLine{display:flex;gap:8px;align-items:center;font-weight:600;margin:10px 0 4px;color:#cdd6de;cursor:pointer}
+.checkLine input{width:auto;margin:0}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.stage{min-height:320px}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.min.js"></script>
@@ -170,20 +173,31 @@ input[type=range]{width:100%}
 </div>
 
 <div class="section">
-<h3>Overlay</h3>
-<div class="sliderTop"><span>GeoTag opacity</span><b id="gOpacityVal">85%</b></div><input id="gOpacity" type="range" min="0" max="100" value="85">
+<h3>GeoTag Stamp</h3>
+<div class="sliderTop"><span>GeoTag opacity (grey stamp background)</span><b id="gOpacityVal">70%</b></div><input id="gOpacity" type="range" min="0" max="100" value="70">
+<div class="sliderTop"><span>Stamp height (% of video width)</span><b id="gHeightVal">17%</b></div><input id="gHeight" type="range" min="6" max="60" value="17">
+<div class="sliderTop"><span>Text start position (from left)</span><b id="gTextXVal">25%</b></div><input id="gTextX" type="range" min="0" max="60" value="25">
+<div class="sliderTop"><span>Title size (100% = auto fit)</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
+<div class="sliderTop"><span>Details size (100% = auto fit)</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
+</div>
+
+<div class="section">
+<h3>Map (separate from the stamp)</h3>
+<div class="small">Drag the map on the preview to move it anywhere. Drag the white square at its bottom-right corner to resize. The stamp never changes when you move or resize the map.</div>
 <div class="sliderTop"><span>Map opacity</span><b id="gMapOVal">100%</b></div><input id="gMapO" type="range" min="0" max="100" value="100">
-<div class="sliderTop"><span>Stamp height</span><b id="gHeightVal">35%</b></div><input id="gHeight" type="range" min="10" max="90" value="35">
-<div class="sliderTop"><span>Map width</span><b id="gMapWVal">30%</b></div><input id="gMapW" type="range" min="10" max="60" value="30">
-<div class="sliderTop"><span>Title size</span><b id="gTitleVal">100%</b></div><input id="gTitle" type="range" min="50" max="180" value="100">
-<div class="sliderTop"><span>Details size</span><b id="gDetailsVal">100%</b></div><input id="gDetails" type="range" min="50" max="180" value="100">
+<div class="sliderTop"><span>Map width (% of video width)</span><b id="gMapWVal">24%</b></div><input id="gMapW" type="range" min="5" max="90" value="24">
+<div class="sliderTop"><span>Map height (% of video width)</span><b id="mapHVal">17%</b></div><input id="mapH" type="range" min="5" max="90" value="17">
+<div class="sliderTop"><span>Map zoom level (higher = closer)</span><b id="mapZoomVal">16</b></div><input id="mapZoom" type="range" min="12" max="18" step="1" value="16">
+<label class="checkLine"><input id="mapSquare" type="checkbox"> Lock map to a perfect square</label>
+<button id="mapMakeSquare" class="secondary">◻ Make map square</button>
+<button id="mapReset" class="secondary">⟲ Map to bottom-left</button>
 </div>
 
 <div class="section">
 <h3>Blue Camera Logo Position</h3>
 <div class="sliderTop"><span>Horizontal</span><b id="logoXVal">90%</b></div><input id="logoX" type="range" min="0" max="100" value="90">
-<div class="sliderTop"><span>Vertical</span><b id="logoYVal">50%</b></div><input id="logoY" type="range" min="0" max="100" value="50">
-<div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">70%</b></div><input id="logoSize" type="range" min="25" max="140" value="70">
+<div class="sliderTop"><span>Vertical</span><b id="logoYVal">60%</b></div><input id="logoY" type="range" min="0" max="100" value="60">
+<div class="sliderTop"><span>Logo size</span><b id="logoSizeVal">100%</b></div><input id="logoSize" type="range" min="25" max="140" value="100">
 </div>
 
 <div class="section">
@@ -221,8 +235,9 @@ let outputW=0, outputH=0;
 let timelineFrames=[], timelineDragging=null, timelineReady=false;
 
 const state={
- gOpacity:85,gMapO:100,gHeight:35,gMapW:30,gTitle:100,gDetails:100,
- logoX:90,logoY:50,logoSize:70
+ gOpacity:70,gMapO:100,gHeight:17,gTextX:25,gTitle:100,gDetails:100,
+ mapX:0,mapY:0,mapW:24,mapH:17,mapMoved:false,mapZoom:16,
+ logoX:90,logoY:60,logoSize:100
 };
 
 function fmt(n){return Number(n||0).toFixed(1)}
@@ -606,7 +621,7 @@ async function findLocation(){
   const u='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'json',limit:'1',countrycodes:'in'});
   const r=await fetch(u,{headers:{Accept:'application/json'}});const j=await r.json();if(!j.length)throw Error('Not found');
   lat=+j[0].lat;lon=+j[0].lon;$('gCoords').textContent=`Lat ${lat.toFixed(6)}°  Long ${lon.toFixed(6)}°`;
-  mapImg=await makeMap(lat,lon);drawGeoPreview();
+  mapImg=await makeMap(lat,lon);if(mapImg&&mapImg.isFallback)$('gCoords').textContent+='  (map tiles blocked — check internet, then press Find Location again)';drawGeoPreview();
  }catch(e){lat=lon=null;mapImg=null;$('gCoords').textContent='Location not found. Try town + state + PIN.';drawGeoPreview()}
 }
 $('findLocation').onclick=findLocation;
@@ -614,111 +629,197 @@ $('findLocation').onclick=findLocation;
 function tileXY(lat,lon,z){
  const n=2**z,x=(lon+180)/360*n,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*n;return {x,y,n}
 }
-async function makeMap(lat,lon){
- const z=15,t=tileXY(lat,lon,z),cx=Math.floor(t.x),cy=Math.floor(t.y),size=1280;
- const c=document.createElement('canvas');c.width=size;c.height=size;const cctx=c.getContext('2d');
- cctx.clearRect(0,0,size,size);
- for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-  const im=new Image();im.crossOrigin='anonymous';
-  const url=`https://tile.openstreetmap.org/${z}/${cx+dx}/${cy+dy}.png`;
-  await new Promise(res=>{im.onload=()=>{cctx.drawImage(im,size/2+(dx-(t.x-cx))*256,size/2+(dy-(t.y-cy))*256,256,256);res()};im.onerror=()=>res();im.src=url});
+/* ===================== MAP (its own image, separate from the stamp) ===================== */
+let mapGeo=null,mapToken=0,mapTimer=null;
+const tileCache=new Map();
+const MAP_SRC=[
+ {name:'© OpenStreetMap contributors',url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
+ {name:'© OpenStreetMap contributors, OSM France',url:(z,x,y)=>`https://a.tile.openstreetmap.fr/osmfr/${z}/${x}/${y}.png`},
+ {name:'© Esri',url:(z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`}
+];
+function loadTile(src,z,x,y){
+ const key=src.url(z,x,y);
+ if(tileCache.has(key))return Promise.resolve(tileCache.get(key));
+ return new Promise(res=>{
+  const im=new Image();im.crossOrigin='anonymous';let fin=false;
+  const done=v=>{if(fin)return;fin=true;if(v){if(tileCache.size>300)tileCache.clear();tileCache.set(key,v);}res(v);};
+  im.onload=()=>done(im);im.onerror=()=>done(null);setTimeout(()=>done(null),8000);
+  im.src=src.url(z,x,y);
+ });
+}
+async function makeMap(la,lo){
+ mapGeo={lat:la,lon:lo};
+ // canvas has the same shape as the map box, so the map never looks stretched
+ const r=sourceRect(),base=r.w||1080;
+ let cw=Math.round(base*state.mapW/100*2),ch=Math.round(base*state.mapH/100*2);
+ const big=Math.max(cw,ch);
+ if(big>1400){cw=Math.round(cw*1400/big);ch=Math.round(ch*1400/big);}
+ cw=Math.max(160,cw);ch=Math.max(160,ch);
+ const z=clamp(Math.round(state.mapZoom),10,18),n=2**z,c=tileXY(la,lo,z);
+ const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
+ const cc=cv.getContext('2d');
+ cc.fillStyle='#e8e8e8';cc.fillRect(0,0,cw,ch);
+ const x0=Math.floor(c.x-cw/512),x1=Math.floor(c.x+cw/512),y0=Math.floor(c.y-ch/512),y1=Math.floor(c.y+ch/512);
+ const pos=[];
+ for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)if(ty>=0&&ty<n)pos.push([tx,ty]);
+ let used=null;
+ for(const s of MAP_SRC){
+  const imgs=await Promise.all(pos.map(([tx,ty])=>loadTile(s,z,((tx%n)+n)%n,ty)));
+  if(imgs.filter(Boolean).length<Math.max(1,Math.ceil(pos.length*.6)))continue;
+  pos.forEach(([tx,ty],i)=>{if(imgs[i])cc.drawImage(imgs[i],cw/2+(tx-c.x)*256,ch/2+(ty-c.y)*256,256,256);});
+  used=s;break;
  }
- cctx.fillStyle='#e53935';cctx.beginPath();cctx.arc(size/2,size/2,10,0,Math.PI*2);cctx.fill();cctx.strokeStyle='#fff';cctx.lineWidth=4;cctx.stroke();
- cctx.fillStyle='rgba(255,255,255,.85)';cctx.fillRect(8,size-28,145,20);cctx.fillStyle='#333';cctx.font='12px Arial';cctx.fillText('© OpenStreetMap contributors',12,size-14);
- return c;
+ if(!used){
+  cc.fillStyle='#dfe7ee';cc.fillRect(0,0,cw,ch);
+  cc.strokeStyle='#c5d0da';cc.lineWidth=1;
+  for(let i=0;i<=cw;i+=48){cc.beginPath();cc.moveTo(i,0);cc.lineTo(i,ch);cc.stroke();}
+  for(let i=0;i<=ch;i+=48){cc.beginPath();cc.moveTo(0,i);cc.lineTo(cw,i);cc.stroke();}
+ }
+ const pr=clamp(Math.min(cw,ch)/40,6,14);
+ cc.save();cc.fillStyle='#e53935';cc.beginPath();cc.arc(cw/2,ch/2,pr,0,Math.PI*2);cc.fill();
+ cc.strokeStyle='#fff';cc.lineWidth=Math.max(2,pr*.3);cc.stroke();cc.restore();
+ if(used){
+  const t=used.name,fs=clamp(Math.min(cw,ch)*.035,9,14);
+  cc.font=`600 ${fs}px Arial, sans-serif`;cc.textAlign='right';cc.textBaseline='alphabetic';
+  const tw=cc.measureText(t).width+fs;
+  cc.fillStyle='rgba(255,255,255,.75)';cc.fillRect(cw-tw,ch-fs*1.6,tw,fs*1.6);
+  cc.fillStyle='#333';cc.fillText(t,cw-fs*.5,ch-fs*.45);
+ }
+ cv.isFallback=!used;
+ return cv;
+}
+async function rebuildMap(){
+ if(!mapGeo)return;
+ const tok=++mapToken;
+ const cv=await makeMap(mapGeo.lat,mapGeo.lon);
+ if(tok!==mapToken)return;
+ mapImg=cv;drawGeoPreview();
+}
+function scheduleMapRebuild(){
+ clearTimeout(mapTimer);
+ mapTimer=setTimeout(()=>{rebuildMap().catch(e=>console.warn('map rebuild failed',e));},350);
+}
+
+/* ===================== LAYOUT ===================== */
+/* Stamp: full width, flush left / right / bottom, grey, NOT blurred.
+   Map: its own box, placed wherever you put it. Moving or resizing it never changes the stamp or the text. */
+function computeGeoLayout(W,H){
+ const stampH=Math.round(clamp(W*state.gHeight/100,40,H));
+ const stampY=H-stampH;
+ const mapW=clamp(W*state.mapW/100,24,W);
+ const mapH=clamp(W*state.mapH/100,24,H);
+ let mapX,mapY;
+ if(!state.mapMoved){mapX=0;mapY=H-mapH;}
+ else{
+  mapX=clamp(W*state.mapX/100,0,Math.max(0,W-mapW));
+  mapY=clamp(H*state.mapY/100,0,Math.max(0,H-mapH));
+ }
+ return {stampH,stampY,mapW,mapH,mapX,mapY};
+}
+function wrapAll(ctx,text,max,font){
+ ctx.font=font;
+ const words=String(text||'').trim().split(/\s+/).filter(Boolean),lines=[];let line='';
+ for(const w of words){
+  const t=line?line+' '+w:w;
+  if(ctx.measureText(t).width>max&&line){lines.push(line);line=w;}else line=t;
+ }
+ if(line)lines.push(line);
+ lines.over=lines.some(l=>ctx.measureText(l).width>max*1.01);
+ return lines;
+}
+/* biggest text size that fits the stamp (title = 1.57 x details size) */
+function fitGeoText(ctx,titleText,address,coordSample,maxW,availH,cap){
+ const R=1.57;
+ const ok=u=>{
+  const T=u*R,D=u;
+  const tl=wrapAll(ctx,titleText,maxW,`700 ${T}px Arial, sans-serif`);
+  const al=wrapAll(ctx,address,maxW,`700 ${D}px Arial, sans-serif`);
+  if(tl.length>2||al.length>2||tl.over||al.over)return false;
+  ctx.font=`700 ${D}px Arial, sans-serif`;
+  if(ctx.measureText(coordSample).width>maxW)return false;
+  return tl.length*T*1.15+D*.35+(al.length+2)*D*1.42+D*.3<=availH;
+ };
+ let lo=5,hi=Math.max(8,cap);
+ if(ok(hi))return hi;
+ for(let i=0;i<18;i++){const m=(lo+hi)/2;if(ok(m))lo=m;else hi=m;}
+ return lo;
 }
 
 function drawGeoFrame(baseCtx,W,H,seconds){
-  // GeoTag layout matched to the user's second reference image:
-  // compact rounded dark strip, map flush-left, compact text, small camera badge at right.
+ const L=computeGeoLayout(W,H);
+ const {stampH,stampY,mapW,mapH,mapX,mapY}=L;
+ const stampOpacity=clamp(state.gOpacity/100,0,1);
+ const mapOpacity=clamp(state.gMapO/100,0,1);
+
+ // ---- grey stamp (plain translucent grey, no blur). Opacity slider controls how see-through it is.
+ const rad=Math.max(14,Math.round(stampH*.14));
+ baseCtx.save();
+ baseCtx.fillStyle=`rgba(30,30,30,${stampOpacity})`;
+ baseCtx.beginPath();
+ baseCtx.moveTo(0,stampY+rad);
+ baseCtx.arcTo(0,stampY,rad,stampY,rad);
+ baseCtx.lineTo(W-rad,stampY);
+ baseCtx.arcTo(W,stampY,W,stampY+rad,rad);
+ baseCtx.lineTo(W,H);baseCtx.lineTo(0,H);
+ baseCtx.closePath();baseCtx.fill();
+ baseCtx.restore();
+
+ // ---- logo
+ const logoSize=clamp(stampH*.38*(state.logoSize/70),24,Math.min(W*.12,stampH*.7));
+ const lpad=Math.max(4,stampH*.03);
+ const logoCX=clamp(W*state.logoX/100,W*.6+logoSize/2,W-logoSize/2-lpad);
+ const logoCY=clamp(stampY+stampH*(state.logoY/100),stampY+logoSize/2+lpad,stampY+stampH-logoSize/2-lpad);
+
+ // ---- text (fixed start position, independent of the map)
+ const textX=W*state.gTextX/100;
+ const gap=Math.max(8,stampH*.06);
+ const maxW=Math.max(80,logoCX-logoSize/2-gap-textX);
+ const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
+ const address=$('gAddress').value.trim();
+ const coordText=`Lat ${lat==null?'—':lat.toFixed(6)}°  Long ${lon==null?'—':lon.toFixed(6)}°`;
+ const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
+ const u=fitGeoText(baseCtx,titleText,address,'Lat 00.000000°  Long 000.000000°',maxW,stampH*.88,W*.032);
+ const T=u*1.57*state.gTitle/100,D=u*state.gDetails/100;
+ const tFont=`700 ${T}px Arial, sans-serif`,dFont=`700 ${D}px Arial, sans-serif`;
+ const tl=wrapAll(baseCtx,titleText,maxW,tFont);
+ const al=wrapAll(baseCtx,address,maxW,dFont);
+ const blockH=tl.length*T*1.15+D*.35+(al.length+2)*D*1.42+D*.3;
+ let cur=stampY+Math.max(2,(stampH-blockH)/2);
+ baseCtx.save();
+ baseCtx.fillStyle='#fff';baseCtx.textAlign='left';baseCtx.textBaseline='alphabetic';
+ baseCtx.shadowColor='rgba(0,0,0,.35)';baseCtx.shadowBlur=Math.max(1,stampH*.01);
+ baseCtx.font=tFont;
+ tl.forEach((line,i)=>baseCtx.fillText(line,textX,cur+T*.95+i*T*1.15));
+ cur+=tl.length*T*1.15+D*.35;
+ baseCtx.font=dFont;
+ [...al,coordText,dateTime].forEach((line,i)=>baseCtx.fillText(line,textX,cur+D*1.12+i*D*1.42));
+ baseCtx.restore();
+
+ baseCtx.save();drawLogo(baseCtx,logoCX,logoCY,logoSize);baseCtx.restore();
+
+ // ---- map: drawn last, on top, own position and size (square corners, cover-fit so never stretched)
+ if(mapImg&&mapImg.width>0&&mapImg.height>0){
   baseCtx.save();
+  baseCtx.globalAlpha=mapOpacity;
+  baseCtx.beginPath();baseCtx.rect(mapX,mapY,mapW,mapH);baseCtx.clip();
+  baseCtx.imageSmoothingEnabled=true;baseCtx.imageSmoothingQuality='high';
+  const ms=Math.max(mapW/mapImg.width,mapH/mapImg.height);
+  const dw=mapImg.width*ms,dh=mapImg.height*ms;
+  baseCtx.drawImage(mapImg,mapX+(mapW-dw)/2,mapY+(mapH-dh)/2,dw,dh);
+  baseCtx.restore();
+ }
 
-  const stampOpacity=clamp(state.gOpacity/100,0,1);
-  const mapOpacity=clamp(state.gMapO/100,0,1);
-  const stampH=clamp(H*state.gHeight/100,Math.max(70,H*.10),H*.90);
-  const margin=Math.max(3,Math.round(H*.012));
-  const x=margin, y=H-stampH-margin;
-  const stampW=W-margin*2;
-  const radius=Math.max(18,Math.round(stampH*.14));
-  const pad=Math.max(5,Math.round(stampH*.022));
-  const gap=Math.max(12,Math.round(stampH*.045));
-
-  // Main rounded dark translucent stamp.
-  baseCtx.globalAlpha=stampOpacity;
-  baseCtx.fillStyle='rgba(0,0,0,.76)';
-  roundRect(baseCtx,x,y,stampW,stampH,radius);
-  baseCtx.fill();
-
-  // Map: no artificial grey border/padding. It fills the left portion of the stamp.
-  const mapX=x+pad;
-  const mapY=y+pad;
-  const mapH=Math.max(30,stampH-pad*2);
-
-  // Camera badge is reserved on the far right.
-  const logoSize=clamp(stampH*.38*(state.logoSize/70),40,Math.min(110,stampH*.55));
-  const logoCenterX=clamp(
-    W*state.logoX/100,
-    x+stampW*.72+logoSize/2,
-    x+stampW-logoSize/2-pad
-  );
-  const logoCenterY=clamp(
-    y+stampH*(state.logoY/100),
-    y+logoSize/2+pad,
-    y+stampH-logoSize/2-pad
-  );
-  const logoLeft=logoCenterX-logoSize/2;
-  const mapGap=Math.max(10,stampH*.035);
-  const requestedMapW=stampW*state.gMapW/100;
-  const maxMapW=Math.max(100,logoLeft-mapX-mapGap);
-  const mapW=clamp(requestedMapW,120,maxMapW);
-
-  if(mapImg){
-    baseCtx.save();
-    baseCtx.globalAlpha=stampOpacity*mapOpacity;
-    // Clip exactly to the map rectangle so no grey canvas margin is visible.
-    roundRect(baseCtx,mapX,mapY,mapW,mapH,Math.max(3,Math.min(8,stampH*.018)));
-    baseCtx.clip();
-    baseCtx.drawImage(mapImg,mapX,mapY,mapW,mapH);
-    baseCtx.restore();
-  }
-
-  // Text area.
-  const tx=mapX+mapW+gap;
-  const textRight=logoLeft-gap;
-  const maxW=Math.max(150,textRight-tx);
-  const titleSize=Math.max(15,stampH*.105*state.gTitle/100);
-  const detailSize=Math.max(9,stampH*.050*state.gDetails/100);
-  const titleText=[$('gPlace').value.trim(),$('gState').value.trim(),'India'].filter(Boolean).join(', ');
-  const address=$('gAddress').value.trim();
-  const coordText=`Lat ${lat==null?'—':lat.toFixed(6)}°  Long ${lon==null?'—':lon.toFixed(6)}°`;
-  const dateTime=`${formatDate($('gDate').value)} ${formatMovingTime($('gTime').value,seconds)}`;
-
+ // ---- preview-only handles (never exported)
+ if(baseCtx===gctx&&mapImg){
+  const px=W/Math.max(1,geo.getBoundingClientRect().width||W);
   baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  baseCtx.fillStyle='#fff';
-  baseCtx.textBaseline='alphabetic';
-  baseCtx.shadowColor='rgba(0,0,0,.30)';
-  baseCtx.shadowBlur=Math.max(1,stampH*.008);
-
-  baseCtx.font=`700 ${titleSize}px Arial, sans-serif`;
-  const titleLines=wrapText(baseCtx,titleText,maxW,`700 ${titleSize}px Arial, sans-serif`,2);
-  let yy=y+pad+titleSize;
-  titleLines.forEach(line=>{baseCtx.fillText(line,tx,yy);yy+=titleSize*1.02});
-
-  baseCtx.font=`600 ${detailSize}px Arial, sans-serif`;
-  const lineGap=Math.max(3,detailSize*.25);
-  const addressLines=wrapText(baseCtx,address,maxW,`600 ${detailSize}px Arial, sans-serif`,2);
-  addressLines.forEach(line=>{if(yy<=y+stampH-pad)baseCtx.fillText(line,tx,yy);yy+=detailSize+lineGap});
-  if(yy<=y+stampH-pad){baseCtx.fillText(coordText,tx,yy);yy+=detailSize+lineGap*1.05;}
-  if(yy<=y+stampH-pad)baseCtx.fillText(dateTime,tx,yy);
+  baseCtx.strokeStyle='rgba(255,255,255,.95)';baseCtx.lineWidth=Math.max(1,2*px);
+  baseCtx.setLineDash([6*px,4*px]);baseCtx.strokeRect(mapX,mapY,mapW,mapH);baseCtx.setLineDash([]);
+  const hs=Math.max(10,20*px);
+  baseCtx.fillStyle='rgba(255,255,255,.95)';baseCtx.strokeStyle='rgba(0,0,0,.6)';baseCtx.lineWidth=Math.max(1,px);
+  baseCtx.fillRect(mapX+mapW-hs,mapY+mapH-hs,hs,hs);baseCtx.strokeRect(mapX+mapW-hs,mapY+mapH-hs,hs,hs);
   baseCtx.restore();
-
-  // Small, clean blue camera badge on the right.
-  baseCtx.save();
-  baseCtx.globalAlpha=stampOpacity;
-  drawLogo(baseCtx,logoCenterX,logoCenterY,logoSize);
-  baseCtx.restore();
-  baseCtx.restore();
+ }
 }
 
 function prepareOutput(){
@@ -1226,9 +1327,66 @@ $('backEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection')
 $('tabEdit').onclick=()=>{$('geoSection').style.display='none';$('editSection').style.display='block';$('tabEdit').classList.add('active');$('tabGeo').classList.remove('active')}
 $('tabGeo').onclick=()=>{if(!$('tabGeo').disabled){$('editSection').style.display='none';$('geoSection').style.display='block';drawGeoPreview()}}
 
-for(const id of ['gOpacity','gMapO','gHeight','gMapW','gTitle','gDetails','logoX','logoY','logoSize']){
- $(id).oninput=()=>{state[id]=+$(id).value;$(id+'Val').textContent=$(id).value+'%';drawGeoPreview()}
+function syncMapSliders(){
+ const w=clamp(Math.round(state.mapW),5,90),h=clamp(Math.round(state.mapH),5,90);
+ $('gMapW').value=w;$('gMapWVal').textContent=w+'%';
+ $('mapH').value=h;$('mapHVal').textContent=h+'%';
 }
+const SLIDER_KEY={gMapW:'mapW',mapH:'mapH'};
+for(const id of ['gOpacity','gMapO','gHeight','gTextX','gMapW','mapH','gTitle','gDetails','logoX','logoY','logoSize']){
+ $(id).oninput=()=>{
+  const key=SLIDER_KEY[id]||id;
+  state[key]=+$(id).value;
+  if($('mapSquare').checked&&(id==='gMapW'||id==='mapH')){state.mapW=state.mapH=+$(id).value;syncMapSliders();}
+  $(id+'Val').textContent=$(id).value+'%';
+  if(id==='gMapW'||id==='mapH')scheduleMapRebuild();
+  drawGeoPreview();
+ }
+}
+$('mapZoom').oninput=()=>{state.mapZoom=+$('mapZoom').value;$('mapZoomVal').textContent=$('mapZoom').value;scheduleMapRebuild();};
+$('mapSquare').onchange=()=>{if($('mapSquare').checked){state.mapH=state.mapW;syncMapSliders();scheduleMapRebuild();drawGeoPreview();}};
+$('mapMakeSquare').onclick=()=>{state.mapH=state.mapW;syncMapSliders();scheduleMapRebuild();drawGeoPreview();};
+$('mapReset').onclick=()=>{state.mapMoved=false;drawGeoPreview();};
+['applyCrop','resetCrop'].forEach(id=>$(id).addEventListener('click',scheduleMapRebuild));
+
+/* drag the map over the stamp; drag the white corner square to resize. The stamp is never touched. */
+let mapDrag=null;
+function mapPointerPos(e){
+ const r=geo.getBoundingClientRect();
+ return {x:(e.clientX-r.left)*(geo.width/r.width),y:(e.clientY-r.top)*(geo.height/r.height)};
+}
+geo.addEventListener('pointerdown',e=>{
+ if(!mapImg||!geo.width)return;
+ const W=geo.width,H=geo.height,L=computeGeoLayout(W,H),p=mapPointerPos(e);
+ const px=W/Math.max(1,geo.getBoundingClientRect().width),hs=30*px;
+ const onCorner=Math.abs(p.x-(L.mapX+L.mapW))<=hs&&Math.abs(p.y-(L.mapY+L.mapH))<=hs;
+ const inside=p.x>=L.mapX&&p.x<=L.mapX+L.mapW&&p.y>=L.mapY&&p.y<=L.mapY+L.mapH;
+ if(!onCorner&&!inside)return;
+ e.preventDefault();
+ geo.setPointerCapture(e.pointerId);
+ state.mapMoved=true;
+ state.mapX=L.mapX/W*100;state.mapY=L.mapY/H*100;
+ state.mapW=L.mapW/W*100;state.mapH=L.mapH/W*100;
+ mapDrag={mode:onCorner?'resize':'move',sx:p.x,sy:p.y,x:L.mapX,y:L.mapY,w:L.mapW,h:L.mapH};
+});
+geo.addEventListener('pointermove',e=>{
+ if(!mapDrag)return;
+ const W=geo.width,H=geo.height,p=mapPointerPos(e),dx=p.x-mapDrag.sx,dy=p.y-mapDrag.sy;
+ if(mapDrag.mode==='move'){
+  state.mapX=clamp((mapDrag.x+dx)/W*100,0,Math.max(0,100-mapDrag.w/W*100));
+  state.mapY=clamp((mapDrag.y+dy)/H*100,0,Math.max(0,100-mapDrag.h/H*100));
+ }else{
+  let nw=clamp(mapDrag.w+dx,24,Math.max(24,W-mapDrag.x));
+  let nh=clamp(mapDrag.h+dy,24,Math.max(24,H-mapDrag.y));
+  if($('mapSquare').checked){const s=Math.max(24,Math.min(Math.max(nw,nh),W-mapDrag.x,H-mapDrag.y));nw=nh=s;}
+  state.mapW=nw/W*100;state.mapH=nh/W*100;
+  syncMapSliders();
+ }
+ drawGeoPreview();
+});
+function endMapDrag(){if(mapDrag){const wasResize=mapDrag.mode==='resize';mapDrag=null;if(wasResize)scheduleMapRebuild();}}
+geo.addEventListener('pointerup',endMapDrag);
+geo.addEventListener('pointercancel',endMapDrag);
 function drawGeoPreview(){
  if(!video.videoWidth)return;
  const r=sourceRect();const max=1100,s=Math.min(1,max/r.w);geo.width=Math.round(r.w*s);geo.height=Math.round(r.h*s);
@@ -1243,6 +1401,7 @@ let exporting=false;
 async function runExport(){
  exporting=true;
  try{
+  if(mapGeo){try{await rebuildMap();}catch(e){console.warn(e)}}
   if(window.VideoEncoder && window.AudioEncoder && window.Mp4Muxer){
    try{ await exportVideoFrameAccurate(); return; }
    catch(err){ console.warn('Frame-accurate export failed, falling back to realtime capture:',err); }

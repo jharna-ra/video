@@ -229,7 +229,7 @@ input[type=range]{width:100%}
 </section>
 </div>
 
-<video id="video" playsinline preload="auto" style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:-1"></video>
+<video id="video" playsinline preload="auto" style="position:fixed;right:0;bottom:0;width:160px;height:90px;opacity:.02;pointer-events:none;z-index:-1"></video>
 <canvas id="workCanvas" style="display:none"></canvas>
 <canvas id="logoCanvas" width="200" height="120"></canvas>
 
@@ -1184,7 +1184,10 @@ async function playbackToEmit(start,end,emit,sess){
     });
   }finally{video.muted=wasMuted}
 }
-function seekFast(t){return new Promise(res=>{let d=false;const fin=()=>{if(d)return;d=true;clearTimeout(to);video.removeEventListener('seeked',fin);res()};const to=setTimeout(fin,2500);video.addEventListener('seeked',fin);if(Math.abs(video.currentTime-t)<0.001)setTimeout(fin,0);else video.currentTime=t})}
+function seekFast(t){return new Promise(res=>{let d=false;const fin=()=>{if(d)return;d=true;clearTimeout(to);video.removeEventListener('seeked',onSeeked);res()};const to=setTimeout(fin,2500);
+  // after the seek, wait until the new frame is really on screen so we never grab a stale / half-decoded frame
+  const onSeeked=()=>{if(video.requestVideoFrameCallback){let g=false;const go=()=>{if(g)return;g=true;fin()};video.requestVideoFrameCallback(go);setTimeout(go,80)}else setTimeout(fin,30)};
+  video.addEventListener('seeked',onSeeked);if(Math.abs(video.currentTime-t)<0.001)setTimeout(fin,0);else video.currentTime=t})}
 /* SAFEST path: seek to every frame time. Slower, but it cannot stall like decoding / playback can. */
 async function seekToEmit(start,end,emit,sess){
   video.pause();const fps=30,n=Math.floor((end-start)*fps);
@@ -1222,7 +1225,7 @@ async function encodeSession(mode,ui,audio,fileBuf,start,end,job){
     let ts=Math.round(elapsed*1e6);if(ts<=lastTs)ts=lastTs+2000;lastTs=ts;   // keep every frame a real, visible length (1 µs gaps can freeze players)
     const init={timestamp:ts};if(dur)init.duration=Math.round(dur*1e6);
     const vf=new VideoFrame(work,init);
-    try{encoder.encode(vf,{keyFrame:frames%60===0})}finally{vf.close()}
+    try{encoder.encode(vf,{keyFrame:frames%30===0})}finally{vf.close()}
     frames++;sess.last=performance.now();pushAudio(elapsed+0.5);
     if(frames%4===0){
       const p=clamp(elapsed/length,0,1),eta=p>0.03?(performance.now()-t0)/p*(1-p)/1000:0;
@@ -1260,7 +1263,7 @@ async function exportMP4(ui,start,end,job){
   ui.status('Preparing audio…');
   const audio=await prepareAudio(fileBuf.slice(0),start,end);
   let lastErr=null;
-  for(const mode of ['decode','playback','seek']){
+  for(const mode of ['decode','seek','playback']){
     try{
       ui.status('Rendering MP4… 0%');
       return await encodeSession(mode,ui,audio,fileBuf,start,end,job);
